@@ -1,0 +1,261 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "resourceName": {
+            "type": "String",
+            "metadata": {
+                "description": "The name of the Managed Cluster resource."
+            }
+        },
+        "location": {
+            "type": "String",
+            "metadata": {
+                "description": "The location of AKS resource."
+            }
+        },
+        "dnsPrefix": {
+            "type": "String",
+            "metadata": {
+                "description": "Optional DNS prefix to use with hosted Kubernetes API server FQDN."
+            }
+        },
+        "osDiskSizeGB": {
+            "defaultValue": 0,
+            "minValue": 0,
+            "maxValue": 1023,
+            "type": "Int",
+            "metadata": {
+                "description": "Disk size (in GiB) to provision for each of the agent pool nodes. This value ranges from 0 to 1023. Specifying 0 will apply the default disk size for that agentVMSize."
+            }
+        },
+        "kubernetesVersion": {
+            "defaultValue": "1.7.7",
+            "type": "String",
+            "metadata": {
+                "description": "The version of Kubernetes."
+            }
+        },
+        "networkPlugin": {
+            "allowedValues": [
+                "azure",
+                "kubenet"
+            ],
+            "type": "String",
+            "metadata": {
+                "description": "Network plugin used for building Kubernetes network."
+            }
+        },
+        "enableRBAC": {
+            "defaultValue": true,
+            "type": "Bool",
+            "metadata": {
+                "description": "Boolean flag to turn on and off of RBAC."
+            }
+        },
+        "vmssNodePool": {
+            "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "Boolean flag to turn on and off of virtual machine scale sets"
+            }
+        },
+        "windowsProfile": {
+            "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "Boolean flag to turn on and off of virtual machine scale sets"
+            }
+        },
+        "enablePrivateCluster": {
+            "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "Enable private network access to the Kubernetes cluster."
+            }
+        },
+        "enableHttpApplicationRouting": {
+            "defaultValue": true,
+            "type": "Bool",
+            "metadata": {
+                "description": "Boolean flag to turn on and off http application routing."
+            }
+        },
+        "enableAzurePolicy": {
+            "defaultValue": false,
+            "type": "Bool",
+            "metadata": {
+                "description": "Boolean flag to turn on and off Azure Policy addon."
+            }
+        },
+        "acrName": {
+            "type": "String",
+            "metadata": {
+                "description": "Specify the name of the Azure Container Registry."
+            }
+        },
+        "acrResourceGroup": {
+            "type": "String",
+            "metadata": {
+                "description": "The name of the resource group the container registry is associated with."
+            }
+        },
+        "guidValue": {
+            "defaultValue": "[newGuid()]",
+            "type": "String",
+            "metadata": {
+                "description": "The unique id used in the role assignment of the kubernetes service to the container registry service. It is recommended to use the default value."
+            }
+        },
+        "networkPolicy": {
+            "type": "String",
+            "metadata": {
+                "description": "Network policy used for building Kubernetes network."
+            }
+        },
+        "vnetSubnetID": {
+            "type": "String",
+            "metadata": {
+                "description": "Resource ID of virtual network subnet used for nodes and/or pods IP assignment."
+            }
+        },
+        "serviceCidr": {
+            "type": "String",
+            "metadata": {
+                "description": "A CIDR notation IP range from which to assign service cluster IPs."
+            }
+        },
+        "dnsServiceIP": {
+            "type": "String",
+            "metadata": {
+                "description": "Containers DNS server IP address."
+            }
+        },
+        "dockerBridgeCidr": {
+            "type": "String",
+            "metadata": {
+                "description": "A CIDR notation IP for Docker bridge."
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.ContainerService/managedClusters",
+            "apiVersion": "2020-09-01",
+            "name": "[parameters('resourceName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [],
+            "tags": {
+                "owner": "joatzing",
+                "created_by": "joatzing",
+                "purpose": "CSI testing"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "kubernetesVersion": "[parameters('kubernetesVersion')]",
+                "enableRBAC": "[parameters('enableRBAC')]",
+                "dnsPrefix": "[parameters('dnsPrefix')]",
+                "agentPoolProfiles": [
+                    {
+                        "name": "agentpool",
+                        "osDiskSizeGB": "[parameters('osDiskSizeGB')]",
+                        "count": 3,
+                        "vmSize": "Standard_DS2_v2",
+                        "osType": "Linux",
+                        "storageProfile": "ManagedDisks",
+                        "type": "VirtualMachineScaleSets",
+                        "mode": "System",
+                        "maxPods": 110,
+                        "availabilityZones": null,
+                        "vnetSubnetID": "[parameters('vnetSubnetID')]"
+                    }
+                ],
+                "networkProfile": {
+                    "loadBalancerSku": "standard",
+                    "networkPlugin": "[parameters('networkPlugin')]",
+                    "networkPolicy": "[parameters('networkPolicy')]",
+                    "serviceCidr": "[parameters('serviceCidr')]",
+                    "dnsServiceIP": "[parameters('dnsServiceIP')]",
+                    "dockerBridgeCidr": "[parameters('dockerBridgeCidr')]"
+                },
+                "apiServerAccessProfile": {
+                    "enablePrivateCluster": "[parameters('enablePrivateCluster')]"
+                },
+                "addonProfiles": {
+                    "httpApplicationRouting": {
+                        "enabled": "[parameters('enableHttpApplicationRouting')]"
+                    },
+                    "azurePolicy": {
+                        "enabled": "[parameters('enableAzurePolicy')]"
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "name": "ConnectAKStoACR-21c77da2-8964-494d-9d71-7f9ff1c023ab",
+            "dependsOn": [
+                "[concat('Microsoft.ContainerService/managedClusters/', parameters('resourceName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "apiVersion": "2018-09-01-preview",
+                            "type": "Microsoft.ContainerRegistry/registries/providers/roleAssignments",
+                            "name": "[concat(parameters('acrName'), '/Microsoft.Authorization/', parameters('guidValue'))]",
+                            "properties": {
+                                "principalId": "[reference(parameters('resourceName'), '2020-09-01').identityProfile.kubeletidentity.objectId]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                                "scope": "[resourceId(parameters('acrResourceGroup'),'Microsoft.ContainerRegistry/registries/', parameters('acrName'))]"
+                            }
+                        }
+                    ]
+                }
+            },
+            "resourceGroup": "[parameters('acrResourceGroup')]"
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "name": "ClusterSubnetRoleAssignmentDeployment-20210111105020",
+            "dependsOn": [],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "type": "Microsoft.Network/virtualNetworks/subnets/providers/roleAssignments",
+                            "apiVersion": "2017-05-01",
+                            "name": "laaso-vnet/joatzing-ipv4-aks-pool/Microsoft.Authorization/623ca915-bc53-4c1c-a677-07fa27c65031",
+                            "properties": {
+                                "roleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', '4d97b98b-1d4f-4787-a291-c67834d212e7')]",
+                                "principalId": "[reference(parameters('resourceName')).identityProfile.kubeletidentity.objectId]",
+                                "scope": "/subscriptions/751411ed-8325-4f6a-902a-b5ce4eb3dd14/resourceGroups/laaso-infra/providers/Microsoft.Network/virtualNetworks/laaso-vnet/subnets/joatzing-ipv4-aks-pool"
+                            }
+                        }
+                    ]
+                }
+            },
+            "subscriptionId": "751411ed-8325-4f6a-902a-b5ce4eb3dd14",
+            "resourceGroup": "laaso-infra"
+        }
+    ],
+    "outputs": {
+        "controlPlaneFQDN": {
+            "type": "String",
+            "value": "[reference(concat('Microsoft.ContainerService/managedClusters/', parameters('resourceName'))).fqdn]"
+        }
+    }
+}

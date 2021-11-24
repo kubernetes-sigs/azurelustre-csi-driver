@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-rw-layer-3
+spec:
+  containers:
+  - name: final-layer-3
+    image: lustrecsi.azurecr.io/demo-multi-rw-final:latest
+    volumeMounts:
+    - name: storage-isolation
+      mountPath: /test
+  volumes:
+  - name: storage-isolation
+    persistentVolumeClaim:
+      claimName: final-pvc
+  imagePullSecrets:
+  - name: defregistrykey

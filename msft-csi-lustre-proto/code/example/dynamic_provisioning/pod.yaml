@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: msft-laaso-lustre-app2
+spec:
+  containers:
+  - name: app1
+    image: centos
+    command: ["/bin/sh"]
+    #args: ["-c", "while true; do echo \"<Contents of Lustre mountpoint>$(ls /lustre)</Contents of Lustre mountpoint>\"; do echo \"For BrianB: $(cat /lustre/imported_file1.txt)\"; sleep 10; done"]
+    args: ["-c", "while true; do echo \"<Contents of Lustre mountpoint>\n$(ls -l /lustre)\n</Contents of Lustre mountpoint>\"; sleep 10; done"]
+    volumeMounts:
+    - name: lustre-mount
+      mountPath: /lustre
+  - name: app2
+    image: centos
+    command: ["/bin/sh"]
+    args: ["-c", "while true; do echo \"For BrianB... $(cat /lustre/imported_file1.txt)\"; sleep 10; done"]
+    volumeMounts:
+    - name: lustre-mount
+      mountPath: /lustre
+  volumes:
+  - name: lustre-mount
+    persistentVolumeClaim:
+      claimName: msft-laaso-lustre-claim1

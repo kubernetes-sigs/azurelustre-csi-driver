@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: laaso-pv
+spec:
+  capacity:
+    storage: 3800Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - flock
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: msft.laaso.lustre.com
+  csi:
+    driver: msft.laaso.lustre.com
+    volumeHandle: jusjin-d59db947-5045-4e4b-8f60-d63461dd550d
+    volumeAttributes:
+      #mds-ip-address: "10.1.6.16"
+      mds-ip-address: "172.18.8.7"
+      fs-name: "lustrefs"

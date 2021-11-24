@@ -1,0 +1,61 @@
+apiVersion: kubeflow.org/v1alpha2
+kind: MPIJob
+metadata:
+  name: ior-iops
+spec:
+  slotsPerWorker: 1
+  cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+           containers:
+           - image: laasosandbox.azurecr.io/ior-test:latest
+             name: ior-iops
+             command:
+             - mpirun
+             - --map-by-node
+             - -np
+             - "2"
+             - ior
+             - -a
+             - POSIX
+             - -z
+             - -w
+             - -r
+             - -i
+             - "3"
+             - -m
+             - -d
+             - "1"
+             - -o 
+             - /lustre/ior/test.file_tput_n_to_n.7-22-2021-710
+             - -t 
+             - 4k
+             - -b 
+             - 128m
+             - -A
+             - "123"
+             - -O
+             - summaryFormat=JSON
+             - -O
+             - summaryFile=/lustre/results.txt
+             - -F
+             - -C
+             - --posix.odirect
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          containers:
+          - image: laasosandbox.azurecr.io/ior-test:latest
+            name: ior-iops
+            volumeMounts:
+              - name: lustre-mount
+                MountPath: /lustre
+        volumes:
+          - name: lustre-mount
+            persistentVolumeClaim:
+              claimName: msft-laaso-lustre-claim1
+

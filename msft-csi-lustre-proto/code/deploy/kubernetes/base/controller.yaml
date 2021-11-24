@@ -1,0 +1,84 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: msft-laaso-csi-controller
+  namespace: kube-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: msft-laaso-csi-controller
+  template:
+    metadata:
+      labels:
+        app: msft-laaso-csi-controller
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      serviceAccountName: msft-laaso-csi-controller-sa
+      priorityClassName: system-cluster-critical
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+      containers:
+        - name: msft-laaso-controller-plugin
+          image: jusjin.azurecr.io/msft-laaso-lustre-csi:latest
+          args :
+            - --endpoint=$(CSI_ENDPOINT)
+          env:
+            - name: CSI_ENDPOINT
+              value: /csi/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: host-tmp
+              mountPath: /host_tmp
+          resources:
+            limits:
+              cpu: 200m
+              memory: 200Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        - name: csi-provisioner
+          image: jusjin.azurecr.io/jga-provisioner:latest
+          args:
+            - --timeout=5m
+            - --csi-address=$(ADDRESS)
+            - "--v=2"
+            - --leader-election
+            #- --leader-election-type=leases
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            limits:
+              cpu: 100m
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: module-dir
+          hostPath:
+            path: /lib/modules
+        - name: host-tmp
+          hostPath:
+            path: /tmp
