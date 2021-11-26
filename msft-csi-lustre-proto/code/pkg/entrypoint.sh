@@ -14,5 +14,6 @@ lctl network up
 #mkdir -p /host_tmp/lustre
 #mount -t lustre $MDS_IP_ADDR@tcp:/lustrefs /host_tmp/lustre
 echo "<Lustre CSI driver>"
-$1 $2 $3 $4
+echo Executing: $1 $2 $3 $4 $5 $6 $7 $8 $9
+$1 $2 $3 $4 $5 $6 $7 $8 $9
 echo "</Lustre CSI driver>"/

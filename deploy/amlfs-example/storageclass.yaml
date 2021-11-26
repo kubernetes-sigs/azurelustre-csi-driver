@@ -1,0 +1,9 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: sc.amlfs.csi.azure.com
+provisioner: amlfs.csi.azure.com
+parameters:
+  mds-ip-address: "172.18.8.7"
+  fs-name: "lustrefs"
+## contact rp to create lustre cluster from aks cluster (dynamic provisioning csi)

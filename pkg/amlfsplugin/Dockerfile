@@ -33,8 +33,9 @@ RUN chmod +x "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
 # Build the name of the execution script.
 # This has to be an ENV instead of ARG so it resolves correctly with ENTRYPOINT.
 # $@ passes the arguments through to the exec script.
-ENV EXEC "${BASE_FOLDER}/bin/${EXEC_SCRIPT} bin/${CSI_NAME} \"$@\""
+ENV EXEC "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
+ENV EXEC2 "bin/${CSI_NAME}"
 
 WORKDIR "${BASE_FOLDER}"
 
-ENTRYPOINT $EXEC
+ENTRYPOINT ["/go/src/github.com/kubernetes-sigs/amlfsplugin/bin/entrypoint.sh", "/go/src/github.com/kubernetes-sigs/amlfsplugin/bin/amlfsplugin"]  
