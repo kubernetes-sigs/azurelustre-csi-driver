@@ -14,10 +14,10 @@
 
 PKG = sigs.k8s.io/blob-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
-REGISTRY ?= andyzhangx
+REGISTRY ?= jusjin.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
-IMAGE_NAME ?= blob-csi
-IMAGE_VERSION ?= v1.6.0
+IMAGE_NAME ?= amlfs-csi
+IMAGE_VERSION ?= latest
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
 ifdef CI
@@ -29,6 +29,7 @@ IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS ?= "-X ${PKG}/pkg/blob.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/blob.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/blob.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
+LDFLAGS2 ?= "-X ${PKG}/pkg/amlfs.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/amlfs.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/amlfs.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
 E2E_HELM_OPTIONS ?= --set image.blob.pullPolicy=Always --set image.blob.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.blob.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
 ifdef ENABLE_BLOBFUSE_PROXY
 override E2E_HELM_OPTIONS := $(E2E_HELM_OPTIONS) --set controller.logLevel=6 --set node.logLevel=6 --set node.enableBlobfuseProxy=true
@@ -90,6 +91,14 @@ install-helm:
 .PHONY: e2e-teardown
 e2e-teardown:
 	helm delete blob-csi-driver --namespace kube-system
+
+.PHONY: amlfs
+amlfs:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS2} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
+
+.PHONY: amlfs-container
+amlfs-container: amlfs
+	docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
 
 .PHONY: blob
 blob: blobfuse-proxy

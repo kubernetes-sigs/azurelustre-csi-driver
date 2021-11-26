@@ -4,13 +4,8 @@
 #
 echo $@
 apt-get update
+apt-get install -y libreadline7 kmod fdutils "$PKG1" "$PKG2"
 
-kv=$(uname -r)
-if [[ "$kv" == "5.4.0-1059-azure" ]]; then
-    apt-get install -y libreadline7 kmod fdutils "$PKG1" "$PKG2"
-else
-    apt-get install -y libreadline7 kmod fdutils "$PKG3" "$PKG4"
-fi
 modprobe -v ksocklnd
 modprobe -v lnet
 modprobe -v mgc

@@ -78,7 +78,7 @@ func GetMountOptions(options []string) string {
 }
 
 func MakeDir(pathname string) error {
-	err := os.MkdirAll(pathname, os.FileMode(0755))
+	err := os.MkdirAll(pathname, os.FileMode(0775)) // TODO_JUSJIN: revisit the ACL
 	if err != nil {
 		if !os.IsExist(err) {
 			return err
