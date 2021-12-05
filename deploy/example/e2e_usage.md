@@ -1,11 +1,11 @@
-## CSI driver example
+## CSI driver example (TO BE UPDATED FOR AMLFS)
 > refer to [driver parameters](../../docs/driver-parameters.md) for more detailed usage
 
 ### Dynamic Provisioning
 #### Option#1: create storage account by CSI driver
  - Create storage class
 ```console
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/storageclass-blobfuse.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/storageclass-amlfs.yaml
 ```
 
 #### Option#2: bring your own storage account
@@ -18,36 +18,36 @@ kubectl create secret generic azure-secret --from-literal azurestorageaccountnam
 
  - create storage class referencing `azure-secret`
 ```console
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/storageclass-blob-secret.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/storageclass-amlfs-secret.yaml
 ```
 
 #### Create application
  - Create a statefulset with volume mount
 ```console
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/statefulset.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/statefulset.yaml
 ```
 
  - Execute `df -h` command in the container
 ```console
-kubectl exec -it statefulset-blob-0 -- df -h
+kubectl exec -it statefulset-amlfs-0 -- df -h
 ```
 <pre>
 Filesystem      Size  Used Avail Use% Mounted on
 ...
-blobfuse         14G   41M   13G   1% /mnt/blob
+amlfs         14G   41M   13G   1% /mnt/amlfs
 ...
 </pre>
 
 ### Static Provisioning(use an existing storage account)
 #### Option#1: Use storage class
 > make sure cluster identity could access storage account
- - Download [blob storage CSI storage class](https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/storageclass-blobfuse-existing-container.yaml), edit `resourceGroup`, `storageAccount`, `containerName` in storage class
+ - Download [amlfs storage CSI storage class](https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/storageclass-amlfs-existing-container.yaml), edit `resourceGroup`, `storageAccount`, `containerName` in storage class
 ```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: blob
-provisioner: blob.csi.azure.com
+  name: amlfs
+provisioner: amlfs.csi.azure.com
 parameters:
   resourceGroup: EXISTING_RESOURCE_GROUP_NAME
   storageAccount: EXISTING_STORAGE_ACCOUNT_NAME  # cross subscription is not supported
@@ -58,8 +58,8 @@ volumeBindingMode: Immediate
 
  - Create storage class and PVC
 ```console
-kubectl create -f storageclass-blobfuse-existing-container.yaml
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/pvc-blob-csi.yaml
+kubectl create -f storageclass-amlfs-existing-container.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/pvc-amlfs-csi.yaml
 ```
 
 #### Option#2: Use secret
@@ -77,12 +77,12 @@ kubectl create secret generic azure-secret --from-literal azurestorageaccountnam
 
 > storage account key(or sastoken) could also be stored in Azure Key Vault, check example here: [read-from-keyvault](../../docs/read-from-keyvault.md)
 
- - Create PV: download [`pv-blobfuse-csi.yaml` file](https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/pv-blobfuse-csi.yaml) and edit `containerName` in `volumeAttributes`
+ - Create PV: download [`pv-amlfs-csi.yaml` file](https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/pv-amlfs-csi.yaml) and edit `containerName` in `volumeAttributes`
 ```yaml
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: pv-blob
+  name: pv-amlfs
 spec:
   capacity:
     storage: 10Gi
@@ -90,7 +90,7 @@ spec:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain  # "Delete" is not supported in static provisioning
   csi:
-    driver: blob.csi.azure.com
+    driver: amlfs.csi.azure.com
     readOnly: false
     volumeHandle: unique-volumeid  # make sure this volumeid is unique in the cluster
     volumeAttributes:
@@ -102,35 +102,35 @@ spec:
 
  - Create PV and PVC
 ```console
-kubectl create -f pv-blobfuse-csi.yaml
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/pvc-blob-csi-static.yaml
+kubectl create -f pv-amlfs-csi.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/pvc-amlfs-csi-static.yaml
 ```
 
  - make sure pvc is created and in `Bound` status after a while
 ```console
-kubectl describe pvc pvc-blob
+kubectl describe pvc pvc-amlfs
 ```
 
 #### create a pod with PVC mount
 ```console
-kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/nginx-pod-blob.yaml
+kubectl create -f https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/nginx-pod-amlfs.yaml
 ```
 
  - Execute `df -h` command in the container
 ```console
-kubectl exec -it nginx-blob -- df -h
+kubectl exec -it nginx-amlfs -- df -h
 ```
 <pre>
 Filesystem      Size  Used Avail Use% Mounted on
 ...
-blobfuse         14G   41M   13G   1% /mnt/blob
+amlfs         14G   41M   13G   1% /mnt/amlfs
 ...
 </pre>
 
-In the above example, there is a `/mnt/blob` directory mounted as `blobfuse` filesystem.
+In the above example, there is a `/mnt/amlfs` directory mounted as `amlfs` filesystem.
 
 #### Option#3: Inline volume
- > only available from `v1.2.0` for blobfuse protocol (NFS protocol is not supported)
+ > only available from `v1.2.0` for amlfs protocol (NFS protocol is not supported)
  - Create `azure-secret` with existing storage account name and key in the same namespace as pod
  > in below example, both secret and pod are in `default` namespace
 ```console
@@ -139,7 +139,7 @@ kubectl create secret generic azure-secret --from-literal azurestorageaccountnam
 
  - download `nginx-pod-azurefile-inline-volume.yaml` file and edit `containerName`, `secretName`
 ```console
-wget https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/master/deploy/example/nginx-blobfuse-inline-volume.yaml
-#edit nginx-blobfuse-inline-volume.yaml
-kubectl create -f nginx-blobfuse-inline-volume.yaml
+wget https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/master/deploy/example/nginx-amlfs-inline-volume.yaml
+#edit nginx-amlfs-inline-volume.yaml
+kubectl create -f nginx-amlfs-inline-volume.yaml
 ```

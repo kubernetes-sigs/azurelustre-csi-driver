@@ -1,0 +1,139 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: csi-amlfs-controller
+  namespace: kube-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: csi-amlfs-controller
+  template:
+    metadata:
+      labels:
+        app: csi-amlfs-controller
+    spec:
+      hostNetwork: true
+      serviceAccountName: csi-amlfs-controller-sa
+      nodeSelector:
+        kubernetes.io/os: linux  # add "kubernetes.io/role: master" to run controller on master node
+      priorityClassName: system-cluster-critical
+      tolerations:
+        - key: "node-role.kubernetes.io/master"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/controlplane"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: csi-provisioner
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner:v2.2.2
+          args:
+            - "-v=2"
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election"
+            - "--timeout=60s"
+            - "--extra-create-metadata=true"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+            limits:
+              cpu: 100m
+              memory: 300Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        - name: liveness-probe
+          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.4.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port=29632
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            limits:
+              cpu: 100m
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        - name: amlfs
+          image: jusjin.azurecr.io/amlfs-csi:v0.0.1
+          imagePullPolicy: Always ### TODO_JUSJIN: for testing purpose
+          args:
+            - "--v=5"
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--metrics-address=0.0.0.0:29634"
+            #- "--user-agent-suffix=OSS-kubectl"
+          ports:
+            - containerPort: 29632
+              name: healthz
+              protocol: TCP
+            - containerPort: 29634
+              name: metrics
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 120
+            timeoutSeconds: 120
+            periodSeconds: 30
+          env:
+            #- name: AZURE_CREDENTIAL_FILE
+            #  valueFrom:
+            #    configMapKeyRef:
+            #      name: azure-cred-file
+            #      key: path
+            #      optional: true
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: /etc/kubernetes/
+              name: azure-cred
+          resources:
+            limits:
+              cpu: 200m
+              memory: 200Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        #- name: csi-resizer
+        #  image: mcr.microsoft.com/oss/kubernetes-csi/csi-resizer:v1.3.0
+        #  args:
+        #    - "-csi-address=$(ADDRESS)"
+        #    - "-v=2"
+        #    - "-leader-election"
+        #    - '-handle-volume-inuse-error=false'
+        #  env:
+        #    - name: ADDRESS
+        #      value: /csi/csi.sock
+        #  volumeMounts:
+        #    - name: socket-dir
+        #      mountPath: /csi
+        #  resources:
+        #    limits:
+        #      cpu: 100m
+        #      memory: 300Mi
+        #    requests:
+        #      cpu: 10m
+        #      memory: 20Mi
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: azure-cred
+          hostPath:
+            path: /etc/kubernetes/
+            type: DirectoryOrCreate

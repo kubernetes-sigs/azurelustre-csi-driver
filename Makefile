@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-PKG = sigs.k8s.io/blob-csi-driver
+PKG = sigs.k8s.io/amlfs-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= jusjin.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 IMAGE_NAME ?= amlfs-csi
-IMAGE_VERSION ?= latest
+IMAGE_VERSION ?= v0.0.1
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
 ifdef CI
@@ -28,11 +28,10 @@ endif
 IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS ?= "-X ${PKG}/pkg/blob.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/blob.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/blob.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
-LDFLAGS2 ?= "-X ${PKG}/pkg/amlfs.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/amlfs.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/amlfs.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
-E2E_HELM_OPTIONS ?= --set image.blob.pullPolicy=Always --set image.blob.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.blob.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
-ifdef ENABLE_BLOBFUSE_PROXY
-override E2E_HELM_OPTIONS := $(E2E_HELM_OPTIONS) --set controller.logLevel=6 --set node.logLevel=6 --set node.enableBlobfuseProxy=true
+LDFLAGS ?= "-X ${PKG}/pkg/amlfs.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/amlfs.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/amlfs.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
+E2E_HELM_OPTIONS ?= --set image.amlfs.pullPolicy=Always --set image.amlfs.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.amlfs.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
+ifdef ENABLE_AMLFS
+override E2E_HELM_OPTIONS := $(E2E_HELM_OPTIONS) --set controller.logLevel=6 --set node.logLevel=6
 endif
 E2E_HELM_OPTIONS += ${EXTRA_HELM_OPTIONS}
 GINKGO_FLAGS = -ginkgo.v
@@ -48,7 +47,7 @@ OUTPUT_TYPE ?= registry
 ALL_ARCH.linux = amd64 #arm64
 ALL_OS_ARCH = $(foreach arch, ${ALL_ARCH.linux}, linux-$(arch))
 
-all: blob blobfuse-proxy
+all: amlfs
 
 .PHONY: verify
 verify: unit-test
@@ -59,16 +58,16 @@ unit-test:
 	go test -covermode=count -coverprofile=profile.cov ./pkg/... ./test/utils/credentials
 
 .PHONY: sanity-test
-sanity-test: blob
+sanity-test: amlfs
 	go test -v -timeout=30m ./test/sanity
 
 .PHONY: integration-test
-integration-test: blob
+integration-test: amlfs
 	go test -v -timeout=30m ./test/integration
 
 .PHONY: e2e-test
 e2e-test:
-	if [ ! -z "$(EXTERNAL_E2E_TEST_BLOBFUSE)" ] || [ ! -z "$(EXTERNAL_E2E_TEST_NFS)" ]; then \
+	if [ ! -z "$(EXTERNAL_E2E_TEST_AMLFS)" ]; then \
 		bash ./test/external-e2e/run.sh;\
 	else \
 		go test -v -timeout=0 ./test/e2e ${GINKGO_FLAGS};\
@@ -77,8 +76,8 @@ e2e-test:
 .PHONY: e2e-bootstrap
 e2e-bootstrap: install-helm
 	# Only build and push the image if it does not exist in the registry
-	docker pull $(IMAGE_TAG) || make blob-container push
-	helm install blob-csi-driver ./charts/latest/blob-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	docker pull $(IMAGE_TAG) || make amlfs-container push
+	helm install amlfs-csi-driver ./charts/latest/amlfs-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
 		--set controller.runOnMaster=true \
 		--set controller.replicas=1 \
 		--set cloud=$(CLOUD) \
@@ -90,49 +89,31 @@ install-helm:
 
 .PHONY: e2e-teardown
 e2e-teardown:
-	helm delete blob-csi-driver --namespace kube-system
+	helm delete amlfs-csi-driver --namespace kube-system
 
 .PHONY: amlfs
 amlfs:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS2} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
-
-.PHONY: amlfs-container
-amlfs-container: amlfs
-	docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
-
-.PHONY: blob
-blob: blobfuse-proxy
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/blobplugin ./pkg/blobplugin
-
-.PHONY: blob-windows
-blob-windows:
-	CGO_ENABLED=0 GOOS=windows go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/blobplugin.exe ./pkg/blobplugin
-
-.PHONT: blob-darwin
-blob-darwin:
-	CGO_ENABLED=0 GOOS=darwin go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/blobplugin ./pkg/blobplugin
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
 
 .PHONY: container
-container: blob
-	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/blobplugin/Dockerfile .
+container: amlfs
+	# docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/amlfsplugin/Dockerfile .
+	docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
 
 .PHONY: container-linux
 container-linux:
 	docker buildx build --pull --output=type=$(OUTPUT_TYPE) --platform="linux/$(ARCH)" \
-		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f ./pkg/blobplugin/Dockerfile .
+		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f ./pkg/amlfsplugin/Dockerfile .
 
-.PHONY: blob-container
-blob-container:
+.PHONY: amlfs-container
+amlfs-container:
 	docker buildx rm container-builder || true
 	docker buildx create --use --name=container-builder
 
-ifeq ($(CLOUD), AzureStackCloud)
-	docker run --privileged --name buildx_buildkit_container-builder0 -d --mount type=bind,src=/etc/ssl/certs,dst=/etc/ssl/certs moby/buildkit:latest || true
-endif
 	# enable qemu for arm64 build
 	# docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 	for arch in $(ALL_ARCH.linux); do \
-		ARCH=$${arch} $(MAKE) blob; \
+		ARCH=$${arch} $(MAKE) amlfs; \
 		ARCH=$${arch} $(MAKE) container-linux; \
 	done
 
@@ -157,7 +138,7 @@ else
 endif
 
 .PHONY: build-push
-build-push: blob-container
+build-push: amlfs-container
 	docker tag $(IMAGE_TAG) $(IMAGE_TAG_LATEST)
 	docker push $(IMAGE_TAG_LATEST)
 
@@ -168,14 +149,8 @@ clean:
 
 .PHONY: create-metrics-svc
 create-metrics-svc:
-	kubectl create -f deploy/example/metrics/csi-blob-controller-svc.yaml
+	kubectl create -f deploy/example/metrics/csi-amlfs-controller-svc.yaml
 
 .PHONY: delete-metrics-svc
 delete-metrics-svc:
-	kubectl delete -f deploy/example/metrics/csi-blob-controller-svc.yaml --ignore-not-found
-
-.PHONY: blobfuse-proxy
-blobfuse-proxy:
-	mkdir -p ./pkg/blobfuse-proxy/debpackage/usr/bin/ ./_output
-	CGO_ENABLED=0 GOOS=linux go build -mod vendor -ldflags="-s -w" -o ./pkg/blobfuse-proxy/debpackage/usr/bin/blobfuse-proxy ./pkg/blobfuse-proxy
-	dpkg-deb --build pkg/blobfuse-proxy/debpackage ./_output/blobfuse-proxy.deb
+	kubectl delete -f deploy/example/metrics/csi-amlfs-controller-svc.yaml --ignore-not-found

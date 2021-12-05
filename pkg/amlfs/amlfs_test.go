@@ -34,9 +34,9 @@ const (
 
 func NewFakeDriver() *Driver {
 	driverOptions := DriverOptions{
-		NodeID:              fakeNodeID,
-		DriverName:          DefaultDriverName,
-		EnableBlobMockMount: false,
+		NodeID:               fakeNodeID,
+		DriverName:           DefaultDriverName,
+		EnableAmlfsMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)
 	driver.Name = fakeDriverName
@@ -46,9 +46,9 @@ func NewFakeDriver() *Driver {
 
 func TestNewFakeDriver(t *testing.T) {
 	driverOptions := DriverOptions{
-		NodeID:              fakeNodeID,
-		DriverName:          DefaultDriverName,
-		EnableBlobMockMount: false,
+		NodeID:               fakeNodeID,
+		DriverName:           DefaultDriverName,
+		EnableAmlfsMockMount: false,
 	}
 	d := NewDriver(&driverOptions)
 	assert.NotNil(t, d)
@@ -56,9 +56,9 @@ func TestNewFakeDriver(t *testing.T) {
 
 func TestNewDriver(t *testing.T) {
 	driverOptions := DriverOptions{
-		NodeID:              fakeNodeID,
-		DriverName:          DefaultDriverName,
-		EnableBlobMockMount: false,
+		NodeID:               fakeNodeID,
+		DriverName:           DefaultDriverName,
+		EnableAmlfsMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)
 	fakedriver := NewFakeDriver()
@@ -90,7 +90,7 @@ func TestIsRetriableError(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := ioutil.TempDir(os.TempDir(), "blob-csi-mount-test")
+	existingMountPath, err := ioutil.TempDir(os.TempDir(), "amlfs-csi-mount-test")
 	if err != nil {
 		t.Fatalf("failed to create tmp dir: %v", err)
 	}

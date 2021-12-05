@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	"sigs.k8s.io/blob-csi-driver/pkg/amlfs"
+	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
 
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
@@ -36,12 +36,12 @@ func init() {
 }
 
 var (
-	endpoint            = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	nodeID              = flag.String("nodeid", "", "node id")
-	version             = flag.Bool("version", false, "Print the version and exit.")
-	metricsAddress      = flag.String("metrics-address", "0.0.0.0:29634", "export the metrics")
-	driverName          = flag.String("drivername", amlfs.DefaultDriverName, "name of the driver")
-	enableBlobMockMount = flag.Bool("enable-blob-mock-mount", false, "Whether enable mock mount(only for testing)")
+	endpoint             = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
+	nodeID               = flag.String("nodeid", "", "node id")
+	version              = flag.Bool("version", false, "Print the version and exit.")
+	metricsAddress       = flag.String("metrics-address", "0.0.0.0:29634", "export the metrics")
+	driverName           = flag.String("drivername", amlfs.DefaultDriverName, "name of the driver")
+	enableAmlfsMockMount = flag.Bool("enable-amlfs-mock-mount", false, "Whether enable mock mount(only for testing)")
 )
 
 func main() {
@@ -63,15 +63,15 @@ func main() {
 
 func handle() {
 	driverOptions := amlfs.DriverOptions{
-		NodeID:              *nodeID,
-		DriverName:          *driverName,
-		EnableBlobMockMount: *enableBlobMockMount,
+		NodeID:               *nodeID,
+		DriverName:           *driverName,
+		EnableAmlfsMockMount: *enableAmlfsMockMount,
 	}
 	driver := amlfs.NewDriver(&driverOptions)
 	if driver == nil {
-		klog.Fatalln("Failed to initialize Azure Blob Storage CSI driver")
+		klog.Fatalln("Failed to initialize Azure Managed Lustre CSI driver")
 	}
-	driver.Run(*endpoint, false)
+	driver.Run(*endpoint, "", false)
 }
 
 func exportMetrics() {

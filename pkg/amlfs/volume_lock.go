@@ -22,8 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// TODO_JUSJIN: may reference blob-csi-driver packages, if no breaking changes
-
 const (
 	volumeOperationAlreadyExistsFmt = "An operation with the given Volume ID %s already exists"
 )

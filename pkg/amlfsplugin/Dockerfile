@@ -21,9 +21,9 @@ ARG CLIENT_UTIL_PKG_NAME="lustre-client-utils_2.14.0-1_amd64.deb"
 ARG CLIENT_MODS_PKG_NAME="lustre-client-modules-5.4.0-1059-azure_2.14.0-1_amd64.deb"
 
 ADD "./_output/${CSI_NAME}" "${BASE_FOLDER}/bin/${CSI_NAME}"
-ADD "./msft-csi-lustre-proto/code/pkg/${EXEC_SCRIPT}" "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
-ADD "./msft-csi-lustre-proto/code/debs/${CLIENT_UTIL_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME}"
-ADD "./msft-csi-lustre-proto/code/debs/${CLIENT_MODS_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME}"
+ADD "./pkg/amlfsplugin/${EXEC_SCRIPT}" "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
+ADD "./pkg/debs/${CLIENT_UTIL_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME}"
+ADD "./pkg/debs/${CLIENT_MODS_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME}"
 
 ENV PKG1 "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME}"
 ENV PKG2 "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME}"
@@ -37,5 +37,8 @@ ENV EXEC "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
 ENV EXEC2 "bin/${CSI_NAME}"
 
 WORKDIR "${BASE_FOLDER}"
+
+LABEL maintainers=""
+LABEL description="Azure Managed Lustre CSI driver"
 
 ENTRYPOINT ["/go/src/github.com/kubernetes-sigs/amlfsplugin/bin/entrypoint.sh", "/go/src/github.com/kubernetes-sigs/amlfsplugin/bin/amlfsplugin"]  

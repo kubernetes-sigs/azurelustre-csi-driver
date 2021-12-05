@@ -21,12 +21,10 @@ import (
 
 	"github.com/onsi/ginkgo"
 
-	"sigs.k8s.io/blob-csi-driver/pkg/blob"
-	"sigs.k8s.io/blob-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
 
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/kubernetes/test/e2e/framework"
 )
 
 // PreProvisionedExistingCredentialsTest will provision required StorageClass(es), PVC(s) and Pod(s)
@@ -39,15 +37,15 @@ type PreProvisionedExistingCredentialsTest struct {
 func (t *PreProvisionedExistingCredentialsTest) Run(client clientset.Interface, namespace *v1.Namespace) {
 	for _, pod := range t.Pods {
 		for n, volume := range pod.Volumes {
-			resourceGroupName, accountName, containerName, err := blob.GetContainerInfo(volume.VolumeID)
-			if err != nil {
-				framework.ExpectNoError(err, fmt.Sprintf("Error GetContainerInfo from volumeID(%s): %v", volume.VolumeID, err))
-				return
-			}
+			//resourceGroupName, accountName, containerName, err := amlfs.GetContainerInfo(volume.VolumeID)
+			//if err != nil {
+			//	framework.ExpectNoError(err, fmt.Sprintf("Error GetContainerInfo from volumeID(%s): %v", volume.VolumeID, err))
+			//	return
+			//}
 			parameters := map[string]string{
-				"resourceGroup":  resourceGroupName,
-				"storageAccount": accountName,
-				"containerName":  containerName,
+				//"resourceGroup":  resourceGroupName,
+				//"storageAccount": accountName,
+				//"containerName":  containerName,
 			}
 
 			ginkgo.By("creating the storageclass with existing credentials")

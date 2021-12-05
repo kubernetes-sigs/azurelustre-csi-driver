@@ -2,21 +2,21 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: pvc-blob
+  name: pvc-amlfs
 spec:
   accessModes:
     - ReadWriteMany
   resources:
     requests:
       storage: 1Gi
-  storageClassName: blob
+  storageClassName: amlfs
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
     app: nginx
-  name: deployment-blob
+  name: deployment-amlfs
 spec:
   replicas: 1
   selector:
@@ -26,25 +26,25 @@ spec:
     metadata:
       labels:
         app: nginx
-      name: deployment-blob
+      name: deployment-amlfs
     spec:
       nodeSelector:
         "kubernetes.io/os": linux
       containers:
-        - name: deployment-blob
+        - name: deployment-amlfs
           image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
           command:
             - "/bin/sh"
             - "-c"
-            - while true; do echo $(date) >> /mnt/blob/outfile; sleep 1; done
+            - while true; do echo $(date) >> /mnt/amlfs/outfile; sleep 1; done
           volumeMounts:
-            - name: blob
-              mountPath: "/mnt/blob"
+            - name: amlfs
+              mountPath: "/mnt/amlfs"
               readOnly: false
       volumes:
-        - name: blob
+        - name: amlfs
           persistentVolumeClaim:
-            claimName: pvc-blob
+            claimName: pvc-amlfs
   strategy:
     rollingUpdate:
       maxSurge: 0

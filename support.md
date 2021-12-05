@@ -12,8 +12,8 @@ For help and questions about using this project, please:
 This project maintainers will respond to the best of their abilities.
 
 [provider-azure-slack]: https://kubernetes.slack.com/archives/C5HJXTT9Q
-[docs]: https://github.com/kubernetes-sigs/blob-csi-driver/tree/master/docs
-[github-issues]: https://github.com/kubernetes-sigs/blob-csi-driver/issues
+[docs]: https://github.com/kubernetes-sigs/amlfs-csi-driver/tree/master/docs
+[github-issues]: https://github.com/kubernetes-sigs/amlfs-csi-driver/issues
 
 ## Microsoft Support Policy
 

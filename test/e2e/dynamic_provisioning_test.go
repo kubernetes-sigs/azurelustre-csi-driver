@@ -24,8 +24,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"sigs.k8s.io/blob-csi-driver/test/e2e/driver"
-	"sigs.k8s.io/blob-csi-driver/test/e2e/testsuites"
+	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/amlfs-csi-driver/test/e2e/testsuites"
 
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
@@ -34,8 +34,8 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
-var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
-	f := framework.NewDefaultFramework("blob")
+var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
+	f := framework.NewDefaultFramework("amlfs")
 
 	var (
 		cs         clientset.Interface
@@ -56,7 +56,7 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 		ns = f.Namespace
 	})
 
-	testDriver = driver.InitBlobCSIDriver()
+	testDriver = driver.InitAmlfsCSIDriver()
 	ginkgo.It("should create a volume on demand without saving storage account key", func() {
 		pods := []testsuites.PodDetails{
 			{
@@ -148,9 +148,9 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 				ExpectedString: "hello world\nhello world\n", // pod will be restarted so expect to see 2 instances of string
 			},
 			StorageClassParameters: map[string]string{
-				"skuName":               "Premium_LRS",
-				"isHnsEnabled":          "true",
-				"allowBlobPublicAccess": "false",
+				"skuName":                "Premium_LRS",
+				"isHnsEnabled":           "true",
+				"allowAmlfsPublicAccess": "false",
 			},
 		}
 		test.Run(cs, ns)
@@ -219,8 +219,8 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 			Pods:         pods,
 			ColocatePods: true,
 			StorageClassParameters: map[string]string{
-				"skuName":               "Standard_RAGRS",
-				"allowBlobPublicAccess": "false",
+				"skuName":                "Standard_RAGRS",
+				"allowAmlfsPublicAccess": "false",
 			},
 		}
 		if isAzureStackCloud {
@@ -258,10 +258,10 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 		test := testsuites.DynamicallyProvisionedReclaimPolicyTest{
 			CSIDriver: testDriver,
 			Volumes:   volumes,
-			Driver:    blobDriver,
+			Driver:    amlfsDriver,
 			StorageClassParameters: map[string]string{
-				"skuName":               "Standard_GRS",
-				"allowBlobPublicAccess": "false",
+				"skuName":                "Standard_GRS",
+				"allowAmlfsPublicAccess": "false",
 			},
 		}
 		if isAzureStackCloud {
@@ -320,8 +320,8 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 			CSIDriver: testDriver,
 			Pods:      pods,
 			StorageClassParameters: map[string]string{
-				"skuName":               "Standard_LRS",
-				"allowBlobPublicAccess": "true",
+				"skuName":                "Standard_LRS",
+				"allowAmlfsPublicAccess": "true",
 			},
 		}
 		test.Run(cs, ns)
@@ -375,7 +375,7 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 		test.Run(cs, ns)
 	})
 
-	ginkgo.It("should create a volume on demand and resize it [blob.csi.azure.com]", func() {
+	ginkgo.It("should create a volume on demand and resize it [amlfs.csi.azure.com]", func() {
 		pods := []testsuites.PodDetails{
 			{
 				Cmd: "echo 'hello world' > /mnt/test-1/data && grep 'hello world' /mnt/test-1/data",
@@ -398,7 +398,7 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 		test.Run(cs, ns)
 	})
 
-	ginkgo.It("should create an CSI inline volume [blob.csi.azure.com]", func() {
+	ginkgo.It("should create an CSI inline volume [amlfs.csi.azure.com]", func() {
 		// get storage account secret name
 		err := os.Chdir("../..")
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -423,15 +423,15 @@ var _ = ginkgo.Describe("[blob-csi-e2e] Dynamic Provisioning", func() {
 		}
 		accountName := segments[3]
 
-		containerName := "csi-inline-blobfuse-volume"
+		containerName := "csi-inline-amlfs-volume"
 		req := makeCreateVolumeReq(containerName, ns.Name)
 		req.Parameters["storageAccount"] = accountName
-		resp, err := blobDriver.CreateVolume(context.Background(), req)
+		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID := resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned Blobfuse volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
 
 		pods := []testsuites.PodDetails{
 			{

@@ -28,8 +28,7 @@ rollout_and_wait() {
 }
 
 echo "begin to create deployment examples ..."
-kubectl apply -f deploy/example/storageclass-blobfuse.yaml
-kubectl apply -f deploy/example/storageclass-blob-nfs.yaml
+kubectl apply -f deploy/example/storageclass-amlfs.yaml
 
 EXAMPLES=(\
     deploy/example/deployment.yaml \

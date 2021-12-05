@@ -1,5 +1,5 @@
 ## Sanity Tests
-Testing the Azure Blob CSI driver using the [`sanity`](https://github.com/kubernetes-csi/csi-test/tree/master/pkg/sanity) package test suite.
+Testing the Azure Managed Lustre CSI driver using the [`sanity`](https://github.com/kubernetes-csi/csi-test/tree/master/pkg/sanity) package test suite.
 
 ## Run Integration Tests Locally
 ### Prerequisite

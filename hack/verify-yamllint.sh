@@ -19,7 +19,7 @@ if [[ -z "$(command -v yamllint)" ]]; then
 fi
 
 LOG=/tmp/yamllint.log
-helmPath=charts/latest/blob-csi-driver/templates
+helmPath=charts/latest/amlfs-csi-driver/templates
 
 echo "checking yaml files num ..."
 deployDirNum=`find ./deploy/ -maxdepth 1 -type f -name '*.yaml' ! -name 'kustomization.yaml' | wc -l`

@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: laaso-csi-config
-  namespace: kube-system
-data:
-  csi-endpoint: "/csi/csi.sock"

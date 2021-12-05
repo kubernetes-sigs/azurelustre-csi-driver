@@ -16,8 +16,6 @@ limitations under the License.
 
 package amlfs
 
-// TODO_JUSJIN: update references to blob-csi-driver packages as needed
-
 import (
 	"strings"
 
@@ -27,21 +25,21 @@ import (
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 
-	csicommon "sigs.k8s.io/blob-csi-driver/pkg/csi-common"
-	"sigs.k8s.io/blob-csi-driver/pkg/util"
+	csicommon "sigs.k8s.io/amlfs-csi-driver/pkg/csi-common"
+	"sigs.k8s.io/amlfs-csi-driver/pkg/util"
 )
 
 const (
 	// DefaultDriverName holds the name of the csi-driver
-	DefaultDriverName = "amlfs.csi.azure.com"
-	blobCSIDriverName = "amlfs_csi_driver"
-	separator         = "#"
-	volumeIDTemplate  = "%s#%s#%s"
-	ephemeralField    = "csi.storage.k8s.io/ephemeral"
-	podNamespaceField = "csi.storage.k8s.io/pod.namespace"
-	mountOptionsField = "mountoptions"
-	falseValue        = "false"
-	trueValue         = "true"
+	DefaultDriverName  = "amlfs.csi.azure.com"
+	amlfsCSIDriverName = "amlfs_csi_driver"
+	separator          = "#"
+	volumeIDTemplate   = "%s#%s#%s"
+	ephemeralField     = "csi.storage.k8s.io/ephemeral"
+	podNamespaceField  = "csi.storage.k8s.io/pod.namespace"
+	mountOptionsField  = "mountoptions"
+	falseValue         = "false"
+	trueValue          = "true"
 
 	pvcNameKey      = "csi.storage.k8s.io/pvc/name"
 	pvcNamespaceKey = "csi.storage.k8s.io/pvc/namespace"
@@ -54,9 +52,9 @@ var (
 
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
-	NodeID              string
-	DriverName          string
-	EnableBlobMockMount bool
+	NodeID               string
+	DriverName           string
+	EnableAmlfsMockMount bool
 }
 
 // Driver implements all interfaces of CSI drivers
@@ -65,10 +63,10 @@ type Driver struct {
 	csicommon.DefaultIdentityServer
 	csicommon.DefaultControllerServer
 	csicommon.DefaultNodeServer
-	// enableBlobMockMount is only for testing, DO NOT set as true in non-testing scenario
-	enableBlobMockMount bool
-	mounter             *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
-	volLockMap          *util.LockMap
+	// enableAmlfsMockMount is only for testing, DO NOT set as true in non-testing scenario
+	enableAmlfsMockMount bool
+	mounter              *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
+	volLockMap           *util.LockMap
 	// A map storing all volumes with ongoing operations so that additional operations
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks *volumeLocks
@@ -78,9 +76,9 @@ type Driver struct {
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(options *DriverOptions) *Driver {
 	d := Driver{
-		volLockMap:          util.NewLockMap(),
-		volumeLocks:         newVolumeLocks(),
-		enableBlobMockMount: options.EnableBlobMockMount,
+		volLockMap:           util.NewLockMap(),
+		volumeLocks:          newVolumeLocks(),
+		enableAmlfsMockMount: options.EnableAmlfsMockMount,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -94,7 +92,7 @@ func NewDriver(options *DriverOptions) *Driver {
 }
 
 // Run driver initialization
-func (d *Driver) Run(endpoint string, testBool bool) {
+func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
 	versionMeta, err := GetVersionYAML(d.Name)
 	if err != nil {
 		klog.Fatalf("%v", err)

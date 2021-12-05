@@ -77,7 +77,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameter fs-name must be provided")
 	}
 
-	mc := metrics.NewMetricContext(blobCSIDriverName, "controller_create_volume", "<unknown>", "<unknown>", d.Name)
+	mc := metrics.NewMetricContext(amlfsCSIDriverName, "controller_create_volume", "<unknown>", "<unknown>", d.Name)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
@@ -118,7 +118,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	}
 	defer d.volumeLocks.Release(volumeID)
 
-	mc := metrics.NewMetricContext(blobCSIDriverName, "controller_delete_volume", "<unknown>", "<unknown>", d.Name)
+	mc := metrics.NewMetricContext(amlfsCSIDriverName, "controller_delete_volume", "<unknown>", "<unknown>", d.Name)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
