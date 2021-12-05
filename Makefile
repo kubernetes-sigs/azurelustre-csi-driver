@@ -97,8 +97,8 @@ amlfs:
 
 .PHONY: container
 container: amlfs
-	# docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/amlfsplugin/Dockerfile .
-	docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
+	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/amlfsplugin/Dockerfile .
+	# docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
 
 .PHONY: container-linux
 container-linux:

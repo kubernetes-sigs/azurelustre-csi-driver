@@ -83,12 +83,15 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
+	// TODO_JUSJIN: get a better unique volumeID
 	volumeID := fmt.Sprintf(volumeIDTemplate, amlFSName, mdsIPAddress, strconv.Itoa(defaultSize))
 
+	// BUG_JUSJIN: fix wrong params
 	klog.V(2).Infof("begin to create volume(%s) on mds-ip-address(%s) fs-name(%s) size(%d)", mdsIPAddress, amlFSName, defaultSize)
 
 	// TODO_JUSJIN: implement CreateVolume logic for real dynamic provisioning here
 
+	// BUG_JUSJIN: fix wrong params
 	klog.V(2).Infof("created volume(%s) on mds-ip-address(%s) fs-name(%s) size(%d) successfully", mdsIPAddress, amlFSName, defaultSize)
 
 	isOperationSucceeded = true

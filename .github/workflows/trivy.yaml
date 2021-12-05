@@ -2,7 +2,7 @@ name: Trivy vulnerability scanner
 on:
   push:
     branches:
-      - main
+      - changetomain
   pull_request:
 jobs:
   build:
