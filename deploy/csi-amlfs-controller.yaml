@@ -65,7 +65,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: amlfs
-          image: jusjin.azurecr.io/amlfs-csi:v0.0.1
+          image: jusjin.azurecr.io/amlfs-csi:v0.1.0
           imagePullPolicy: Always   # TODO_JUSJIN: for testing purpose
           args:
             - "--v=5"

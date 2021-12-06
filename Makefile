@@ -17,7 +17,7 @@ GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= jusjin.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 IMAGE_NAME ?= amlfs-csi
-IMAGE_VERSION ?= v0.0.1
+IMAGE_VERSION ?= v0.1.0
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
 ifdef CI
