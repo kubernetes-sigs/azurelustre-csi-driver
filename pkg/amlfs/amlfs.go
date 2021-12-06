@@ -33,17 +33,17 @@ const (
 	// DefaultDriverName holds the name of the csi-driver
 	DefaultDriverName  = "amlfs.csi.azure.com"
 	amlfsCSIDriverName = "amlfs_csi_driver"
-	separator          = "#"
-	volumeIDTemplate   = "%s#%s#%s"
-	ephemeralField     = "csi.storage.k8s.io/ephemeral"
-	podNamespaceField  = "csi.storage.k8s.io/pod.namespace"
-	mountOptionsField  = "mountoptions"
-	falseValue         = "false"
-	trueValue          = "true"
+	//separator          = "#"
+	volumeIDTemplate = "%s#%s#%s"
+	//ephemeralField     = "csi.storage.k8s.io/ephemeral"
+	//podNamespaceField  = "csi.storage.k8s.io/pod.namespace"
+	//mountOptionsField  = "mountoptions"
+	//falseValue         = "false"
+	//trueValue          = "true"
 
-	pvcNameKey      = "csi.storage.k8s.io/pvc/name"
-	pvcNamespaceKey = "csi.storage.k8s.io/pvc/namespace"
-	pvNameKey       = "csi.storage.k8s.io/pv/name"
+	//pvcNameKey      = "csi.storage.k8s.io/pvc/name"
+	//pvcNamespaceKey = "csi.storage.k8s.io/pvc/namespace"
+	//pvNameKey       = "csi.storage.k8s.io/pv/name"
 )
 
 var (
