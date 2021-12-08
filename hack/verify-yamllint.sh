@@ -19,15 +19,15 @@ if [[ -z "$(command -v yamllint)" ]]; then
 fi
 
 LOG=/tmp/yamllint.log
-helmPath=charts/latest/blob-csi-driver/templates
+#helmPath=charts/latest/amlfs-csi-driver/templates
 
 echo "checking yaml files num ..."
 deployDirNum=`find ./deploy/ -maxdepth 1 -type f -name '*.yaml' ! -name 'kustomization.yaml' | wc -l`
-helmDirNum=`ls $helmPath/*.yaml | grep -v serviceaccount | wc -l`
-if [[ "${deployDirNum}" != "${helmDirNum}" ]]; then
-  echo "yaml file num($deployDirNum) under deploy/ not equal to num($helmDirNum) under $helmPath"
-  exit 1
-fi
+# helmDirNum=`ls $helmPath/*.yaml | grep -v serviceaccount | wc -l`
+# if [[ "${deployDirNum}" != "${helmDirNum}" ]]; then
+#   echo "yaml file num($deployDirNum) under deploy/ not equal to num($helmDirNum) under $helmPath"
+#   exit 1
+# fi
 
 for path in "deploy/*.yaml" "deploy/example/*.yaml"  "deploy/example/metrics/*.yaml"
 do
@@ -42,13 +42,13 @@ do
     fi
 done
 
-echo "checking yamllint under path: $helmPath ..."
-yamllint -f parsable $helmPath/*.yaml | grep -v "line too long" | grep -v "too many spaces inside braces" | grep -v "missing document start" | grep -v "syntax error" > $LOG
-linecount=`cat $LOG | wc -l`
-if [ $linecount -gt 0 ]; then
-	echo "yaml files under $helmPath/ are not linted, failed with: "
-	cat $LOG
-	exit 1
-fi
+# echo "checking yamllint under path: $helmPath ..."
+# yamllint -f parsable $helmPath/*.yaml | grep -v "line too long" | grep -v "too many spaces inside braces" | grep -v "missing document start" | grep -v "syntax error" > $LOG
+# linecount=`cat $LOG | wc -l`
+# if [ $linecount -gt 0 ]; then
+# 	echo "yaml files under $helmPath/ are not linted, failed with: "
+# 	cat $LOG
+# 	exit 1
+# fi
 
 echo "Congratulations! All Yaml files have been linted."

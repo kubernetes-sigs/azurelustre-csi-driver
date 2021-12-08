@@ -7,7 +7,7 @@
             "orchestratorRelease": "1.16",
             "kubernetesConfig": {
                 "useManagedIdentity": true,
-                "userAssignedID": "blobfuse-csi-driver-e2e-test-id",
+                "userAssignedID": "amlfs-csi-driver-e2e-test-id",
                 "useCloudControllerManager": true,
                 "networkPolicy": "none",
                 "addons": [

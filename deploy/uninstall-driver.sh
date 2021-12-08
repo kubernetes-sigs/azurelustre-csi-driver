@@ -16,12 +16,12 @@
 
 set -euo pipefail
 
-ver="master"
+ver="main"
 if [[ "$#" -gt 0 ]]; then
   ver="$1"
 fi
 
-repo="https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/$ver/deploy"
+repo="https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/$ver/deploy"
 if [[ "$#" -gt 1 ]]; then
   if [[ "$2" == *"local"* ]]; then
     echo "use local deploy"
@@ -33,17 +33,10 @@ if [ $ver != "master" ]; then
   repo="$repo/$ver"
 fi
 
-if [[ "$#" -gt 1 ]]; then
-  if [[ "$2" == *"blobfuse-proxy"* ]]; then
-    echo "remove blobfuse-proxy deployment ..."
-    kubectl delete -f $repo/blobfuse-proxy.yaml
-  fi
-fi
-
-echo "Uninstalling Azure Blob Storage CSI driver, version: $ver ..."
-kubectl delete -f $repo/csi-blob-controller.yaml --ignore-not-found
-kubectl delete -f $repo/csi-blob-node.yaml --ignore-not-found
-kubectl delete -f $repo/csi-blob-driver.yaml --ignore-not-found
-kubectl delete -f $repo/rbac-csi-blob-controller.yaml --ignore-not-found
-kubectl delete -f $repo/rbac-csi-blob-node.yaml --ignore-not-found
-echo 'Uninstalled Azure Blob Storage CSI driver successfully.'
+echo "Uninstalling Azure Managed Lustre CSI driver, version: $ver ..."
+kubectl delete -f $repo/csi-amlfs-controller.yaml --ignore-not-found
+kubectl delete -f $repo/csi-amlfs-node.yaml --ignore-not-found
+kubectl delete -f $repo/csi-amlfs-driver.yaml --ignore-not-found
+kubectl delete -f $repo/rbac-csi-amlfs-controller.yaml --ignore-not-found
+kubectl delete -f $repo/rbac-csi-amlfs-node.yaml --ignore-not-found
+echo 'Uninstalled Azure Managed Lustre CSI driver successfully.'

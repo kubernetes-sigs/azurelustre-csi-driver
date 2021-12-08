@@ -30,25 +30,8 @@ function install_csi_sanity_bin {
   popd
 }
 
-function install_blobfuse_bin {
-  echo 'Installing blobfuse...'
-  apt-get update && apt install ca-certificates pkg-config libfuse-dev cmake libcurl4-gnutls-dev libgnutls28-dev uuid-dev libgcrypt20-dev wget -y
-  wget https://packages.microsoft.com/config/ubuntu/16.04/packages-microsoft-prod.deb
-  dpkg -i packages-microsoft-prod.deb
-  apt-get update && apt install blobfuse fuse -y
-  rm -f packages-microsoft-prod.deb
-}
-
-# copy blobfuse binary
-if [[ "$cloud" == "AzureStackCloud" ]]; then
-  install_blobfuse_bin
-else
-  mkdir -p /usr/blob
-  cp test/artifacts/blobfuse /usr/bin/blobfuse
-fi
-
-apt update && apt install libfuse2 -y
 if [[ -z "$(command -v csi-sanity)" ]]; then
 	install_csi_sanity_bin
 fi
+
 test/sanity/run-test.sh "$nodeid"

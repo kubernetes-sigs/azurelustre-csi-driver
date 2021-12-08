@@ -16,12 +16,12 @@
 
 set -euo pipefail
 
-ver="master"
+ver="main"
 if [[ "$#" -gt 0 ]]; then
   ver="$1"
 fi
 
-repo="https://raw.githubusercontent.com/kubernetes-sigs/blob-csi-driver/$ver/deploy"
+repo="https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/$ver/deploy"
 if [[ "$#" -gt 1 ]]; then
   if [[ "$2" == *"local"* ]]; then
     echo "use local deploy"
@@ -33,25 +33,11 @@ if [ $ver != "master" ]; then
   repo="$repo/$ver"
 fi
 
-echo "Installing Azure Blob Storage CSI driver, version: $ver ..."
-kubectl apply -f $repo/rbac-csi-blob-controller.yaml
-kubectl apply -f $repo/rbac-csi-blob-node.yaml
-kubectl apply -f $repo/csi-blob-driver.yaml
-kubectl apply -f $repo/csi-blob-controller.yaml
+echo "Installing Azure Managed Lustre CSI driver, version: $ver ..."
+kubectl apply -f $repo/rbac-csi-amlfs-controller.yaml
+kubectl apply -f $repo/rbac-csi-amlfs-node.yaml
+kubectl apply -f $repo/csi-amlfs-driver.yaml
+kubectl apply -f $repo/csi-amlfs-controller.yaml
+kubectl apply -f $repo/csi-amlfs-node.yaml
 
-if [[ "$#" -gt 1 ]]; then
-  if [[ "$2" == *"blobfuse-proxy"* ]]; then
-    echo "set enable-blobfuse-proxy as true ..."
-    kubectl apply -f $repo/blobfuse-proxy.yaml
-    if [[ "$2" == *"local"* ]]; then
-      cat $repo/csi-blob-node.yaml | sed 's/enable-blobfuse-proxy=false/enable-blobfuse-proxy=true/g' | kubectl apply -f -
-    else
-      curl -s $repo/csi-blob-node.yaml | sed 's/enable-blobfuse-proxy=false/enable-blobfuse-proxy=true/g' | kubectl apply -f -
-    fi
-  else
-    kubectl apply -f $repo/csi-blob-node.yaml
-  fi
-else
-  kubectl apply -f $repo/csi-blob-node.yaml
-fi
-echo 'Azure Blob Storage CSI driver installed successfully.'
+echo 'Azure Managed Lustre CSI driver installed successfully.'

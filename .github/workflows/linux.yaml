@@ -1,10 +1,10 @@
 name: Linux Tests
+
 on:
     pull_request: {}
     push: {}
 
 jobs:
-
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -12,7 +12,7 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.16
+        go-version: ^1.17
       id: go
 
     - name: Check out code into the Go module directory
@@ -21,10 +21,7 @@ jobs:
     - name: Run unit test
       run: |
         export PATH=$PATH:$HOME/.local/bin
-        wget https://packages.microsoft.com/config/ubuntu/18.04/packages-microsoft-prod.deb
-        sudo dpkg -i packages-microsoft-prod.deb
         sudo apt-get update
-        sudo apt-get install blobfuse
         make verify
 
     - name: Run build test
@@ -36,12 +33,6 @@ jobs:
       run: |
         export PATH=$PATH:$HOME/.local/bin
         make container
-
-    - name: Make blobfuse-proxy test
-      run: |
-        export PATH=$PATH:$HOME/.local/bin
-        make blobfuse-proxy
-        sudo dpkg -i _output/blobfuse-proxy.deb
 
     - name: Get code coverage
       env:

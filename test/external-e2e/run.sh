@@ -36,17 +36,16 @@ setup_e2e_binaries() {
     fi
 
      # test on alternative driver name
-    sed -i "s/blob.csi.azure.com/$DRIVER.csi.azure.com/g" deploy/example/storageclass-blobfuse.yaml
-    sed -i "s/blob.csi.azure.com/$DRIVER.csi.azure.com/g" deploy/example/storageclass-blob-nfs.yaml
+    sed -i "s/amlfs.csi.azure.com/$DRIVER.csi.azure.com/g" deploy/example/storageclass-amlfs.yaml
     make e2e-bootstrap
-    sed -i "s/csi-blob-controller/csi-$DRIVER-controller/g" deploy/example/metrics/csi-blob-controller-svc.yaml
+    sed -i "s/csi-amlfs-controller/csi-$DRIVER-controller/g" deploy/example/metrics/csi-amlfs-controller-svc.yaml
     make create-metrics-svc
 }
 
 print_logs() {
     bash ./hack/verify-examples.sh
     echo "print out driver logs ..."
-    bash ./test/utils/blob_log.sh $DRIVER
+    bash ./test/utils/amlfs_log.sh $DRIVER
 }
 
 install_ginkgo
@@ -55,20 +54,11 @@ trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
-if [ ! -z ${EXTERNAL_E2E_TEST_BLOBFUSE} ]; then
-    echo "begin to run blobfuse tests ...."
-    cp deploy/example/storageclass-blobfuse.yaml /tmp/csi/storageclass.yaml
-    ginkgo -p --progress --v -focus="External.Storage.*$DRIVER.csi.azure.com" \
-        -skip='\[Disruptive\]|\[Slow\]|allow exec of files on the volume|unmount after the subpath directory is deleted' kubernetes/test/bin/e2e.test  -- \
-        -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-blobfuse.yaml \
-        --kubeconfig=$KUBECONFIG
-fi
-
-if [ ! -z ${EXTERNAL_E2E_TEST_NFS} ]; then
-    echo "begin to run NFSv3 tests ...."
-    cp deploy/example/storageclass-blob-nfs.yaml /tmp/csi/storageclass.yaml
+if [ ! -z ${EXTERNAL_E2E_TEST_AMLFS} ]; then
+    echo "begin to run amlfs tests ...."
+    cp deploy/example/storageclass-amlfs.yaml /tmp/csi/storageclass.yaml
     ginkgo -p --progress --v -focus="External.Storage.*$DRIVER.csi.azure.com" \
         -skip='\[Disruptive\]|\[Slow\]|pod created with an initial fsgroup, volume contents ownership changed in first pod, new pod with same fsgroup skips ownership changes to the volume contents' kubernetes/test/bin/e2e.test  -- \
-        -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-nfs.yaml \
+        -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
         --kubeconfig=$KUBECONFIG
 fi

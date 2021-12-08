@@ -17,8 +17,8 @@
 set -eo pipefail
 
 function cleanup {
-  echo 'pkill -f blobplugin'
-  pkill -f blobplugin
+  echo 'pkill -f amlfsplugin'
+  pkill -f amlfsplugin
   echo 'Deleting CSI sanity test binary'
   rm -rf csi-test
 }
@@ -32,8 +32,8 @@ if [[ "$#" -gt 0 ]] && [[ -n "$1" ]]; then
   nodeid="$1"
 fi
 
-_output/blobplugin --endpoint "$controllerendpoint" -v=5 &
-_output/blobplugin --endpoint "$nodeendpoint" --nodeid "$nodeid" --enable-blob-mock-mount -v=5 &
+_output/amlfsplugin --endpoint "$controllerendpoint" -v=5 &
+_output/amlfsplugin --endpoint "$nodeendpoint" --nodeid "$nodeid" --enable-amlfs-mock-mount -v=5 &
 
 echo "Begin to run sanity test..."
 readonly CSI_SANITY_BIN='csi-sanity'

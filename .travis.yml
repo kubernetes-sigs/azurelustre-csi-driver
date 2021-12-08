@@ -1,9 +1,9 @@
 language: go
-go_import_path: sigs.k8s.io/blob-csi-driver
+go_import_path: sigs.k8s.io/amlfs-csi-driver
 dist: bionic
 
 go:
-  - "1.13.9"
+  - "1.17.3"
 
 before_install:
   - GO111MODULE=off go get github.com/mattn/goveralls

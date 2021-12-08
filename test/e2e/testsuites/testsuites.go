@@ -22,7 +22,7 @@ import (
 	"math/rand"
 	"time"
 
-	"sigs.k8s.io/blob-csi-driver/pkg/blob"
+	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
 
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -278,9 +278,9 @@ func (t *TestPersistentVolumeClaim) DeleteBoundPersistentVolume() {
 	framework.ExpectNoError(err)
 }
 
-func (t *TestPersistentVolumeClaim) DeleteBackingVolume(azfile *blob.Driver) {
+func (t *TestPersistentVolumeClaim) DeleteBackingVolume(azfile *amlfs.Driver) {
 	volumeID := t.persistentVolume.Spec.CSI.VolumeHandle
-	ginkgo.By(fmt.Sprintf("deleting blob volume %q", volumeID))
+	ginkgo.By(fmt.Sprintf("deleting amlfs volume %q", volumeID))
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: volumeID,
 	}
@@ -298,7 +298,7 @@ type TestDeployment struct {
 }
 
 func NewTestDeployment(c clientset.Interface, ns *v1.Namespace, command string, pvc *v1.PersistentVolumeClaim, volumeName, mountPath string, readOnly bool) *TestDeployment {
-	generateName := "blob-volume-tester-"
+	generateName := "amlfs-volume-tester-"
 	selectorValue := fmt.Sprintf("%s%d", generateName, rand.Int())
 	replicas := int32(1)
 	return &TestDeployment{
@@ -425,7 +425,7 @@ func NewTestPod(c clientset.Interface, ns *v1.Namespace, command string) *TestPo
 		namespace: ns,
 		pod: &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "blob-volume-tester-",
+				GenerateName: "amlfs-volume-tester-",
 			},
 			Spec: v1.PodSpec{
 				NodeSelector: map[string]string{"kubernetes.io/os": "linux"},
@@ -540,7 +540,7 @@ func (t *TestPod) SetupInlineVolume(name, mountPath, secretName, containerName s
 		Name: name,
 		VolumeSource: v1.VolumeSource{
 			CSI: &v1.CSIVolumeSource{
-				Driver: blob.DefaultDriverName,
+				Driver: amlfs.DefaultDriverName,
 				VolumeAttributes: map[string]string{
 					"secretName":      secretName,
 					"secretNamespace": "default",

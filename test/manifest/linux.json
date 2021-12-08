@@ -12,11 +12,7 @@
                 "containerRuntime": "containerd",
                 "addons": [
                     {
-                        "name": "azuredisk-csi-driver",
-                        "enabled": false
-                    },
-                    {
-                        "name": "azurefile-csi-driver",
+                        "name": "amlfs-csi-driver",
                         "enabled": false
                     },
                     {
