@@ -95,6 +95,14 @@ e2e-teardown:
 amlfs:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
 
+.PHONY: amlfs-windows
+amlfs-windows:
+	CGO_ENABLED=0 GOOS=windows go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin.exe ./pkg/amlfsplugin
+
+.PHONT: amlfs-darwin
+amlfs-darwin:
+	CGO_ENABLED=0 GOOS=darwin go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
+
 .PHONY: container
 container: amlfs
 	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/amlfsplugin/Dockerfile .
