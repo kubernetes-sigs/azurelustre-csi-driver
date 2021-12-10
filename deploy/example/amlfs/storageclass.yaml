@@ -4,6 +4,7 @@ metadata:
   name: sc.amlfs.csi.azure.com
 provisioner: amlfs.csi.azure.com
 parameters:
-  mds-ip-address: "172.18.8.7"
+  mds-ip-address: "172.18.8.7"      # first cluster
+  # mds-ip-address: "172.18.8.12"     # second cluster
   fs-name: "lustrefs"
 ## contact rp to create lustre cluster from aks cluster (dynamic provisioning csi)
