@@ -7,7 +7,6 @@ metadata:
     ml.azure.com/pvc: "true"
   annotations:
     ml.azure.com/mountpath: "/amlfs-ml"
-    #volume.beta.kubernetes.io/storage-provisioner: "msft.laaso.lustre.com" ### 1.9, NOT csi provisioner 1.6 ###
 spec:
   accessModes:
     - ReadWriteMany
@@ -16,6 +15,3 @@ spec:
   resources:
     requests:
       storage: 100Mi
-  #volumeName: joatzing-d59db947-5045-4e4b-8f60-d63461dd550d
-  # The line below for a statically provisioned PV.
-  #volumeName: laaso-pv
