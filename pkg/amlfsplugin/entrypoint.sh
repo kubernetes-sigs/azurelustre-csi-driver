@@ -4,7 +4,14 @@
 #
 echo $@
 apt-get update
-apt-get install -y libreadline7 kmod fdutils "$PKG1" "$PKG2"
+
+if [[ "$(uname -r)" = "5.4.0-1059-azure" ]]; then
+    echo "Installing for 1059"
+    apt-get install -y libreadline7 kmod fdutils "$PKG1" "$PKG2"
+else
+    echo "Installing for 1063"
+    apt-get install -y libreadline7 kmod fdutils "$PKG1_1063" "$PKG2_1063"
+fi
 
 modprobe -v ksocklnd
 modprobe -v lnet

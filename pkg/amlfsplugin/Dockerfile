@@ -17,16 +17,25 @@ FROM ubuntu:18.04 as builder
 ARG BASE_FOLDER="/go/src/github.com/kubernetes-sigs/amlfsplugin"
 ARG CSI_NAME="amlfsplugin"
 ARG EXEC_SCRIPT="entrypoint.sh"
+
 ARG CLIENT_UTIL_PKG_NAME="lustre-client-utils_2.14.0-1_amd64.deb"
 ARG CLIENT_MODS_PKG_NAME="lustre-client-modules-5.4.0-1059-azure_2.14.0-1_amd64.deb"
 
+ARG CLIENT_UTIL_PKG_NAME_1063="lustre-client-utils_2.14.0-19-g3817b67-1_amd64.deb"
+ARG CLIENT_MODS_PKG_NAME_1063="lustre-client-modules-5.4.0-1063-azure_2.14.0-19-g3817b67-1_amd64.deb"
+
 ADD "./_output/${CSI_NAME}" "${BASE_FOLDER}/bin/${CSI_NAME}"
 ADD "./pkg/amlfsplugin/${EXEC_SCRIPT}" "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
+
 ADD "./pkg/debs/${CLIENT_UTIL_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME}"
 ADD "./pkg/debs/${CLIENT_MODS_PKG_NAME}" "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME}"
+ADD "./pkg/debs/${CLIENT_UTIL_PKG_NAME_1063}" "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME_1063}"
+ADD "./pkg/debs/${CLIENT_MODS_PKG_NAME_1063}" "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME_1063}"
 
 ENV PKG1 "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME}"
 ENV PKG2 "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME}"
+ENV PKG1_1063 "${BASE_FOLDER}/debs/${CLIENT_UTIL_PKG_NAME_1063}"
+ENV PKG2_1063 "${BASE_FOLDER}/debs/${CLIENT_MODS_PKG_NAME_1063}"
 
 RUN chmod +x "${BASE_FOLDER}/bin/${EXEC_SCRIPT}"
 
