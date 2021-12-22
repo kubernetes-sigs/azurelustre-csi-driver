@@ -24,6 +24,20 @@ vmDnsName=${vmName}.${location}.cloudapp.azure.com
 #   --image $imageUrn                                   \
 #   --size standard_d32s_v3							  	\
 
+
+--public-ip-address ""
+
+az vm extension set -n VMAccessForLinux --publisher Microsoft.OSTCExtensions --version 1.4 \
+    --vm-name $vmName --resource-group $rg \
+     --protected-settings "{\"username\":\"$vmUsername\", \"ssh_key\":\"$(cat ~/.ssh/id_rsa.pub)\"}"
+
+az vm run-command invoke -g $rg -n $vmName --command-id RunShellScript --scripts "uname -r"
+
+### NOTE: \$ escape in the cmd below
+az vm run-command invoke -g $rg -n $vmName --command-id RunShellScript --scripts "sudo su - && apt-get update && apt install -y linux-image-\$(uname -r) libtool m4 autotools-dev automake libelf-dev build-essential debhelper devscripts fakeroot kernel-wedge libudev-dev libpci-dev texinfo xmlto libelf-dev python-dev liblzma-dev libaudit-dev dh-systemd libyaml-dev module-assistant libreadline-dev dpatch libsnmp-dev quilt python3.7 python3.7-dev python3.7-distutils pkg-config libselinux1-dev mpi-default-dev libiberty-dev libpython3.7-dev libpython3-dev swig flex bison && git clone git://git.whamcloud.com/fs/lustre-release.git  && cd lustre-release  && git checkout 2.14.0  && git reset --hard && git clean -dfx && sh autogen.sh  && ./configure --disable-server  && make debs -j 28 &&"
+
+az vm run-command invoke -g $rg -n $vmName --command-id RunShellScript --scripts "sudo su - ; ls /var/lib/waagent/run-command/download/5/lustre-release/debs"
+
 # kernelVersion=$(ssh -o "StrictHostKeyChecking=no" ${vmUsername}@${vmDnsName} "uname -r")
 # echo $kernelVersion
 
