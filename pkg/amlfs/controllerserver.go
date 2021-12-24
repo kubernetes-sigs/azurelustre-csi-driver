@@ -19,6 +19,7 @@ package amlfs
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,19 +37,55 @@ const (
 	defaultSize               = 32000000000000
 )
 
+var (
+	controllerServiceCapabilities = []csi.ControllerServiceCapability_RPC_Type{
+		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+	}
+
+	volumeCapabilities = []csi.VolumeCapability_AccessMode_Mode{
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
+	}
+)
+
+func validVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
+	for _, capability := range capabilities {
+		if nil != capability.GetBlock() {
+			// this means block volume
+			return status.Error(codes.InvalidArgument,
+				"Doesn't support block volume.")
+		}
+		support := false
+		for _, supportedCapability := range volumeCapabilities {
+			if capability.GetAccessMode().GetMode() == supportedCapability {
+				support = true
+				break
+			}
+		}
+		if !support {
+			accessModes := []string{}
+			for _, capability := range capabilities {
+				accessModes = append(accessModes,
+					capability.AccessMode.GetMode().String())
+			}
+			return status.Error(codes.InvalidArgument,
+				"Volume doesn't support "+strings.Join(accessModes, ", "))
+		}
+	}
+	return nil
+}
+
 // CreateVolume provisions a volume
 func (d *Driver) CreateVolume(
 	ctx context.Context,
 	req *csi.CreateVolumeRequest,
 ) (*csi.CreateVolumeResponse, error) {
-	// TODO_CHYIN: confirm with Andy why we need to check the request type.
-	if err := d.ValidateControllerServiceRequest(
-		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-	); err != nil {
-		klog.Errorf("invalid create volume req: %v", req)
-		return nil, err
-	}
-
 	volumeCapabilities := req.GetVolumeCapabilities()
 	volName := req.GetName()
 	if len(volName) == 0 {
@@ -74,14 +111,9 @@ func (d *Driver) CreateVolume(
 		)
 	}
 
-	// TODO_CHYIN: need to check with Joe which AccessMode the Lustre supports.
-	for _, capability := range volumeCapabilities {
-		if nil != capability.GetBlock() {
-			return nil, status.Error(
-				codes.InvalidArgument,
-				"Create Volume doesn't support block volume",
-			)
-		}
+	capabilityError := validVolumeCapabilities(volumeCapabilities)
+	if nil != capabilityError {
+		return nil, capabilityError
 	}
 
 	if acquired := d.volumeLocks.TryAcquire(volName); !acquired {
@@ -228,16 +260,11 @@ func (d *Driver) ValidateVolumeCapabilities(
 	confirmed := &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
 		VolumeCapabilities: capabilities,
 	}
-	for _, capability := range capabilities {
-		if nil == capability.GetMount() {
-			// this means a block volume.
-			confirmed = nil
-			break
-		}
+	capabilityError := validVolumeCapabilities(capabilities)
+	if nil != capabilityError {
+		confirmed = nil
 	}
 
-	// TODO_CHYIN: need to check with Joe which AccessMode the Lustre supports.
-	// amlfs driver supports all AccessModes, no need to check capabilities here
 	return &csi.ValidateVolumeCapabilitiesResponse{
 		Confirmed: confirmed,
 		Message:   "",
@@ -249,7 +276,17 @@ func (d *Driver) ControllerGetCapabilities(
 	ctx context.Context,
 	req *csi.ControllerGetCapabilitiesRequest,
 ) (*csi.ControllerGetCapabilitiesResponse, error) {
+	var capabilities []*csi.ControllerServiceCapability
+	for _, capability := range controllerServiceCapabilities {
+		capabilities = append(capabilities, &csi.ControllerServiceCapability{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: capability,
+				},
+			},
+		})
+	}
 	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: d.Cap,
+		Capabilities: capabilities,
 	}, nil
 }
