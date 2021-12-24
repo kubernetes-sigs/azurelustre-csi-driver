@@ -56,6 +56,32 @@ func TestControllerGetCapabilities(t *testing.T) {
 	assert.Equal(t, capabilitiesGotted, capabilitiesWanted)
 }
 
+func TestCreateVolume_Correct(t *testing.T) {
+	d := NewFakeDriver()
+	req := &csi.CreateVolumeRequest{
+		Name: "test_volume",
+		VolumeCapabilities: []*csi.VolumeCapability{
+			{
+				AccessType: &csi.VolumeCapability_Mount{},
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
+				},
+			},
+		},
+		Parameters: map[string]string{
+			"fs-name":        "tfs",
+			"mds-ip-address": "127.0.0.1",
+		},
+	}
+	rep, err := d.CreateVolume(context.Background(), req)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, rep.GetVolume())
+	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
+	assert.NotZero(t, rep.GetVolume().GetCapacityBytes())
+	assert.NotEmpty(t, rep.GetVolume().GetVolumeContext())
+
+}
+
 func TestCreateVolume(t *testing.T) {
 	controllerservicecapabilityRPC := &csi.ControllerServiceCapability_RPC{
 		Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,

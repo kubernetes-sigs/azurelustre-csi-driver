@@ -110,6 +110,12 @@ func (d *Driver) CreateVolume(
 			"CreateVolume doesn't support secrets",
 		)
 	}
+	if nil != req.GetAccessibilityRequirements() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support accessibility_requirements",
+		)
+	}
 
 	capabilityError := validVolumeCapabilities(volumeCapabilities)
 	if nil != capabilityError {
