@@ -19,6 +19,7 @@ package amlfs
 import (
 	"context"
 	"reflect"
+	"sort"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -32,17 +33,27 @@ import (
 
 func TestControllerGetCapabilities(t *testing.T) {
 	d := NewFakeDriver()
-	controlCap := []*csi.ControllerServiceCapability{
-		{
-			Type: &csi.ControllerServiceCapability_Rpc{},
-		},
-	}
-	d.Cap = controlCap
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := d.ControllerGetCapabilities(context.Background(), &req)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
-	assert.Equal(t, resp.Capabilities, controlCap)
+	var capabilitiesGotted []csi.ControllerServiceCapability_RPC_Type
+	for _, capabilityGotted := range resp.GetCapabilities() {
+		capabilitiesGotted = append(
+			capabilitiesGotted,
+			capabilityGotted.GetRpc().Type,
+		)
+	}
+	sort.Slice(capabilitiesGotted,
+		func(i, j int) bool {
+			return capabilitiesGotted[i] < capabilitiesGotted[j]
+		})
+	capabilitiesWanted := controllerServiceCapabilities
+	sort.Slice(capabilitiesWanted,
+		func(i, j int) bool {
+			return capabilitiesWanted[i] < capabilitiesWanted[j]
+		})
+	assert.Equal(t, capabilitiesGotted, capabilitiesWanted)
 }
 
 func TestCreateVolume(t *testing.T) {
