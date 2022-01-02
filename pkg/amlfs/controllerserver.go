@@ -72,7 +72,7 @@ func validVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 			accessModes := []string{}
 			for _, capability := range capabilities {
 				accessModes = append(accessModes,
-					capability.AccessMode.GetMode().String())
+					capability.GetAccessMode().GetMode().String())
 			}
 			return status.Error(codes.InvalidArgument,
 				"Volume doesn't support "+strings.Join(accessModes, ", "))
@@ -92,7 +92,7 @@ func (d *Driver) CreateVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"CreateVolume Name must be provided")
 	}
-	if nil == volumeCapabilities || len(volumeCapabilities) == 0 {
+	if len(volumeCapabilities) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Volume capabilities must be provided",
@@ -139,16 +139,16 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameters must be provided")
 	}
 
-	mdsIPAddress, found := parameters[volumeContextMDSIPAddress]
-	if !found {
+	mdsIPAddress := parameters[volumeContextMDSIPAddress]
+	if len(mdsIPAddress) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter mds-ip-address must be provided",
 		)
 	}
 
-	amlFSName, found := parameters[volumeContextFSName]
-	if !found {
+	amlFSName := parameters[volumeContextFSName]
+	if len(amlFSName) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter fs-name must be provided",
@@ -206,11 +206,11 @@ func (d *Driver) DeleteVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID missing in request")
 	}
-
-	if err := d.ValidateControllerServiceRequest(
-		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-	); err != nil {
-		return nil, fmt.Errorf("invalid delete volume req: %v", req)
+	if nil != req.GetSecrets() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support secrets",
+		)
 	}
 
 	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
@@ -258,7 +258,7 @@ func (d *Driver) ValidateVolumeCapabilities(
 			"Volume ID missing in request")
 	}
 	capabilities := req.GetVolumeCapabilities()
-	if nil == capabilities {
+	if len(capabilities) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume capabilities missing in request")
 	}
