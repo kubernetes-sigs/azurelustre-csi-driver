@@ -165,7 +165,7 @@ func (d *Driver) CreateVolume(
 				fmt.Sprintf("%s = %s", k, v),
 			)
 		}
-		// simpley fmt.Sprintf("%v", parameters) will get map[key:value...]
+		// simply use fmt.Sprintf("%v", parameters) will get map[key:value...]
 		// it might be strange to the end user and exposes some implementation
 		// details.
 		return nil, status.Error(
