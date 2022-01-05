@@ -69,13 +69,9 @@ func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 			}
 		}
 		if !support {
-			accessModes := []string{}
-			for _, capability := range capabilities {
-				accessModes = append(accessModes,
-					capability.GetAccessMode().GetMode().String())
-			}
 			return status.Error(codes.InvalidArgument,
-				"Volume doesn't support "+strings.Join(accessModes, ", "))
+				"Volume doesn't support "+
+					capability.GetAccessMode().GetMode().String())
 		}
 	}
 	return nil
