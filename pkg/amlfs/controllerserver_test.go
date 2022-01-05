@@ -59,7 +59,9 @@ func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
 		Name: "test_volume",
 		VolumeCapabilities: []*csi.VolumeCapability{
 			{
-				AccessType: &csi.VolumeCapability_Mount{},
+				AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{},
+				},
 				AccessMode: &csi.VolumeCapability_AccessMode{
 					Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
 				},

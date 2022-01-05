@@ -54,10 +54,10 @@ var (
 	}
 )
 
-func validVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
+func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 	for _, capability := range capabilities {
-		if nil != capability.GetBlock() {
-			// this means block volume
+		if nil == capability.GetMount() {
+			// Lustre just support mount type. i.e. block type is unsupported.
 			return status.Error(codes.InvalidArgument,
 				"Doesn't support block volume.")
 		}
@@ -117,7 +117,7 @@ func (d *Driver) CreateVolume(
 		)
 	}
 
-	capabilityError := validVolumeCapabilities(volumeCapabilities)
+	capabilityError := validateVolumeCapabilities(volumeCapabilities)
 	if nil != capabilityError {
 		return nil, capabilityError
 	}
@@ -139,6 +139,8 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameters must be provided")
 	}
 
+	// TODO_CHYIN: Need to change the parameters in real dynamic provision.
+	//             Now simply store the IP and name in the storageClass.
 	mdsIPAddress := parameters[volumeContextMDSIPAddress]
 	if len(mdsIPAddress) == 0 {
 		return nil, status.Error(
@@ -146,12 +148,30 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameter mds-ip-address must be provided",
 		)
 	}
-
 	amlFSName := parameters[volumeContextFSName]
 	if len(amlFSName) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter fs-name must be provided",
+		)
+	}
+	if len(parameters) > 2 {
+		delete(parameters, volumeContextFSName)
+		delete(parameters, volumeContextMDSIPAddress)
+		var errorParameters []string
+		for k, v := range parameters {
+			errorParameters = append(
+				errorParameters,
+				fmt.Sprintf("%s = %s", k, v),
+			)
+		}
+		// simpley fmt.Sprintf("%v", parameters) will get map[key:value...]
+		// it might be strange to the end user and exposes some implementation
+		// details.
+		return nil, status.Error(
+			codes.InvalidArgument,
+			fmt.Sprintf("Invalid parameter(s) {%s} in storage class",
+				strings.Join(errorParameters, ", ")),
 		)
 	}
 
@@ -167,24 +187,23 @@ func (d *Driver) CreateVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
-	// volumeID must be the same when volumeName is the same to satisfies the
+	// volumeID must be the same when volumeName is the same to satisfy the
 	// idempotent requirement.
-	// TODO_CHYIN: need to check if the volumeID is a exist volume with
-	//             different parameters. Like
+	// volumeID MUST have enough information for troubleshout.
+	// TODO_CHYIN: need to check if the volumeID is an existing volume with
+	//             different parameters.
 	//             need LaaSo's support
+	// TODO_CHYIN: need to change when RP is ready and we support real dynamic
+	//             provision.
 	volumeID := fmt.Sprintf(volumeIDTemplate, volName, amlFSName, mdsIPAddress)
 
 	klog.V(2).Infof(
-		"begin to create volume(%s) on mds-ip-address(%s) "+
-			"fs-name(%s) size(%d)", volName, mdsIPAddress,
-		amlFSName, defaultSize,
+		"begin to create volumeID(%s)", volumeID,
 	)
 
 	// TODO_JUSJIN: implement CreateVolume logic for real dynamic provisioning
 
-	klog.V(2).Infof("created volume(%s) on mds-ip-address(%s) "+
-		"fs-name(%s) size(%d) successfully",
-		volName, mdsIPAddress, amlFSName, defaultSize)
+	klog.V(2).Infof("created volumeID(%s) successfully", volumeID)
 
 	isOperationSucceeded = true
 
@@ -266,7 +285,7 @@ func (d *Driver) ValidateVolumeCapabilities(
 	confirmed := &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
 		VolumeCapabilities: capabilities,
 	}
-	capabilityError := validVolumeCapabilities(capabilities)
+	capabilityError := validateVolumeCapabilities(capabilities)
 	if nil != capabilityError {
 		confirmed = nil
 	}
