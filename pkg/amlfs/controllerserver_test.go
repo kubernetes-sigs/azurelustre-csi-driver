@@ -87,6 +87,26 @@ func TestCreateVolume_Success(t *testing.T) {
 
 }
 
+func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
+	capacityInputs := []int64{
+		0, laaSOBlockSize - 1, laaSOBlockSize, laaSOBlockSize + 1,
+	}
+	exceptedOutputs := []int64{
+		defaultSize, laaSOBlockSize, laaSOBlockSize, laaSOBlockSize * 2,
+	}
+
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	for idx, capacityInput := range capacityInputs {
+		req.CapacityRange = &csi.CapacityRange{
+			RequiredBytes: capacityInput,
+		}
+		rep, err := d.CreateVolume(context.Background(), req)
+		assert.NoError(t, err)
+		assert.Equal(t, exceptedOutputs[idx], rep.Volume.GetCapacityBytes())
+	}
+}
+
 func TestCreateVolume_Err_NoName(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()

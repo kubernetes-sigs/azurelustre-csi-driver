@@ -34,7 +34,8 @@ import (
 const (
 	volumeContextMDSIPAddress = "mds-ip-address"
 	volumeContextFSName       = "fs-name"
-	defaultSize               = 32000000000000
+	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
+	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
 
 var (
@@ -112,11 +113,18 @@ func (d *Driver) CreateVolume(
 			"CreateVolume doesn't support accessibility_requirements",
 		)
 	}
-
 	capabilityError := validateVolumeCapabilities(volumeCapabilities)
 	if nil != capabilityError {
 		return nil, capabilityError
 	}
+	capacityInBytes := req.GetCapacityRange().GetRequiredBytes()
+	if 0 == capacityInBytes {
+		capacityInBytes = defaultSize
+	}
+
+	// round up capacity to next laaSOBlockSize
+	capacityInBytes = ((capacityInBytes + laaSOBlockSize - 1) /
+		laaSOBlockSize) * laaSOBlockSize
 
 	if acquired := d.volumeLocks.TryAcquire(volName); !acquired {
 		return nil, status.Errorf(codes.Aborted,
@@ -206,7 +214,7 @@ func (d *Driver) CreateVolume(
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeID,
-			CapacityBytes: defaultSize,
+			CapacityBytes: capacityInBytes,
 			VolumeContext: parameters,
 		},
 	}, nil
