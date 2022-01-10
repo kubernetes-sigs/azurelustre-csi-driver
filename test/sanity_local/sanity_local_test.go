@@ -46,7 +46,7 @@ func TestSanity(t *testing.T) {
 	driverOptions := amlfs.DriverOptions{
 		NodeID:               "fakeNodeID",
 		DriverName:           "fake",
-		EnableAmlfsMockMount: false,
+		EnableAmlfsMockMount: true,
 	}
 	driver := amlfs.NewDriver(&driverOptions)
 	go func() {
