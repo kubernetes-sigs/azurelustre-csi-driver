@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	volumeContextMDSIPAddress = "mds-ip-address"
-	volumeContextFSName       = "fs-name"
+	VolumeContextMDSIPAddress = "mds-ip-address"
+	VolumeContextFSName       = "fs-name"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
@@ -145,14 +145,14 @@ func (d *Driver) CreateVolume(
 
 	// TODO_CHYIN: Need to change the parameters in real dynamic provision.
 	//             Now simply store the IP and name in the storageClass.
-	mdsIPAddress := parameters[volumeContextMDSIPAddress]
+	mdsIPAddress := parameters[VolumeContextMDSIPAddress]
 	if len(mdsIPAddress) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter mds-ip-address must be provided",
 		)
 	}
-	amlFSName := parameters[volumeContextFSName]
+	amlFSName := parameters[VolumeContextFSName]
 	if len(amlFSName) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
@@ -160,8 +160,8 @@ func (d *Driver) CreateVolume(
 		)
 	}
 	if len(parameters) > 2 {
-		delete(parameters, volumeContextFSName)
-		delete(parameters, volumeContextMDSIPAddress)
+		delete(parameters, VolumeContextFSName)
+		delete(parameters, VolumeContextMDSIPAddress)
 		var errorParameters []string
 		for k, v := range parameters {
 			errorParameters = append(

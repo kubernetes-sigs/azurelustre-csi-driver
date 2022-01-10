@@ -56,12 +56,12 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Error(codes.InvalidArgument, "Volume context must be provided")
 	}
 
-	mdsIPAddress, found := context[volumeContextMDSIPAddress]
+	mdsIPAddress, found := context[VolumeContextMDSIPAddress]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument, "Context mds-ip-address must be provided")
 	}
 
-	amlFSName, found := context[volumeContextFSName]
+	amlFSName, found := context[VolumeContextFSName]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument, "Context fs-name must be provided")
 	}

@@ -29,7 +29,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestControllerGetCapabilities_Success(t *testing.T) {
+const (
+	TestAB = "a"
+)
+
+// TODO_JUSJIN: update and add tests
+
+func TestControllerGetCapabilities(t *testing.T) {
 	d := NewFakeDriver()
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := d.ControllerGetCapabilities(context.Background(), &req)

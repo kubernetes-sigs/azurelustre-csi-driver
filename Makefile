@@ -61,6 +61,10 @@ unit-test:
 sanity-test: amlfs
 	go test -v -timeout=30m ./test/sanity
 
+.PHONY: sanity-test-local
+sanity-test-local: amlfs
+	go test -v -timeout=30m ./test/sanity_local -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should be idempotent|should return appropriate capabilities"
+
 .PHONY: integration-test
 integration-test: amlfs
 	go test -v -timeout=30m ./test/integration
