@@ -55,6 +55,7 @@ func TestSanity(t *testing.T) {
 	driver := amlfs.NewDriver(&driverOptions)
 	go func() {
 		driver.Run(socketEndpoint, "", true)
+		fmt.Println("!!!!!!server end.")
 	}()
 	sanity.Test(t, config)
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package amlfs
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -131,6 +132,7 @@ func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
 	s.Start(endpoint, d, d, d, testBool)
 	s.Wait()
+	fmt.Println("!!!!!!!end wait")
 }
 
 func IsCorruptedDir(dir string) bool {
