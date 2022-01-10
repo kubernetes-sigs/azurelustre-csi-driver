@@ -28,6 +28,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	TestAB = "a"
+)
+
 // TODO_JUSJIN: update and add tests
 
 func TestControllerGetCapabilities(t *testing.T) {

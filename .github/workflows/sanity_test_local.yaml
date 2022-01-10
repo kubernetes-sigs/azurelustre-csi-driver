@@ -1,0 +1,20 @@
+name: Sanity Test Local
+
+on:
+    pull_request: {}
+    push: {}
+
+jobs:
+  Run-Sanity-Test-Local:
+    name: Run Sanity Test Local
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.17
+      id: go
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+    - name: Run Sanity Test
+      run: make sanity-test-local

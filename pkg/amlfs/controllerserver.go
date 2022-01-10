@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	volumeContextMDSIPAddress = "mds-ip-address"
-	volumeContextFSName       = "fs-name"
+	VolumeContextMDSIPAddress = "mds-ip-address"
+	VolumeContextFSName       = "fs-name"
 	defaultSize               = 32000000000000
 )
 
@@ -67,12 +67,12 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameters must be provided")
 	}
 
-	mdsIPAddress, found := parameters[volumeContextMDSIPAddress]
+	mdsIPAddress, found := parameters[VolumeContextMDSIPAddress]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameter mds-ip-address must be provided")
 	}
 
-	amlFSName, found := parameters[volumeContextFSName]
+	amlFSName, found := parameters[VolumeContextFSName]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameter fs-name must be provided")
 	}
