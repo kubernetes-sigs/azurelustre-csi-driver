@@ -107,7 +107,7 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, c
 		go func() {
 			// make sure Serve() is called
 			s.wg.Wait()
-			time.Sleep(time.Millisecond * 1000)
+			time.Sleep(time.Millisecond * 1000 * 60)
 			s.server.GracefulStop()
 		}()
 	}
