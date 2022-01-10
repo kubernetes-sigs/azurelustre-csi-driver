@@ -17,9 +17,7 @@ limitations under the License.
 package sanity
 
 import (
-	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -37,11 +35,9 @@ func TestSanity(t *testing.T) {
 	stagingPath := filepath.Join(testDir, "stagingPath")
 	socketEndpoint = "unix://" + socketEndpoint
 	config := &sanity.Config{
-		Address:          socketEndpoint,
-		TargetPath:       targetPath,
-		StagingPath:      stagingPath,
-		CreateTargetDir:  createDir,
-		CreateStagingDir: createDir,
+		Address:     socketEndpoint,
+		TargetPath:  targetPath,
+		StagingPath: stagingPath,
 		TestVolumeParameters: map[string]string{
 			amlfs.VolumeContextMDSIPAddress: "127.0.0.1",
 			amlfs.VolumeContextFSName:       "test",
@@ -57,24 +53,4 @@ func TestSanity(t *testing.T) {
 		driver.Run(socketEndpoint, "", true)
 	}()
 	sanity.Test(t, config)
-}
-
-func createDir(targetPath string) (string, error) {
-	fmt.Println("---- path content ----")
-	files, err := ioutil.ReadDir(filepath.Dir(targetPath))
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("**** path content ****")
-
-	for _, file := range files {
-		fmt.Println(file.Name(), file.IsDir())
-	}
-	fmt.Printf("===: building %s\n", targetPath)
-	if err := os.MkdirAll(targetPath, 0300); err != nil {
-		if os.IsNotExist(err) {
-			return "", err
-		}
-	}
-	return targetPath, nil
 }
