@@ -50,12 +50,11 @@ func TestSanity(t *testing.T) {
 	driverOptions := amlfs.DriverOptions{
 		NodeID:               "fakeNodeID",
 		DriverName:           "fake",
-		EnableAmlfsMockMount: true,
+		EnableAmlfsMockMount: false,
 	}
 	driver := amlfs.NewDriver(&driverOptions)
 	go func() {
 		driver.Run(socketEndpoint, "", true)
-		fmt.Println("!!!!!!server end.")
 	}()
 	sanity.Test(t, config)
 }
