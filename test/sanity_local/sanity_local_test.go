@@ -26,7 +26,7 @@ import (
 )
 
 func TestSanity(t *testing.T) {
-	testDir, err := ioutil.TempDir("/tmp", "csi_sanity_test")
+	testDir, err := ioutil.TempDir("", "csi_sanity_test")
 	if err != nil {
 		t.Fatalf("can't create tmp dir %s", err)
 	}
