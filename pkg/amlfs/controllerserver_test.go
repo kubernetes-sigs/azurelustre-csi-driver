@@ -156,7 +156,7 @@ func TestCreateVolume_Err_NoParameters(t *testing.T) {
 func TestCreateVolume_Err_ParametersNoIP(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	delete(req.Parameters, volumeContextMDSIPAddress)
+	delete(req.Parameters, VolumeContextMDSIPAddress)
 	_, err := d.CreateVolume(context.Background(), req)
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
@@ -167,7 +167,7 @@ func TestCreateVolume_Err_ParametersNoIP(t *testing.T) {
 func TestCreateVolume_Err_ParametersEmptyIP(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	req.Parameters[volumeContextMDSIPAddress] = ""
+	req.Parameters[VolumeContextMDSIPAddress] = ""
 	_, err := d.CreateVolume(context.Background(), req)
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
@@ -178,7 +178,7 @@ func TestCreateVolume_Err_ParametersEmptyIP(t *testing.T) {
 func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	delete(req.Parameters, volumeContextFSName)
+	delete(req.Parameters, VolumeContextFSName)
 	_, err := d.CreateVolume(context.Background(), req)
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
@@ -189,7 +189,7 @@ func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
 func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	req.Parameters[volumeContextFSName] = ""
+	req.Parameters[VolumeContextFSName] = ""
 	_, err := d.CreateVolume(context.Background(), req)
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
