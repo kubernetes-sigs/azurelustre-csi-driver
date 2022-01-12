@@ -106,6 +106,7 @@ func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
 
 	// TODO_JUSJIN: revist these caps
 	// Initialize default library driver
+	// TODO_CHYIN: move this to {service}.go
 	d.AddControllerServiceCapabilities(
 		[]csi.ControllerServiceCapability_RPC_Type{
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,

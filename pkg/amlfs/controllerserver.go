@@ -19,7 +19,7 @@ package amlfs
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -34,94 +34,220 @@ import (
 const (
 	volumeContextMDSIPAddress = "mds-ip-address"
 	volumeContextFSName       = "fs-name"
-	defaultSize               = 32000000000000
+	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
+	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
 
-// CreateVolume provisions a volume
-func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	if err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
-		klog.Errorf("invalid create volume req: %v", req)
-		return nil, err
+var (
+	controllerServiceCapabilities = []csi.ControllerServiceCapability_RPC_Type{
+		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
 	}
 
+	volumeCapabilities = []csi.VolumeCapability_AccessMode_Mode{
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
+	}
+)
+
+func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
+	for _, capability := range capabilities {
+		if nil == capability.GetMount() {
+			// Lustre just support mount type. i.e. block type is unsupported.
+			return status.Error(codes.InvalidArgument,
+				"Doesn't support block volume.")
+		}
+		support := false
+		for _, supportedCapability := range volumeCapabilities {
+			if capability.GetAccessMode().GetMode() == supportedCapability {
+				support = true
+				break
+			}
+		}
+		if !support {
+			return status.Error(codes.InvalidArgument,
+				"Volume doesn't support "+
+					capability.GetAccessMode().GetMode().String())
+		}
+	}
+	return nil
+}
+
+// CreateVolume provisions a volume
+func (d *Driver) CreateVolume(
+	ctx context.Context,
+	req *csi.CreateVolumeRequest,
+) (*csi.CreateVolumeResponse, error) {
 	volumeCapabilities := req.GetVolumeCapabilities()
 	volName := req.GetName()
 	if len(volName) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Name must be provided")
+		return nil, status.Error(codes.InvalidArgument,
+			"CreateVolume Name must be provided")
 	}
 	if len(volumeCapabilities) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Volume capabilities must be provided",
+		)
+	}
+	if nil != req.GetVolumeContentSource() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support be created from an existing volume",
+		)
+	}
+	if nil != req.GetSecrets() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support secrets",
+		)
+	}
+	if nil != req.GetAccessibilityRequirements() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support accessibility_requirements",
+		)
+	}
+	capabilityError := validateVolumeCapabilities(volumeCapabilities)
+	if nil != capabilityError {
+		return nil, capabilityError
+	}
+	capacityInBytes := req.GetCapacityRange().GetRequiredBytes()
+	if 0 == capacityInBytes {
+		capacityInBytes = defaultSize
 	}
 
+	// round up capacity to next laaSOBlockSize
+	capacityInBytes = ((capacityInBytes + laaSOBlockSize - 1) /
+		laaSOBlockSize) * laaSOBlockSize
+
 	if acquired := d.volumeLocks.TryAcquire(volName); !acquired {
-		return nil, status.Errorf(codes.Aborted, volumeOperationAlreadyExistsFmt, volName)
+		return nil, status.Errorf(codes.Aborted,
+			volumeOperationAlreadyExistsFmt,
+			volName)
 	}
 	defer d.volumeLocks.Release(volName)
 
-	// TODO_JUSJIN: this should be rounded up to amlfs unit size for real dynamic provisioning
+	// TODO_JUSJIN: this should be rounded up to amlfs unit size for real
+	//              dynamic provisioning
 	// TODO_JUSJIN: check req.GetCapacityRange() for real dynamic provisioning
-	// TODO_JUSJIN: check other optional parameters to block unsupported requests, e.g. volume_content_source
 
 	parameters := req.GetParameters()
 	if parameters == nil {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameters must be provided")
+		return nil, status.Error(codes.InvalidArgument,
+			"CreateVolume Parameters must be provided")
 	}
 
-	mdsIPAddress, found := parameters[volumeContextMDSIPAddress]
-	if !found {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameter mds-ip-address must be provided")
+	// TODO_CHYIN: Need to change the parameters in real dynamic provision.
+	//             Now simply store the IP and name in the storageClass.
+	mdsIPAddress := parameters[volumeContextMDSIPAddress]
+	if len(mdsIPAddress) == 0 {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Parameter mds-ip-address must be provided",
+		)
+	}
+	amlFSName := parameters[volumeContextFSName]
+	if len(amlFSName) == 0 {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Parameter fs-name must be provided",
+		)
+	}
+	if len(parameters) > 2 {
+		delete(parameters, volumeContextFSName)
+		delete(parameters, volumeContextMDSIPAddress)
+		var errorParameters []string
+		for k, v := range parameters {
+			errorParameters = append(
+				errorParameters,
+				fmt.Sprintf("%s = %s", k, v),
+			)
+		}
+		// simply use fmt.Sprintf("%v", parameters) will get map[key:value...]
+		// it might be strange to the end user and exposes some implementation
+		// details.
+		return nil, status.Error(
+			codes.InvalidArgument,
+			fmt.Sprintf("Invalid parameter(s) {%s} in storage class",
+				strings.Join(errorParameters, ", ")),
+		)
 	}
 
-	amlFSName, found := parameters[volumeContextFSName]
-	if !found {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Parameter fs-name must be provided")
-	}
-
-	mc := metrics.NewMetricContext(amlfsCSIDriverName, "controller_create_volume", "<unknown>", "<unknown>", d.Name)
+	mc := metrics.NewMetricContext(
+		amlfsCSIDriverName,
+		"controller_create_volume",
+		"<unknown>",
+		"<unknown>",
+		d.Name,
+	)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
-	// TODO_JUSJIN: get a better unique volumeID
-	volumeID := fmt.Sprintf(volumeIDTemplate, amlFSName, mdsIPAddress, strconv.Itoa(defaultSize))
+	// volumeID must be the same when volumeName is the same to satisfy the
+	// idempotent requirement.
+	// volumeID MUST have enough information for troubleshout.
+	// TODO_CHYIN: need to check if the volumeID is an existing volume with
+	//             different parameters.
+	//             need LaaSo's support
+	// TODO_CHYIN: need to change when RP is ready and we support real dynamic
+	//             provision.
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, amlFSName, mdsIPAddress)
 
-	// BUG_JUSJIN: fix wrong params
-	klog.V(2).Infof("begin to create volume(%s) on mds-ip-address(%s) fs-name(%s) size(%d)", mdsIPAddress, amlFSName, defaultSize)
+	klog.V(2).Infof(
+		"begin to create volumeID(%s)", volumeID,
+	)
 
-	// TODO_JUSJIN: implement CreateVolume logic for real dynamic provisioning here
+	// TODO_JUSJIN: implement CreateVolume logic for real dynamic provisioning
 
-	// BUG_JUSJIN: fix wrong params
-	klog.V(2).Infof("created volume(%s) on mds-ip-address(%s) fs-name(%s) size(%d) successfully", mdsIPAddress, amlFSName, defaultSize)
+	klog.V(2).Infof("created volumeID(%s) successfully", volumeID)
 
 	isOperationSucceeded = true
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeID,
-			CapacityBytes: defaultSize,
+			CapacityBytes: capacityInBytes,
 			VolumeContext: parameters,
 		},
 	}, nil
 }
 
 // DeleteVolume delete a volume
-func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+func (d *Driver) DeleteVolume(
+	ctx context.Context, req *csi.DeleteVolumeRequest,
+) (*csi.DeleteVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument,
+			"Volume ID missing in request")
 	}
-
-	if err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
-		return nil, fmt.Errorf("invalid delete volume req: %v", req)
+	if nil != req.GetSecrets() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support secrets",
+		)
 	}
 
 	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
-		return nil, status.Errorf(codes.Aborted, volumeOperationAlreadyExistsFmt, volumeID)
+		return nil, status.Errorf(codes.Aborted,
+			volumeOperationAlreadyExistsFmt,
+			volumeID)
 	}
 	defer d.volumeLocks.Release(volumeID)
 
-	mc := metrics.NewMetricContext(amlfsCSIDriverName, "controller_delete_volume", "<unknown>", "<unknown>", d.Name)
+	mc := metrics.NewMetricContext(amlfsCSIDriverName,
+		"controller_delete_volume",
+		"<unknown>",
+		"<unknown>",
+		d.Name)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
@@ -129,7 +255,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	klog.V(2).Infof("deleting volumeID(%s)", volumeID)
 
-	// TODO_JUSJIN: implement DeleteVolume logic for real dynamic provisioning here
+	// TODO_JUSJIN: implement DeleteVolume logic for real dynamic provisioning
 
 	isOperationSucceeded = true
 	klog.V(2).Infof("volumeID(%s) is deleted successfully", volumeID)
@@ -137,23 +263,59 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 }
 
 // ValidateVolumeCapabilities return the capabilities of the volume
-func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+func (d *Driver) ValidateVolumeCapabilities(
+	ctx context.Context,
+	req *csi.ValidateVolumeCapabilitiesRequest,
+) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+	if nil != req.GetSecrets() {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"Doesn't support secrets",
+		)
+	}
+	// TODO_CHYIN: need to check if the volumeID is a exist volume
+	//             need LaaSo's support
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument,
+			"Volume ID missing in request")
 	}
-	if req.GetVolumeCapabilities() == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume capabilities missing in request")
+	capabilities := req.GetVolumeCapabilities()
+	if len(capabilities) == 0 {
+		return nil, status.Error(codes.InvalidArgument,
+			"Volume capabilities missing in request")
 	}
 
-	// TODO_JUSJIN: does it really mean SUPPORTED to caller???
-	// amlfs driver supports all AccessModes, no need to check capabilities here
-	return &csi.ValidateVolumeCapabilitiesResponse{Message: ""}, nil
+	confirmed := &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+		VolumeCapabilities: capabilities,
+	}
+	capabilityError := validateVolumeCapabilities(capabilities)
+	if nil != capabilityError {
+		confirmed = nil
+	}
+
+	return &csi.ValidateVolumeCapabilitiesResponse{
+		Confirmed: confirmed,
+		Message:   "",
+	}, nil
 }
 
 // ControllerGetCapabilities returns the capabilities of the Controller plugin
-func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
+func (d *Driver) ControllerGetCapabilities(
+	ctx context.Context,
+	req *csi.ControllerGetCapabilitiesRequest,
+) (*csi.ControllerGetCapabilitiesResponse, error) {
+	var capabilities []*csi.ControllerServiceCapability
+	for _, capability := range controllerServiceCapabilities {
+		capabilities = append(capabilities, &csi.ControllerServiceCapability{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: capability,
+				},
+			},
+		})
+	}
 	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: d.Cap,
+		Capabilities: capabilities,
 	}, nil
 }
