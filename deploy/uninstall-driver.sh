@@ -42,7 +42,7 @@ fi
 
 if [ $workload != "noworkload" ]; then
   echo "Uninstalling workload, repo: $workload ..."
-  kubectl delete -f $workload
+  kubectl delete -f $workload --ignore-not-found
   echo 'Workload uninstalled successfully.'
 else
   echo 'No workload.'
