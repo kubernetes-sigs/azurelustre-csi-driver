@@ -12,8 +12,21 @@ set -o nounset
 
 echo Command line arguments: $@
 
+urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
+kernelVersion=$(uname -r)
+
 apt-get update -y
-apt-get install -y libreadline7 libkeyutils1 "$PKG1_1064" "$PKG2_1064"
+apt-get install -y libreadline7 libkeyutils1 wget
+
+wget "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
+wget "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
+
+apt-get install -y "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
+
+apt-get autoremove -y wget
+
+rm --force ./lustre-client-utils_2.14.0_amd64.deb
+rm --force ./lustre-client-modules_2.14.0_amd64.deb
 
 modprobe -v ksocklnd
 modprobe -v lnet
