@@ -18,7 +18,7 @@ COPY "./_output/amlfsplugin" "/app/amlfsplugin"
 COPY "./pkg/amlfsplugin/entrypoint.sh" "/app/entrypoint.sh"
 
 RUN chmod +x "/app/entrypoint.sh"
-RUN apt-get update -y
+RUN apt-get update
 RUN apt-get install -y libreadline7 libkeyutils1 wget
 
 WORKDIR "/app"

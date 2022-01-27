@@ -18,7 +18,7 @@ kernelVersion=$(uname -r)
 wget "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
 wget "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
 
-apt-get update -y
+apt-get update
 apt-get install -y "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
 
 apt-get autoremove -y wget
