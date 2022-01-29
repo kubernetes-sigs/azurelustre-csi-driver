@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kubernetes-csi/csi-test/pkg/sanity"
+	"github.com/kubernetes-csi/csi-test/v4/pkg/sanity"
 	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
 )
 
@@ -34,14 +34,13 @@ func TestSanity(t *testing.T) {
 	targetPath := filepath.Join(testDir, "targetPath")
 	stagingPath := filepath.Join(testDir, "stagingPath")
 	socketEndpoint = "unix://" + socketEndpoint
-	config := &sanity.Config{
-		Address:     socketEndpoint,
-		TargetPath:  targetPath,
-		StagingPath: stagingPath,
-		TestVolumeParameters: map[string]string{
-			amlfs.VolumeContextMDSIPAddress: "127.0.0.1",
-			amlfs.VolumeContextFSName:       "test",
-		},
+	config := sanity.NewTestConfig()
+	config.Address = socketEndpoint
+	config.TargetPath = targetPath
+	config.StagingPath = stagingPath
+	config.TestVolumeParameters = map[string]string{
+		amlfs.VolumeContextMDSIPAddress: "127.0.0.1",
+		amlfs.VolumeContextFSName:       "test",
 	}
 	driverOptions := amlfs.DriverOptions{
 		NodeID:               "fakeNodeID",

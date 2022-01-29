@@ -1,5 +1,5 @@
 /*
-Copyright 2017 Luis Pabón luis@portworx.com
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,10 +24,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"testing"
 	"time"
 
-	"github.com/kubernetes-csi/csi-test/utils"
+	"github.com/kubernetes-csi/csi-test/v4/utils"
 	yaml "gopkg.in/yaml.v2"
 
 	"google.golang.org/grpc"
@@ -48,11 +47,16 @@ type CSISecrets struct {
 	NodePublishVolumeSecret                    map[string]string `yaml:"NodePublishVolumeSecret"`
 	CreateSnapshotSecret                       map[string]string `yaml:"CreateSnapshotSecret"`
 	DeleteSnapshotSecret                       map[string]string `yaml:"DeleteSnapshotSecret"`
+	ControllerExpandVolumeSecret               map[string]string `yaml:"ControllerExpandVolumeSecret"`
 }
 
-// Config provides the configuration for the sanity tests. It
-// needs to be initialized by the user of the sanity package.
-type Config struct {
+// TestConfig provides the configuration for the sanity tests. It must be
+// constructed with NewTestConfig to initialize it with sane defaults. The
+// user of the sanity package can then override values before passing
+// the instance to [Ginkgo]Test and/or (when using GinkgoTest) in a
+// BeforeEach. For example, the BeforeEach could set up the CSI driver
+// and then set the Address field differently for each test.
+type TestConfig struct {
 	// TargetPath is the *parent* directory for NodePublishVolumeRequest.target_path.
 	// It gets created and removed by csi-sanity.
 	TargetPath string
@@ -61,9 +65,28 @@ type Config struct {
 	// It gets created and removed by csi-sanity.
 	StagingPath string
 
-	Address           string
+	// Address is the gRPC endpoint (e.g. unix:/tmp/csi.sock or
+	// dns:///my-machine:9000) of the CSI driver. If ControllerAddress
+	// is empty, it must provide both the controller and node service.
+	Address string
+
+	// DialOptions specifies the options that are to be used
+	// when connecting to Address. The default is grpc.WithInsecure().
+	// A dialer will be added for Unix Domain Sockets.
+	DialOptions []grpc.DialOption
+
+	// ControllerAddress optionally provides the gRPC endpoint of
+	// the controller service.
 	ControllerAddress string
-	SecretsFile       string
+
+	// ControllerDialOptions specifies the options that are to be used
+	// for ControllerAddress.
+	ControllerDialOptions []grpc.DialOption
+
+	// SecretsFile is the filename of a .yaml file which is used
+	// to populate CSISecrets which are then used for calls to the
+	// CSI driver.
+	SecretsFile string
 
 	TestVolumeSize int64
 
@@ -72,8 +95,16 @@ type Config struct {
 	TestVolumeParametersFile  string
 	TestVolumeParameters      map[string]string
 	TestNodeVolumeAttachLimit bool
+	TestVolumeAccessType      string
 
+	// JUnitFile is used by Test to store test results in JUnit
+	// format. When using GinkgoTest, the caller is responsible
+	// for configuring the Ginkgo runner.
 	JUnitFile string
+
+	// TestSnapshotParametersFile for setting CreateVolumeRequest.Parameters.
+	TestSnapshotParametersFile string
+	TestSnapshotParameters     map[string]string
 
 	// Callback functions to customize the creation of target and staging
 	// directories. Returns the new paths for mount and staging.
@@ -112,25 +143,41 @@ type Config struct {
 	CreateTargetPathCmd  string
 	CreateStagingPathCmd string
 	// Timeout for the executed commands for path creation.
-	CreatePathCmdTimeout int
+	CreatePathCmdTimeout time.Duration
 
 	// Commands to be executed for customized removal of the target and staging
 	// paths. Thie command must be available on the host where sanity runs.
 	RemoveTargetPathCmd  string
 	RemoveStagingPathCmd string
 	// Timeout for the executed commands for path removal.
-	RemovePathCmdTimeout int
+	RemovePathCmdTimeout time.Duration
 
-	// IDGen is an optional interface for callers to provide a generator for
-	// valid Volume and Node IDs. Defaults to DefaultIDGenerator which generates
-	// generic string IDs
+	// IDGen is an interface for callers to provide a
+	// generator for valid Volume and Node IDs. Defaults to
+	// DefaultIDGenerator.
 	IDGen IDGenerator
+
+	// Repeat count for Volume operations to test idempotency requirements.
+	// some tests can optionally run repeated variants for those Volume operations
+	// that are required to be idempotent, based on this count value.
+	// <= 0: skip idempotency tests
+	// n > 0: repeat each call n times
+	// NewTestConfig() by default enables idempotency testing.
+	IdempotentCount int
+
+	// CheckPath is a callback function to check whether the given path exists.
+	// If this is not set, then defaultCheckPath will be used instead.
+	CheckPath func(path string) (PathKind, error)
+	// Command to be executed for a customized way to check a given path.
+	CheckPathCmd string
+	// Timeout for the executed command to check a given path.
+	CheckPathCmdTimeout time.Duration
 }
 
-// SanityContext holds the variables that each test can depend on. It
-// gets initialized before each test block runs.
-type SanityContext struct {
-	Config         *Config
+// TestContext gets initialized by the sanity package before each test
+// runs. It holds the variables that each test can depend on.
+type TestContext struct {
+	Config         *TestConfig
 	Conn           *grpc.ClientConn
 	ControllerConn *grpc.ClientConn
 	Secrets        *CSISecrets
@@ -143,53 +190,71 @@ type SanityContext struct {
 	StagingPath string
 }
 
+// NewTestConfig returns a config instance with all values set to
+// their defaults.
+func NewTestConfig() TestConfig {
+	return TestConfig{
+		TargetPath:           os.TempDir() + "/csi-mount",
+		StagingPath:          os.TempDir() + "/csi-staging",
+		CreatePathCmdTimeout: 10 * time.Second,
+		RemovePathCmdTimeout: 10 * time.Second,
+		TestVolumeSize:       10 * 1024 * 1024 * 1024, // 10 GiB
+		TestVolumeAccessType: "mount",
+		IDGen:                &DefaultIDGenerator{},
+		IdempotentCount:      10,
+		CheckPathCmdTimeout:  10 * time.Second,
+
+		DialOptions:           []grpc.DialOption{grpc.WithInsecure()},
+		ControllerDialOptions: []grpc.DialOption{grpc.WithInsecure()},
+	}
+}
+
+// NewContext sets up sanity testing with a config supplied by the
+// user of the sanity package. Ownership of that config is shared
+// between the sanity package and the caller.
+func NewTestContext(config *TestConfig) *TestContext {
+	return &TestContext{
+		Config: config,
+	}
+}
+
 // Test will test the CSI driver at the specified address by
 // setting up a Ginkgo suite and running it.
-func Test(t *testing.T, reqConfig *Config) {
-	path := reqConfig.TestVolumeParametersFile
-	if len(path) != 0 {
-		yamlFile, err := ioutil.ReadFile(path)
-		if err != nil {
-			panic(fmt.Sprintf("failed to read file %q: %v", path, err))
-		}
-		err = yaml.Unmarshal(yamlFile, &reqConfig.TestVolumeParameters)
-		if err != nil {
-			panic(fmt.Sprintf("error unmarshaling yaml: %v", err))
-		}
-	}
-
-	if reqConfig.IDGen == nil {
-		reqConfig.IDGen = &DefaultIDGenerator{}
-	}
-
-	sc := &SanityContext{
-		Config: reqConfig,
-	}
-
-	registerTestsInGinkgo(sc)
+func Test(t GinkgoTestingT, config TestConfig) {
+	sc := GinkgoTest(&config)
 	RegisterFailHandler(Fail)
 
 	var specReporters []Reporter
-	if reqConfig.JUnitFile != "" {
-		junitReporter := reporters.NewJUnitReporter(reqConfig.JUnitFile)
+	if config.JUnitFile != "" {
+		junitReporter := reporters.NewJUnitReporter(config.JUnitFile)
 		specReporters = append(specReporters, junitReporter)
 	}
 	RunSpecsWithDefaultAndCustomReporters(t, "CSI Driver Test Suite", specReporters)
-	if sc.Conn != nil {
-		sc.Conn.Close()
-	}
+	sc.Finalize()
 }
 
-func GinkgoTest(reqConfig *Config) {
-	sc := &SanityContext{
-		Config: reqConfig,
-	}
-
+// GinkoTest is another entry point for sanity testing: instead of
+// directly running tests like Test does, it merely registers the
+// tests. This can be used to embed sanity testing in a custom Ginkgo
+// test suite.  The pointer to the configuration is merely stored by
+// GinkgoTest for use when the tests run. Therefore its content can
+// still be modified in a BeforeEach. The sanity package itself treats
+// it as read-only.
+func GinkgoTest(config *TestConfig) *TestContext {
+	sc := NewTestContext(config)
 	registerTestsInGinkgo(sc)
+	return sc
 }
 
-func (sc *SanityContext) Setup() {
+// Setup must be invoked before each test. It initialize per-test
+// variables in the context.
+func (sc *TestContext) Setup() {
 	var err error
+
+	// Get StorageClass parameters from TestVolumeParametersFile
+	loadFromFile(sc.Config.TestVolumeParametersFile, &sc.Config.TestVolumeParameters)
+	// Get VolumeSnapshotClass parameters from TestSnapshotParametersFile
+	loadFromFile(sc.Config.TestSnapshotParametersFile, &sc.Config.TestSnapshotParameters)
 
 	if len(sc.Config.SecretsFile) > 0 {
 		sc.Secrets, err = loadSecrets(sc.Config.SecretsFile)
@@ -206,7 +271,7 @@ func (sc *SanityContext) Setup() {
 			sc.Conn.Close()
 		}
 		By("connecting to CSI driver")
-		sc.Conn, err = utils.Connect(sc.Config.Address)
+		sc.Conn, err = utils.Connect(sc.Config.Address, sc.Config.DialOptions...)
 		Expect(err).NotTo(HaveOccurred())
 		sc.connAddress = sc.Config.Address
 	} else {
@@ -219,7 +284,7 @@ func (sc *SanityContext) Setup() {
 			sc.ControllerConn = sc.Conn
 			sc.controllerConnAddress = sc.Config.Address
 		} else {
-			sc.ControllerConn, err = utils.Connect(sc.Config.ControllerAddress)
+			sc.ControllerConn, err = utils.Connect(sc.Config.ControllerAddress, sc.Config.ControllerDialOptions...)
 			Expect(err).NotTo(HaveOccurred())
 			sc.controllerConnAddress = sc.Config.ControllerAddress
 		}
@@ -240,7 +305,9 @@ func (sc *SanityContext) Setup() {
 	sc.StagingPath = stagingPath
 }
 
-func (sc *SanityContext) Teardown() {
+// Teardown must be called after each test. It frees resources
+// allocated by Setup.
+func (sc *TestContext) Teardown() {
 	// Delete the created paths if any.
 	removeMountTargetLocation(sc.TargetPath, sc.Config.RemoveTargetPathCmd, sc.Config.RemoveTargetPath, sc.Config.RemovePathCmdTimeout)
 	removeMountTargetLocation(sc.StagingPath, sc.Config.RemoveStagingPathCmd, sc.Config.RemoveStagingPath, sc.Config.RemovePathCmdTimeout)
@@ -257,10 +324,21 @@ func (sc *SanityContext) Teardown() {
 	// (https://github.com/kubernetes-csi/csi-test/pull/98).
 }
 
+// Finalize frees any resources that might be still cached in the context.
+// It should be called after running all tests.
+func (sc *TestContext) Finalize() {
+	if sc.Conn != nil {
+		sc.Conn.Close()
+	}
+	if sc.ControllerConn != nil {
+		sc.ControllerConn.Close()
+	}
+}
+
 // createMountTargetLocation takes a target path parameter and creates the
 // target path using a custom command, custom function or falls back to the
 // default using mkdir and returns the new target path.
-func createMountTargetLocation(targetPath string, createPathCmd string, customCreateDir func(string) (string, error), timeout int) (string, error) {
+func createMountTargetLocation(targetPath string, createPathCmd string, customCreateDir func(string) (string, error), timeout time.Duration) (string, error) {
 
 	// Return the target path if empty.
 	if targetPath == "" {
@@ -271,7 +349,7 @@ func createMountTargetLocation(targetPath string, createPathCmd string, customCr
 
 	if createPathCmd != "" {
 		// Create the target path using the create path command.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, createPathCmd, targetPath)
@@ -305,13 +383,13 @@ func createMountTargetLocation(targetPath string, createPathCmd string, customCr
 // removeMountTargetLocation takes a target path parameter and removes the path
 // using a custom command, custom function or falls back to the default removal
 // by deleting the path on the host.
-func removeMountTargetLocation(targetPath string, removePathCmd string, customRemovePath func(string) error, timeout int) error {
+func removeMountTargetLocation(targetPath string, removePathCmd string, customRemovePath func(string) error, timeout time.Duration) error {
 	if targetPath == "" {
 		return nil
 	}
 
 	if removePathCmd != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		cmd := exec.CommandContext(ctx, removePathCmd, targetPath)
@@ -347,6 +425,20 @@ func loadSecrets(path string) (*CSISecrets, error) {
 	return &creds, nil
 }
 
+// loadFromFile reads struct from given file path.
+func loadFromFile(from string, to interface{}) {
+	if len(from) != 0 {
+		yamlFile, err := ioutil.ReadFile(from)
+		if err != nil {
+			panic(fmt.Sprintf("failed to read file %q: %v", from, err))
+		}
+		err = yaml.Unmarshal(yamlFile, to)
+		if err != nil {
+			panic(fmt.Sprintf("error unmarshaling yaml: %v", err))
+		}
+	}
+}
+
 var uniqueSuffix = "-" + PseudoUUID()
 
 // PseudoUUID returns a unique string generated from random
@@ -365,4 +457,90 @@ func PseudoUUID() string {
 // alone should already be fairly unique.
 func UniqueString(prefix string) string {
 	return prefix + uniqueSuffix
+}
+
+// Return codes for CheckPath
+type PathKind string
+
+const (
+	PathIsFile     PathKind = "file"
+	PathIsDir      PathKind = "directory"
+	PathIsNotFound PathKind = "not_found"
+	PathIsOther    PathKind = "other"
+)
+
+// IsPathKind validates that the input string matches one of the defined
+// PathKind values above. If successful, it returns the corresponding
+// PathKind type. Otherwise, it returns an error.
+func IsPathKind(in string) (PathKind, error) {
+	pk := PathKind(in)
+	switch pk {
+	case PathIsFile, PathIsDir, PathIsNotFound, PathIsOther:
+		return pk, nil
+	default:
+		return pk, fmt.Errorf("invalid PathType: %s", pk)
+	}
+}
+
+// defaultCheckPath runs os.Stat against the provided path and returns
+// a code indicating whether it's a file, directory, not found, or other.
+// If an error occurs, it returns an empty string along with the error.
+func defaultCheckPath(path string) (PathKind, error) {
+	var pk PathKind
+	fi, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PathIsNotFound, nil
+		} else {
+			return "", err
+		}
+	}
+	switch mode := fi.Mode(); {
+	case mode.IsRegular():
+		pk = PathIsFile
+	case mode.IsDir():
+		pk = PathIsDir
+	default:
+		pk = PathIsOther
+	}
+	return pk, nil
+}
+
+// CheckPath takes a path parameter and returns a code indicating whether
+// it's a file, directory, not found, or other. This can be done using a
+// custom command, custom function, or by the defaultCheckPath function.
+// If an error occurs, it returns an empty string along with the error.
+func CheckPath(path string, config *TestConfig) (PathKind, error) {
+	if path == "" {
+		return "", fmt.Errorf("path argument must not be empty")
+	}
+	if config == nil {
+		return "", fmt.Errorf("config argument must not be nil")
+	}
+
+	if config.CheckPathCmd != "" {
+		// Check the provided path using the check path command.
+		ctx, cancel := context.WithTimeout(context.Background(), config.CheckPathCmdTimeout)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, config.CheckPathCmd, path)
+		cmd.Stderr = os.Stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("check path command %s failed: %v", config.CheckPathCmd, err)
+		}
+		// The output of this command is expected to match the value for
+		// PathIsFile, PathIsDir, PathIsNotFound, or PathIsOther.
+		pk, err := IsPathKind(strings.TrimSpace(string(out)))
+		if err != nil {
+			return "", fmt.Errorf("check path command %s failed: %v", config.CheckPathCmd, err)
+		}
+		return pk, nil
+	} else if config.CheckPath != nil {
+		// Check the path using a custom callback function.
+		return config.CheckPath(path)
+	} else {
+		// Use defaultCheckPath if no custom function was provided.
+		return defaultCheckPath(path)
+	}
 }
