@@ -1,5 +1,5 @@
 /*
-Copyright 2017 Luis Pabón luis@portworx.com
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = DescribeSanity("Identity Service", func(sc *SanityContext) {
+var _ = DescribeSanity("Identity Service", func(sc *TestContext) {
 	var (
 		c csi.IdentityClient
 	)
@@ -83,7 +83,7 @@ var _ = DescribeSanity("Identity Service", func(sc *SanityContext) {
 			serverError, ok := status.FromError(err)
 			Expect(ok).To(BeTrue())
 			Expect(serverError.Code() == codes.FailedPrecondition ||
-				serverError.Code() == codes.OK).To(BeTrue())
+				serverError.Code() == codes.OK).To(BeTrue(), "unexpected error: %s", serverError.Message())
 
 			if res.GetReady() != nil {
 				Expect(res.GetReady().GetValue() == true ||

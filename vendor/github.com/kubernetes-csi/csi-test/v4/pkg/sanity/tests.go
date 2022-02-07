@@ -1,5 +1,5 @@
 /*
-Copyright 2018 Intel Corporation
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import (
 
 type test struct {
 	text string
-	body func(*SanityContext)
+	body func(*TestContext)
 }
 
 var tests []test
@@ -32,15 +32,16 @@ var tests []test
 // will be called multiple times with the right context (when
 // setting up a Ginkgo suite or a testing.T test, with the right
 // configuration).
-func DescribeSanity(text string, body func(*SanityContext)) bool {
+func DescribeSanity(text string, body func(*TestContext)) bool {
 	tests = append(tests, test{text, body})
 	return true
 }
 
 // registerTestsInGinkgo invokes the actual Gingko Describe
 // for the tests registered earlier with DescribeSanity.
-func registerTestsInGinkgo(sc *SanityContext) {
+func registerTestsInGinkgo(sc *TestContext) {
 	for _, test := range tests {
+		test := test
 		Describe(test.text, func() {
 			BeforeEach(func() {
 				sc.Setup()
