@@ -1,0 +1,13 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: sc.amlfs.csi.azure.com
+parameters:
+  # The file system name of the existing Lustre
+  fs-name: ${EXISTING_LUSTRE_FS_NAME}
+  # The IP address of the existing Lustre
+  mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+provisioner: amlfs.csi.azure.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate

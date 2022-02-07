@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # You can change the name to identify this PVC
+  name: pvc-lustre
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Mi
+  # volumeName must be the same as the name in PV.
+  # If you changed the name in PV, you need to change this field.
+  volumeName: pv-lustre
+  storageClassName: ""

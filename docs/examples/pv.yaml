@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  # You can change the name to identify this PV
+  name: pv-lustre
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 4Ti
+  csi:
+    driver: amlfs.csi.azure.com
+    volumeAttributes:
+      # The file system name of the existing Lustre
+      fs-name: ${EXISTING_LUSTRE_FS_NAME}
+      # The IP address of the existing Lustre
+      mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+    # Make sure this VolumeID is unique in the cluster
+    volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: sc.amlfs.csi.azure.com
