@@ -19,6 +19,8 @@ COPY "./pkg/amlfsplugin/entrypoint.sh" "/app/entrypoint.sh"
 
 RUN chmod +x "/app/entrypoint.sh"
 RUN apt-get update
+# Fix vulnerability CVE-2018-7169
+RUN apt-get upgrade -y login passwd
 RUN apt-get install -y libreadline7 libkeyutils1 wget
 
 WORKDIR "/app"
