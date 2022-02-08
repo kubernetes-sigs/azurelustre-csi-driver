@@ -1,9 +1,9 @@
-# Static Provision
+# Static Provisioning
 
-This document contains how to use a existed LaaSO Volume with static
-provisioning.
+This document explains how to use an existing Azure Managed Lustre Cluster in
+AKS through this CSI driver static provisioning.
 
-## Create a Volume bounded to an existing Lustre
+## Create a Volume bounded to an existing Azure Managed Lustre Cluster
 
 ### Option 1: Use Storage Class
 
@@ -41,7 +41,7 @@ kubectl create -f pvc_pv.yaml
 * Make sure pvc is created and in Bound status after a while
 
 ```shell
-kubectl describe pvc pvc-blob
+kubectl describe pvc pvc-lustre
 ```
 
 * Download [demo pod echo date](./examples/pod_echo_date.yaml)

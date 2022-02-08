@@ -8,6 +8,8 @@ spec:
   accessModes:
     - ReadWriteMany
   capacity:
+    # This field should be the true size of the Azure Managed Lustre you want
+    # to used. So that, k8s can allocate resources better.
     storage: 4Ti
   csi:
     driver: amlfs.csi.azure.com
@@ -18,5 +20,6 @@ spec:
       mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
     # Make sure this VolumeID is unique in the cluster
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
-  persistentVolumeReclaimPolicy: Delete
+  # "Delete" is not supported in static provisioning PV
+  persistentVolumeReclaimPolicy: Retain
   storageClassName: sc.amlfs.csi.azure.com
