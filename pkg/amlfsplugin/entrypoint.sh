@@ -10,21 +10,33 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-echo Command line arguments: $@
+echo "$(date -u) Command line arguments: $@"
 
 urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
-wget "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
-wget "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
+echo "$(date -u) Downloading Lustre client packages."
+
+# For some reason, wget doesn't trust the cert of azure blob url today
+# Use --no-check-certificate as a workaround for now before we onboard to packages.microsoft.com
+wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
+wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
+
+echo "$(date -u) Downloaded Lustre client packages."
+
+echo "$(date -u) Installing Lustre client packages."
 
 apt-get update
-apt-get install -y "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
+apt-get install -y --no-install-recommends "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
 
 apt-get autoremove -y wget
 
 rm --force ./lustre-client-utils_2.14.0_amd64.deb
 rm --force ./lustre-client-modules_2.14.0_amd64.deb
+
+echo "$(date -u) Installed Lustre client packages."
+
+echo "$(date -u) Enabling Lustre client kernel modules."
 
 modprobe -v ksocklnd
 modprobe -v lnet
@@ -36,7 +48,11 @@ modprobe -v lustre
 # We need to revisit this after moving the script to run on AKS node
 lctl network up || true
 
-echo "<Lustre CSI driver>"
+echo "$(date -u) Enabled Lustre client kernel modules."
+
+echo "$(date -u) Entering Lustre CSI driver"
+
 echo Executing: $1 ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}
 $1 ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}
-echo "</Lustre CSI driver>"
+
+echo "$(date -u) Exiting Lustre CSI driver"
