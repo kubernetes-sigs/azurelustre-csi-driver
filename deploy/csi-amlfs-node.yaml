@@ -88,7 +88,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: amlfs
-          image: jusjin.azurecr.io/amlfs-csi:v0.1.0 # TODO_JUSJIN: replace to private preview ACR
+          image: jusjin.azurecr.io/amlfs-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
           imagePullPolicy: Always   # TODO_JUSJIN: for testing only
           args:
             - "--v=5"
@@ -129,7 +129,7 @@ spec:
               name: azure-cred
             - mountPath: /mnt
               name: amlfs-cache
-          resources: # TODO_JUSJIN: tune this for perf/scale
+          resources:   # TODO_JUSJIN: tune this for perf/scale
             limits:
               cpu: 1
               memory: 200Mi
