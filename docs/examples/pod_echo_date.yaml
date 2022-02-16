@@ -1,0 +1,22 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: lustre-echo-date
+spec:
+  nodeSelector:
+    "kubernetes.io/os": linux
+  containers:
+    - image: busybox
+      name: lustre-echo-date
+      command:
+        - "/bin/sh"
+        - "-c"
+        - while true; do echo $(date) >> /mnt/lustre/outfile; sleep 1; done
+      volumeMounts:
+        - name: lustre01
+          mountPath: "/mnt/lustre"
+  volumes:
+    - name: lustre01
+      persistentVolumeClaim:
+        claimName: pvc-lustre
