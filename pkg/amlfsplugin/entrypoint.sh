@@ -10,45 +10,52 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+installClientPackages=${AMLFS_CSI_INSTALL_LUSTRE_CLIENT:-yes}
+echo "installClientPackages: ${installClientPackages}"
+
 echo "$(date -u) Command line arguments: $@"
 
 urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
-echo "$(date -u) Downloading Lustre client packages."
+if [[ "${installClientPackages}" == "yes" ]]; then
 
-# For some reason, wget doesn't trust the cert of azure blob url today
-# Use --no-check-certificate as a workaround for now before we onboard to packages.microsoft.com
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
+  echo "$(date -u) Downloading Lustre client packages."
 
-echo "$(date -u) Downloaded Lustre client packages."
+  # For some reason, wget doesn't trust the cert of azure blob url today
+  # Use --no-check-certificate as a workaround for now before we onboard to packages.microsoft.com
+  wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
+  wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
 
-echo "$(date -u) Installing Lustre client packages."
+  echo "$(date -u) Downloaded Lustre client packages."
 
-apt-get update
-apt-get install -y --no-install-recommends "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
+  echo "$(date -u) Installing Lustre client packages."
 
-apt-get autoremove -y wget
+  apt-get update
+  apt-get install -y --no-install-recommends "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
 
-rm --force ./lustre-client-utils_2.14.0_amd64.deb
-rm --force ./lustre-client-modules_2.14.0_amd64.deb
+  apt-get autoremove -y wget
 
-echo "$(date -u) Installed Lustre client packages."
+  rm --force ./lustre-client-utils_2.14.0_amd64.deb
+  rm --force ./lustre-client-modules_2.14.0_amd64.deb
 
-echo "$(date -u) Enabling Lustre client kernel modules."
+  echo "$(date -u) Installed Lustre client packages."
 
-modprobe -v ksocklnd
-modprobe -v lnet
-modprobe -v mgc
-modprobe -v lustre
+  echo "$(date -u) Enabling Lustre client kernel modules."
 
-# For some reason, this is a false positive before we restart the container
-# The volume mount succeeds later even this returns a failure
-# We need to revisit this after moving the script to run on AKS node
-lctl network up || true
+  modprobe -v ksocklnd
+  modprobe -v lnet
+  modprobe -v mgc
+  modprobe -v lustre
 
-echo "$(date -u) Enabled Lustre client kernel modules."
+  # For some reason, this is a false positive before we restart the container
+  # The volume mount succeeds later even this returns a failure
+  # We need to revisit this after moving the script to run on AKS node
+  lctl network up || true
+
+  echo "$(date -u) Enabled Lustre client kernel modules."
+
+fi
 
 echo "$(date -u) Entering Lustre CSI driver"
 

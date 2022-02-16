@@ -88,7 +88,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: amlfs
-          image: jusjin.azurecr.io/amlfs-csi:v0.1.0
+          image: jusjin.azurecr.io/amlfs-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
           imagePullPolicy: Always   # TODO_JUSJIN: for testing only
           args:
             - "--v=5"
@@ -104,20 +104,14 @@ spec:
             httpGet:
               path: /healthz
               port: healthz
-            initialDelaySeconds: 120
-            timeoutSeconds: 120
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
             periodSeconds: 30
           env:
-            # - name: AZURE_CREDENTIAL_FILE
-            #   valueFrom:
-            #     configMapKeyRef:
-            #       name: azure-cred-file
-            #       key: path
-            #       optional: true
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            # - name: BLOBFUSE_PROXY_ENDPOINT
-            #   value: unix:///csi/blobfuse-proxy.sock
+            - name: AMLFS_CSI_INSTALL_LUSTRE_CLIENT
+              value: "yes"
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -135,10 +129,10 @@ spec:
               name: azure-cred
             - mountPath: /mnt
               name: amlfs-cache
-          resources:
+          resources:   # TODO_JUSJIN: tune this for perf/scale
             limits:
-              cpu: 2
-              memory: 2100Mi
+              cpu: 1
+              memory: 200Mi
             requests:
               cpu: 10m
               memory: 20Mi
@@ -163,4 +157,3 @@ spec:
             path: /mnt
             type: DirectoryOrCreate
           name: amlfs-cache
----
