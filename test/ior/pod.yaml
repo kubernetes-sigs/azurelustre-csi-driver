@@ -31,8 +31,8 @@ spec:
             cpu: 1000m
             memory: 2000Mi
           requests:
-            cpu: 1000m
-            memory: 2000Mi
+            cpu: 100m
+            memory: 200Mi
         volumeMounts:
         - name: amlfs
           mountPath: /amlfs
