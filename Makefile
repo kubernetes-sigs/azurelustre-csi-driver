@@ -27,6 +27,8 @@ endif
 endif
 IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
+INTEGRATION_IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME)-integration-test:$(IMAGE_VERSION)
+INTEGRATION_IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME)-integration-test:latest
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS ?= "-X ${PKG}/pkg/amlfs.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/amlfs.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/amlfs.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
 E2E_HELM_OPTIONS ?= --set image.amlfs.pullPolicy=Always --set image.amlfs.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.amlfs.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
@@ -68,6 +70,20 @@ sanity-test-local:
 .PHONY: integration-test
 integration-test: amlfs
 	go test -v -timeout=30m ./test/integration
+
+.PHONY: integration-test-aks
+integration-test-aks: integration-test-aks-build-push
+	./hack/verify-integration-test-aks.sh
+
+.PHONY: integration-test-aks-build-push
+integration-test-aks-build-push: integration-test-aks-container
+	docker tag $(INTEGRATION_IMAGE_TAG) $(INTEGRATION_IMAGE_TAG_LATEST)
+	docker push ${INTEGRATION_IMAGE_TAG_LATEST}
+
+.PHONY: integration-test-aks-container
+integration-test-aks-container: amlfs
+	cp ./_output/amlfsplugin ./test/integration_aks/image/
+	docker build -t $(INTEGRATION_IMAGE_TAG) --output=type=docker -f ./test/integration_aks/image/Dockerfile ./test/integration_aks/image
 
 .PHONY: e2e-test
 e2e-test:

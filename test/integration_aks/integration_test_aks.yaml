@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aml-integration-test
+spec:
+  containers:
+    - name: integration-test
+      image: jusjin.azurecr.io/amlfs-csi-integration-test:latest
+      securityContext:
+        privileged: true
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/os: linux

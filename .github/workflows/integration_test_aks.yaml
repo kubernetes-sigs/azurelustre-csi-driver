@@ -1,0 +1,11 @@
+---
+name: Integration Test on AKS
+on:
+  push:
+    branches: [main]
+  pull_requests:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  Run-Integration-Test-on-AKS
