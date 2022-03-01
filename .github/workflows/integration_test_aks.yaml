@@ -8,4 +8,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  Run-Integration-Test-on-AKS
+  Run-Integration-Test-on-AKS:
+    name: Run Integration Test on AKS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.17
+        id: go
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: Run integration test
+        run: |
+          make integration-test-aks
+        env:
+          kube_config: ${{ secrets.KUBE_CONFIG }}
