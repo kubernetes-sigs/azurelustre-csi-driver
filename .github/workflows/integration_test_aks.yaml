@@ -23,6 +23,11 @@ jobs:
         id: go
       - name: Check out code
         uses: actions/checkout@v2
+      - name: Docker login
+        run: |
+          docker login jusjin.azurecr.io \
+                       --username=${{ secrets.JUSJIN_ACR_USERNAME }} \
+                       --password=${{ secrets.JUSJIN_ACR_PASSWORD }}
       - name: Run integration test
         run: |
           make integration-test-aks
