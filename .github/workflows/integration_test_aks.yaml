@@ -22,13 +22,24 @@ jobs:
         id: go
       - name: Check out code
         uses: actions/checkout@v2
-      - name: Docker login
+      - name: Build Code
         run: |
-          docker login jusjin.azurecr.io \
-                       --username=${{ secrets.JUSJIN_ACR_USERNAME }} \
-                       --password=${{ secrets.JUSJIN_ACR_PASSWORD }}
+          make amlfs
+          & cp ./_output/amlfsplugin ./test/integration_aks/image/
+      - name: Docker login
+        uses: docker/login-action@v1
+        with:
+          registry: jusjin.azurecr.io
+          username: ${{ secrets.JUSJIN_ACR_USERNAME }}
+          password: ${{ secrets.JUSJIN_ACR_PASSWORD }}
+      - name: Build and push integration test container
+        uses: docker/build-push-action@v2
+        with:
+          context: ./test/integration_aks/image
+          push: true
+          tag: jusjin.azurecr.io/amlfs-csi-integration-test:latest
       - name: Run integration test
         run: |
-          make integration-test-aks
+          ./hack/verify-integration-test-aks.sh
         env:
           kube_config: ${{ secrets.KUBE_CONFIG }}
