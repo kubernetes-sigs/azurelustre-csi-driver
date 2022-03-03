@@ -37,7 +37,7 @@ jobs:
         with:
           context: ./test/integration_aks/image
           push: true
-          tag: jusjin.azurecr.io/amlfs-csi-integration-test:latest
+          tags: jusjin.azurecr.io/amlfs-csi-integration-test:latest
       - name: Run integration test
         run: |
           ./hack/verify-integration-test-aks.sh
