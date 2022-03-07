@@ -1,6 +1,10 @@
 #!/bin/bash
 
 echo $kube_config | base64 -d > kubeconfig
+echo "replace yaml file"
+cat ./test/integration_aks/integration_test_aks.yaml.template \
+  | sed "s/{test_acr_uri}/${test_acr_uri}/g" >./test/integration_aks/integration_test_aks.yaml
+echo "done"
 
 set -o xtrace
 set -o errexit

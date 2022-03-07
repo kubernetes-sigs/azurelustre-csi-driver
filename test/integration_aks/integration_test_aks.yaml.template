@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: integration-test
-      image: jusjin.azurecr.io/amlfs-csi-integration-test:latest
+      image: {test_acr_uri}/amlfs-csi-integration-test:latest
       securityContext:
         privileged: true
   restartPolicy: Never

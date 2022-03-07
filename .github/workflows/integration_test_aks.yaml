@@ -37,9 +37,10 @@ jobs:
         with:
           context: ./test/integration_aks/image
           push: true
-          tags: jusjin.azurecr.io/amlfs-csi-integration-test:latest
+          tags: ${{ secrets.TEST_ACR_URI }}/amlfs-csi-integration-test:latest
       - name: Run integration test
         run: |
           ./hack/verify-integration-test-aks.sh
         env:
           kube_config: ${{ secrets.KUBE_CONFIG }}
+          test_acr_uri: ${{ secrets.TEST_ACR_URL }}
