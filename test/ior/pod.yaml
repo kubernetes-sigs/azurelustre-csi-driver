@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ior
+  namespace: default
+  labels:
+    k8s-app: ior
+spec:
+  selector:
+    matchLabels:
+      name: ior
+  template:
+    metadata:
+      labels:
+        name: ior
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      # this toleration is to have the daemonset runnable on master nodes
+      # remove it if your masters can't run pods
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: ior
+        image: jusjin.azurecr.io/ior:latest
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2000Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - name: amlfs
+          mountPath: /amlfs
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: amlfs
+        persistentVolumeClaim:
+          claimName: amlfs-claim
