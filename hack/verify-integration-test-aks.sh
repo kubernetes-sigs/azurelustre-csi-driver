@@ -3,7 +3,7 @@
 echo $kube_config | base64 -d > kubeconfig
 echo "replace yaml file"
 cat ./test/integration_aks/integration_test_aks.yaml.template \
-  | sed "s/{test_acr_uri}/${test_acr_uri}/g" >./test/integration_aks/integration_test_aks.yaml
+  | sed "s/{test_acr_uri}/${test_acr_uri}/g;s/{lustre_fs_name}/${lustre_fs_name}/g;s/{lustre_fs_ip}/${lustre_fs_ip}/g" >./test/integration_aks/integration_test_aks.yaml
 echo "done"
 
 set -o xtrace
@@ -13,7 +13,6 @@ set -o nounset
 
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
 chmod +x kubectl
-# mv kubectl /usr/local/bin
 export KUBECONFIG=$(pwd)/kubeconfig
 
 ./kubectl delete -f ./test/integration_aks/integration_test_aks.yaml || true

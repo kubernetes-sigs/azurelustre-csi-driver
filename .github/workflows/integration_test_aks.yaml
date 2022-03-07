@@ -43,4 +43,6 @@ jobs:
           ./hack/verify-integration-test-aks.sh
         env:
           kube_config: ${{ secrets.KUBE_CONFIG }}
-          test_acr_uri: ${{ secrets.TEST_ACR_URL }}
+          test_acr_uri: ${{ secrets.TEST_ACR_URI }}
+          lustre_fs_name: ${{ secrets.LUSTRE_FS_NAME }}
+          lustre_fs_ip: ${{ secrets.LUSTRE_FS_IP }}

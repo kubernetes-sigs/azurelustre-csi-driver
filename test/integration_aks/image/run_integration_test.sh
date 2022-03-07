@@ -9,13 +9,15 @@ readonly volname="citest-$(date +%s)"
 readonly volsize="2147483648"
 readonly endpoint="unix:///csi/csi.sock"
 readonly target_path="/tmp/target_path"
+readonly lustre_fs_name=$1
+readonly lustre_fs_ip=$2
 
 mkdir -p $target_path
 
 urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
-echo "$(data -u) Kernel version is ${kernelVersion}"
+echo "$(date -u) Kernel version is ${kernelVersion}"
 
 echo "$(date -u) Downloading Lustre client packages."
 wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
@@ -66,7 +68,7 @@ value="$(csc controller new --endpoint "$endpoint" \
                             --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                             "$volname" \
                             --req-bytes "$volsize" \
-                            --params fs-name=lustrefs,mds-ip-address=172.18.8.12)"
+                            --params fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip)"
 sleep 5
 
 volumeid="$(echo "$value" | awk '{print $1}' | sed 's/"//g')"
@@ -81,7 +83,7 @@ echo "====: $(date -u) Node publis volume test:"
 csc node publish --endpoint "$endpoint" \
                  --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                  --target-path "$target_path" \
-                 --vol-context "fs-name=lustrefs,mds-ip-address=172.18.8.12" \
+                 --vol-context "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" \
                  "$volumeid"
 sleep 3
 
