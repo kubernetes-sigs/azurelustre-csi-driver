@@ -12,6 +12,7 @@ chmod +x kubectl
 # mv kubectl /usr/local/bin
 export KUBECONFIG=$(pwd)/kubeconfig
 
+./kubectl delete -f ./test/integration_aks/integration_test_aks.yaml || true
 ./kubectl apply -f ./test/integration_aks/integration_test_aks.yaml
 
 function catlog {

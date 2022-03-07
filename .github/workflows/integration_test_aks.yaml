@@ -29,9 +29,9 @@ jobs:
       - name: Docker login
         uses: docker/login-action@v1
         with:
-          registry: jusjin.azurecr.io
-          username: ${{ secrets.JUSJIN_ACR_USERNAME }}
-          password: ${{ secrets.JUSJIN_ACR_PASSWORD }}
+          registry: ${{ secrets.TEST_ACR_URI }}
+          username: ${{ secrets.TEST_ACR_USERNAME }}
+          password: ${{ secrets.TEST_ACR_PASSWORD }}
       - name: Build and push integration test container
         uses: docker/build-push-action@v2
         with:
