@@ -61,7 +61,7 @@ nohup 2>&1 ./amlfsplugin --v=5 \
 
 sleep 5
 
-echo "====: $(date -u) Existing integration test"
+echo "====: $(date -u) Exiting integration test"
 export X_CSI_DEBUG=true
 echo "====: $(date -u) Create volume test:"
 value="$(csc controller new --endpoint "$endpoint" \
