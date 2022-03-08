@@ -17,7 +17,6 @@ mkdir -p $target_path
 urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
-# go
 echo "$(date -u) Kernel version is ${kernelVersion}"
 
 echo "$(date -u) Downloading Lustre client packages."
