@@ -11,6 +11,7 @@ readonly endpoint="unix:///csi/csi.sock"
 readonly target_path="/tmp/target_path"
 readonly lustre_fs_name=$1
 readonly lustre_fs_ip=$2
+readonly lustre_client_version="2.14.0"
 
 mkdir -p $target_path
 
@@ -20,18 +21,16 @@ kernelVersion=$(uname -r)
 echo "$(date -u) Kernel version is ${kernelVersion}"
 
 echo "$(date -u) Downloading Lustre client packages."
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
+wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_${lustre_client_version}_amd64.deb"
+wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_${lustre_client_version}_amd64.deb"
 echo "$(date -u) Downloaded Lustre client packages."
 
 echo "$(date -u) Installing Lustre client packages."
 apt-get update
-apt-get install -y --no-install-recommends "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
+apt-get install -y --no-install-recommends "./lustre-client-utils_${lustre_client_version}_amd64.deb" "./lustre-client-modules_${lustre_client_version}_amd64.deb"
 
-apt-get autoremove -y wget
-
-rm --force ./lustre-client-utils_2.14.0_amd64.deb
-rm --force ./lustre-client-modules_2.14.0_amd64.deb
+rm --force ./lustre-client-utils_${lustre_client_version}_amd64.deb
+rm --force ./lustre-client-modules_${lustre_client_version}_amd64.deb
 echo "$(date -u) Installed Lustre client packages."
 
 echo "$(date -u) Enabling Lustre client kernel modules."
@@ -79,7 +78,7 @@ csc controller validate-volume-capabilities --endpoint "$endpoint" \
                                             --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                                             "$volumeid"
 
-echo "====: $(date -u) Node publis volume test:"
+echo "====: $(date -u) Node publish volume test:"
 csc node publish --endpoint "$endpoint" \
                  --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                  --target-path "$target_path" \
