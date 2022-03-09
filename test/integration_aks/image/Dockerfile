@@ -10,9 +10,6 @@ RUN apt-get update
 # Fix vulnerability CVE-2018-7169
 RUN apt-get upgrade -y login passwd
 
-# Install all Lustre packages dependencies
-RUN apt-get install -y --no-install-recommends wget git ca-certificates
-
 COPY --from=golang /usr/local/go/ /usr/local/go/
 
 ENV GOPATH="/root/go"

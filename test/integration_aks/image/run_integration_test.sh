@@ -18,6 +18,11 @@ mkdir -p $target_path
 urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
+echo "$(date -u) Installing Lustre kmod git and cert"
+apt-get update
+apt-get install -y --no-install-recommends kmod wget git ca-certificates
+update-ca-certificates
+
 echo "$(date -u) Kernel version is ${kernelVersion}"
 
 echo "$(date -u) Downloading Lustre client packages."
@@ -26,8 +31,7 @@ wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules
 echo "$(date -u) Downloaded Lustre client packages."
 
 echo "$(date -u) Installing Lustre client packages."
-apt-get update
-apt-get install kmod
+
 apt-get install -y --no-install-recommends "./lustre-client-utils_${lustre_client_version}_amd64.deb" "./lustre-client-modules_${lustre_client_version}_amd64.deb"
 
 rm --force ./lustre-client-utils_${lustre_client_version}_amd64.deb
@@ -49,7 +53,6 @@ echo "$(date -u) Enabled Lustre client kernel modules."
 echo "$(date -u) Entering Lustre CSI driver"
 
 echo "$(date -u) install csc"
-update-ca-certificates
 GO111MODULE=off go get github.com/rexray/gocsi/csc
 
 mkdir /csi
