@@ -27,6 +27,7 @@ echo "$(date -u) Downloaded Lustre client packages."
 
 echo "$(date -u) Installing Lustre client packages."
 apt-get update
+apt-get install kmod
 apt-get install -y --no-install-recommends "./lustre-client-utils_${lustre_client_version}_amd64.deb" "./lustre-client-modules_${lustre_client_version}_amd64.deb"
 
 rm --force ./lustre-client-utils_${lustre_client_version}_amd64.deb
