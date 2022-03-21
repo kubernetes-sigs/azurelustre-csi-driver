@@ -14,51 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -xe
+echo $kube_config | base64 -d > kubeconfig
+
+set -euo pipefail
 
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
-DRIVER="test"
 
-install_ginkgo () {
-    apt update -y
-    apt install -y golang-ginkgo-dev
-}
+$PROJECT_ROOT/deploy/uninstall-driver.sh || true
+$PROJECT_POOT/deploy/install-driver.sh
 
-setup_e2e_binaries() {
-    # download k8s external e2e binary
-    curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
-    tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
+apt update -y
+apt install -y golang-ginkgo-dev
 
-    export EXTRA_HELM_OPTIONS="--set driver.name=$DRIVER.csi.azure.com --set controller.name=csi-$DRIVER-controller --set node.name=csi-$DRIVER-node --set image.csiProvisioner.tag=v3.0.0"
-    if [ ! -z ${EXTERNAL_E2E_TEST_NFS} ]; then
-        # enable fsGroupPolicy (only available from k8s 1.20)
-        export EXTRA_HELM_OPTIONS=$EXTRA_HELM_OPTIONS" --set feature.enableFSGroupPolicy=true"
-    fi
-
-     # test on alternative driver name
-    sed -i "s/amlfs.csi.azure.com/$DRIVER.csi.azure.com/g" deploy/example/storageclass-amlfs.yaml
-    make e2e-bootstrap
-    sed -i "s/csi-amlfs-controller/csi-$DRIVER-controller/g" deploy/example/metrics/csi-amlfs-controller-svc.yaml
-    make create-metrics-svc
-}
+curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
+tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
 print_logs() {
-    bash ./hack/verify-examples.sh
     echo "print out driver logs ..."
     bash ./test/utils/amlfs_log.sh $DRIVER
 }
 
-install_ginkgo
-setup_e2e_binaries
 trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
 if [ ! -z ${EXTERNAL_E2E_TEST_AMLFS} ]; then
     echo "begin to run amlfs tests ...."
-    cp deploy/example/storageclass-amlfs.yaml /tmp/csi/storageclass.yaml
-    ginkgo -p --progress --v -focus="External.Storage.*$DRIVER.csi.azure.com" \
-        -skip='\[Disruptive\]|\[Slow\]|pod created with an initial fsgroup, volume contents ownership changed in first pod, new pod with same fsgroup skips ownership changes to the volume contents' kubernetes/test/bin/e2e.test  -- \
+    cp $PROJECT_POOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
+    ginkgo -p --progress --v -focus="External.Storage.amlfs.csi.azure.com" \
+        kubernetes/test/bin/e2e.test  -- \
         -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
         --kubeconfig=$KUBECONFIG
 fi

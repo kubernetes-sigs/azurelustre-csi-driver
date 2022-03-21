@@ -1,0 +1,11 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: testamlfs.csi.azure.com
+provisioner: amlfs.csi.azure.com
+parameters:
+  # mds-ip-address: "172.18.8.7"      # 1st amlfs cluster connected with 1st AKS cluster
+  mds-ip-address: "172.18.8.12"     # 2nd amlfs cluster connected with 1st AKS cluster
+  # mds-ip-address: "192.168.100.5"     # 3rd amlfs cluster connected with 2nd AKS cluster
+  fs-name: "lustrefs"
