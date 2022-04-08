@@ -8,6 +8,7 @@ jobs:
   Run-external-e2e-test:
     name: Run External E2E Test
     runs-on: ubuntu-latest
+    container: ubuntu:18.04
     steps:
       - name: Set up Go 1.x
         uses: actions/setup-go@v2
