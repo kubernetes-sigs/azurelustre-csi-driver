@@ -16,13 +16,18 @@
 
 echo $kube_config | base64 -d > kubeconfig
 
-set -euo pipefail
+set -o xtrace
+set -o errexit
+set -o pipefail
+set -o nounset
 
 # need to run in a container in github action to have root permission
 apt update -y
 apt install -y golang-ginkgo-dev
 apt install -y --no-install-recommends git curl ca-certificates
 update-ca-certificates
+
+pwd
 
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 
