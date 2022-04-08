@@ -18,7 +18,7 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@master
             - name: Run linter
-              uses: golangci/golangci-lint-action@v2
+              uses: golangci/golangci-lint-action@v3.1.0
               with:
                   version: v1.29
                   args: -E=gofmt --timeout=30m0s
