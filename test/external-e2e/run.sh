@@ -20,9 +20,6 @@ set -euo pipefail
 
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 
-$PROJECT_ROOT/deploy/uninstall-driver.sh || true
-$PROJECT_POOT/deploy/install-driver.sh
-
 apt update -y
 apt install -y golang-ginkgo-dev
 
