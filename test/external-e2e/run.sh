@@ -18,10 +18,13 @@ echo $kube_config | base64 -d > kubeconfig
 
 set -euo pipefail
 
-PROJECT_ROOT=$(git rev-parse --show-toplevel)
-
+# need to run in a container in github action to have root permission
 apt update -y
 apt install -y golang-ginkgo-dev
+apt install -y --no-install-recommends git curl ca-certificates
+update-ca-certificates
+
+PROJECT_ROOT=$(git rev-parse --show-toplevel)
 
 curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
