@@ -6,6 +6,11 @@ StorageClass:
   FromFile: /tmp/csi/storageclass.yaml
 DriverInfo:
   Name: amlfs.csi.azure.com
+  SupportedSizeRange:
+    Max: 8Ti
+    Min: 4Ti
+  RequiredAccessModes:
+    - ReadWriteMany
   Capabilities:
     persistence: true
     block: false
