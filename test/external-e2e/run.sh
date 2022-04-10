@@ -47,7 +47,6 @@ trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
-=
 echo "begin to run amlfs tests ...."
 cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
 ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
