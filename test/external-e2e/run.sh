@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo $kube_config | base64 -d > kubeconfig
+mkdir ~/.kube
+echo $kube_config | base64 -d > ~/.kube/config
 
 set -o xtrace
 set -o errexit
@@ -51,4 +52,4 @@ ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
     -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down" \
     kubernetes/test/bin/e2e.test  -- \
     -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
-    --kubeconfig=$KUBECONFIG
+    --kubeconfig=~/.kube/config
