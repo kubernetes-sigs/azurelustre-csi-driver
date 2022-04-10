@@ -29,6 +29,7 @@ apt install -y --no-install-recommends curl ca-certificates
 update-ca-certificates
 
 PROJECT_ROOT=$(pwd)
+KUBECONFIG=~/.kube/config
 
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
 chmod +x kubectl
@@ -46,10 +47,11 @@ trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
+=
 echo "begin to run amlfs tests ...."
 cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
 ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
     -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down" \
     kubernetes/test/bin/e2e.test  -- \
     -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
-    --kubeconfig=~/.kube/config
+    --kubeconfig=$KUBECONFIG
