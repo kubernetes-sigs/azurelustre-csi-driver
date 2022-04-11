@@ -14,36 +14,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo $kube_config | base64 -d > kubeconfig
+mkdir ~/.kube
+echo $kube_config | base64 -d > ~/.kube/config
 
-set -euo pipefail
+set -o xtrace
+set -o errexit
+set -o pipefail
+set -o nounset
 
-PROJECT_ROOT=$(git rev-parse --show-toplevel)
-
-$PROJECT_ROOT/deploy/uninstall-driver.sh || true
-$PROJECT_POOT/deploy/install-driver.sh
-
+# need to run in a container in github action to have root permission
 apt update -y
 apt install -y golang-ginkgo-dev
+apt install -y --no-install-recommends curl ca-certificates
+update-ca-certificates
+
+PROJECT_ROOT=$(pwd)
+KUBECONFIG=~/.kube/config
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
+chmod +x kubectl
+cp ./kubectl /usr/bin/
 
 curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
 print_logs() {
     echo "print out driver logs ..."
-    bash ./test/utils/amlfs_log.sh $DRIVER
+    bash ./test/utils/amlfs_log.sh
 }
 
 trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
-if [ ! -z ${EXTERNAL_E2E_TEST_AMLFS} ]; then
-    echo "begin to run amlfs tests ...."
-    cp $PROJECT_POOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
-    ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
-        kubernetes/test/bin/e2e.test  -- \
-        -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down"
-        -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
-        --kubeconfig=$KUBECONFIG
-fi
+echo "begin to run amlfs tests ...."
+cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
+ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
+    -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down" \
+    kubernetes/test/bin/e2e.test  -- \
+    -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
+    --kubeconfig=$KUBECONFIG
