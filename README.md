@@ -1,7 +1,7 @@
 # Azure Managed Lustre CSI Driver for Kubernetes
 [![Travis](https://travis-ci.org/kubernetes-sigs/amlfs-csi-driver.svg)](https://travis-ci.org/kubernetes-sigs/amlfs-csi-driver)
 [![Coverage Status](https://coveralls.io/repos/github/kubernetes-sigs/amlfs-csi-driver/badge.svg?branch=main)](https://coveralls.io/github/kubernetes-sigs/amlfs-csi-driver?branch=main)
-[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fkubernetes-sigs%2Famlfs-csi-driver.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fkubernetes-sigs%2Famlfs-csi-driver?ref=badge_shield)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjusjin-org%2Famlfs-csi-driver.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjusjin-org%2Famlfs-csi-driver?ref=badge_shield)
 
 ### About
 This driver allows Kubernetes to access Azure Managed Lustre filesystem.
