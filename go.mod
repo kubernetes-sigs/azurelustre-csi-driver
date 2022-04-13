@@ -1,4 +1,4 @@
-module sigs.k8s.io/amlfs-csi-driver
+module sigs.k8s.io/azurelustre-csi-driver
 
 go 1.17
 
@@ -70,6 +70,7 @@ require (
 	github.com/prometheus/common v0.10.0 // indirect
 	github.com/prometheus/procfs v0.2.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/wastore/go-lustre v0.0.4-0.20220304212757-17582e83560c // indirect
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83 // indirect
 	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602 // indirect
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect

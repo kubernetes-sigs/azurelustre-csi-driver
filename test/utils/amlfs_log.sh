@@ -17,8 +17,8 @@
 set -e
 
 NS=kube-system
-CONTAINER=amlfs
-DRIVER=amlfs
+CONTAINER=azurelustre
+DRIVER=azurelustre
 if [[ "$#" -gt 0 ]]; then
     DRIVER=$1
 fi

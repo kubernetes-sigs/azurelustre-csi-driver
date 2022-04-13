@@ -24,8 +24,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/testsuites"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/testsuites"
 
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
@@ -34,8 +34,8 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
-var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
-	f := framework.NewDefaultFramework("amlfs")
+var _ = ginkgo.Describe("[azurelustre-csi-e2e] Dynamic Provisioning", func() {
+	f := framework.NewDefaultFramework("azurelustre")
 
 	var (
 		cs         clientset.Interface
@@ -56,7 +56,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 		ns = f.Namespace
 	})
 
-	testDriver = driver.InitAmlfsCSIDriver()
+	testDriver = driver.InitAzureLustreCSIDriver()
 	ginkgo.It("should create a volume on demand without saving storage account key", func() {
 		pods := []testsuites.PodDetails{
 			{
@@ -150,7 +150,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 			StorageClassParameters: map[string]string{
 				"skuName":                "Premium_LRS",
 				"isHnsEnabled":           "true",
-				"allowAmlfsPublicAccess": "false",
+				"allowAzureLustrePublicAccess": "false",
 			},
 		}
 		test.Run(cs, ns)
@@ -220,7 +220,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 			ColocatePods: true,
 			StorageClassParameters: map[string]string{
 				"skuName":                "Standard_RAGRS",
-				"allowAmlfsPublicAccess": "false",
+				"allowAzureLustrePublicAccess": "false",
 			},
 		}
 		if isAzureStackCloud {
@@ -258,10 +258,10 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 		test := testsuites.DynamicallyProvisionedReclaimPolicyTest{
 			CSIDriver: testDriver,
 			Volumes:   volumes,
-			Driver:    amlfsDriver,
+			Driver:    azureLustreDriver,
 			StorageClassParameters: map[string]string{
 				"skuName":                "Standard_GRS",
-				"allowAmlfsPublicAccess": "false",
+				"allowAzureLustrePublicAccess": "false",
 			},
 		}
 		if isAzureStackCloud {
@@ -321,7 +321,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 			Pods:      pods,
 			StorageClassParameters: map[string]string{
 				"skuName":                "Standard_LRS",
-				"allowAmlfsPublicAccess": "true",
+				"allowAzureLustrePublicAccess": "true",
 			},
 		}
 		test.Run(cs, ns)
@@ -375,7 +375,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 		test.Run(cs, ns)
 	})
 
-	ginkgo.It("should create a volume on demand and resize it [amlfs.csi.azure.com]", func() {
+	ginkgo.It("should create a volume on demand and resize it [azurelustre.csi.azure.com]", func() {
 		pods := []testsuites.PodDetails{
 			{
 				Cmd: "echo 'hello world' > /mnt/test-1/data && grep 'hello world' /mnt/test-1/data",
@@ -398,7 +398,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 		test.Run(cs, ns)
 	})
 
-	ginkgo.It("should create an CSI inline volume [amlfs.csi.azure.com]", func() {
+	ginkgo.It("should create an CSI inline volume [azurelustre.csi.azure.com]", func() {
 		// get storage account secret name
 		err := os.Chdir("../..")
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -423,15 +423,15 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Dynamic Provisioning", func() {
 		}
 		accountName := segments[3]
 
-		containerName := "csi-inline-amlfs-volume"
+		containerName := "csi-inline-azurelustre-volume"
 		req := makeCreateVolumeReq(containerName, ns.Name)
 		req.Parameters["storageAccount"] = accountName
-		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+		resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID := resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 		pods := []testsuites.PodDetails{
 			{

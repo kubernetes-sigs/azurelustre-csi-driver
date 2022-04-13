@@ -22,8 +22,8 @@ import (
 
 	//"github.com/onsi/ginkgo"
 
-	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/driver"
 
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -35,7 +35,7 @@ import (
 type PreProvisionedProvidedCredentiasTest struct {
 	CSIDriver driver.PreProvisionedVolumeTestDriver
 	Pods      []PodDetails
-	Driver    *amlfs.Driver
+	Driver    *azurelustre.Driver
 }
 
 func (t *PreProvisionedProvidedCredentiasTest) Run(client clientset.Interface, namespace *v1.Namespace) {

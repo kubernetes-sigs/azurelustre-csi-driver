@@ -21,7 +21,7 @@ import (
 
 	"github.com/onsi/ginkgo"
 
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/driver"
 
 	v1 "k8s.io/api/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -37,7 +37,7 @@ type PreProvisionedExistingCredentialsTest struct {
 func (t *PreProvisionedExistingCredentialsTest) Run(client clientset.Interface, namespace *v1.Namespace) {
 	for _, pod := range t.Pods {
 		for n, volume := range pod.Volumes {
-			//resourceGroupName, accountName, containerName, err := amlfs.GetContainerInfo(volume.VolumeID)
+			//resourceGroupName, accountName, containerName, err := azureLustre.GetContainerInfo(volume.VolumeID)
 			//if err != nil {
 			//	framework.ExpectNoError(err, fmt.Sprintf("Error GetContainerInfo from volumeID(%s): %v", volume.VolumeID, err))
 			//	return

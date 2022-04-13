@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-amlfs-node-sa
+  name: csi-azurelustre-node-sa
   namespace: kube-system
 
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-amlfs-node-secret-role
+  name: csi-azurelustre-node-secret-role
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -19,12 +19,12 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-amlfs-node-secret-binding
+  name: csi-azurelustre-node-secret-binding
 subjects:
   - kind: ServiceAccount
-    name: csi-amlfs-node-sa
+    name: csi-azurelustre-node-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: csi-amlfs-node-secret-role
+  name: csi-azurelustre-node-secret-role
   apiGroup: rbac.authorization.k8s.io

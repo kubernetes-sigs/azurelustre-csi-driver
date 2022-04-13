@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: integration-test
-      image: {test_acr_uri}/amlfs-csi-integration-test:latest
+      image: {test_acr_uri}/azurelustre-csi-integration-test:latest
       args:
         - "{lustre_fs_name}"
         - "{lustre_fs_ip}"

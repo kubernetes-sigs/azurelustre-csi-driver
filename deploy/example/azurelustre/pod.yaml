@@ -32,8 +32,8 @@ spec:
             cpu: 100m
             memory: 200Mi
         volumeMounts:
-        - name: amlfs
-          mountPath: /amlfs
+        - name: azurelustre
+          mountPath: /azurelustre
         - name: varlog
           mountPath: /var/log
         - name: varlibdockercontainers
@@ -47,6 +47,6 @@ spec:
       - name: varlibdockercontainers
         hostPath:
           path: /var/lib/docker/containers
-      - name: amlfs
+      - name: azurelustre
         persistentVolumeClaim:
-          claimName: amlfs-claim
+          claimName: azurelustre-claim

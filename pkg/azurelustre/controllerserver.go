@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package amlfs
+package azurelustre
 
 import (
 	"context"
@@ -133,9 +133,7 @@ func (d *Driver) CreateVolume(
 	}
 	defer d.volumeLocks.Release(volName)
 
-	// TODO_JUSJIN: this should be rounded up to amlfs unit size for real
-	//              dynamic provisioning
-	// TODO_JUSJIN: check req.GetCapacityRange() for real dynamic provisioning
+	// TODO_JUSJIN: check req.GetCapacityRange()
 
 	parameters := req.GetParameters()
 	if parameters == nil {
@@ -143,7 +141,7 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameters must be provided")
 	}
 
-	// TODO_CHYIN: Need to change the parameters in real dynamic provision.
+	// TODO_CHYIN: Need to more parameters later.
 	//             Now simply store the IP and name in the storageClass.
 	mdsIPAddress := parameters[VolumeContextMDSIPAddress]
 	if len(mdsIPAddress) == 0 {
@@ -152,8 +150,8 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameter mds-ip-address must be provided",
 		)
 	}
-	amlFSName := parameters[VolumeContextFSName]
-	if len(amlFSName) == 0 {
+	azureLustreName := parameters[VolumeContextFSName]
+	if len(azureLustreName) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter fs-name must be provided",
@@ -180,7 +178,7 @@ func (d *Driver) CreateVolume(
 	}
 
 	mc := metrics.NewMetricContext(
-		amlfsCSIDriverName,
+		azureLustreCSIDriverName,
 		"controller_create_volume",
 		"<unknown>",
 		"<unknown>",
@@ -194,12 +192,7 @@ func (d *Driver) CreateVolume(
 	// volumeID must be the same when volumeName is the same to satisfy the
 	// idempotent requirement.
 	// volumeID MUST have enough information for troubleshout.
-	// TODO_CHYIN: need to check if the volumeID is an existing volume with
-	//             different parameters.
-	//             need LaaSo's support
-	// TODO_CHYIN: need to change when RP is ready and we support real dynamic
-	//             provision.
-	volumeID := fmt.Sprintf(volumeIDTemplate, volName, amlFSName, mdsIPAddress)
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mdsIPAddress)
 
 	klog.V(2).Infof(
 		"begin to create volumeID(%s)", volumeID,
@@ -243,7 +236,7 @@ func (d *Driver) DeleteVolume(
 	}
 	defer d.volumeLocks.Release(volumeID)
 
-	mc := metrics.NewMetricContext(amlfsCSIDriverName,
+	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"controller_delete_volume",
 		"<unknown>",
 		"<unknown>",

@@ -14,8 +14,8 @@
 
 FROM ubuntu:18.04
 
-COPY "./_output/amlfsplugin" "/app/amlfsplugin"
-COPY "./pkg/amlfsplugin/entrypoint.sh" "/app/entrypoint.sh"
+COPY "./_output/azurelustreplugin" "/app/azurelustreplugin"
+COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
 
 RUN chmod +x "/app/entrypoint.sh"
 
@@ -38,6 +38,6 @@ RUN apt-get install -y --no-install-recommends libreadline7 libkeyutils1 wget   
 WORKDIR "/app"
 
 LABEL maintainers="fuxiuyin;joe-atzinger;Justin-Jin"
-LABEL description="Azure Managed Lustre CSI driver"
+LABEL description="Azure Lustre CSI driver"
 
-ENTRYPOINT ["/app/entrypoint.sh", "/app/amlfsplugin"]  
+ENTRYPOINT ["/app/entrypoint.sh", "/app/azurelustreplugin"]

@@ -2,7 +2,7 @@
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
-  name: csi-amlfs-node
+  name: csi-azurelustre-node
   namespace: kube-system
 spec:
   updateStrategy:
@@ -11,15 +11,15 @@ spec:
     type: RollingUpdate
   selector:
     matchLabels:
-      app: csi-amlfs-node
+      app: csi-azurelustre-node
   template:
     metadata:
       labels:
-        app: csi-amlfs-node
+        app: csi-azurelustre-node
     spec:
       hostNetwork: true
       dnsPolicy: Default
-      serviceAccountName: csi-amlfs-node-sa
+      serviceAccountName: csi-azurelustre-node-sa
       nodeSelector:
         kubernetes.io/os: linux
       affinity:
@@ -61,7 +61,7 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/amlfs.csi.azure.com-reg.sock /csi/csi.sock"]
+                command: ["/bin/sh", "-c", "rm -rf /registration/azurelustre.csi.azure.com-reg.sock /csi/csi.sock"]
           livenessProbe:
             exec:
               command:
@@ -74,7 +74,7 @@ spec:
             - name: ADDRESS
               value: /csi/csi.sock
             - name: DRIVER_REG_SOCK_PATH
-              value: /var/lib/kubelet/plugins/amlfs.csi.azure.com/csi.sock
+              value: /var/lib/kubelet/plugins/azurelustre.csi.azure.com/csi.sock
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -87,8 +87,8 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
-        - name: amlfs
-          image: jusjin.azurecr.io/amlfs-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
+        - name: azurelustre
+          image: jusjin.azurecr.io/azurelustre-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
           imagePullPolicy: Always   # TODO_JUSJIN: for testing only
           args:
             - "--v=5"
@@ -110,7 +110,7 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AMLFS_CSI_INSTALL_LUSTRE_CLIENT
+            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
               value: "yes"
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -128,7 +128,7 @@ spec:
             - mountPath: /etc/kubernetes/
               name: azure-cred
             - mountPath: /mnt
-              name: amlfs-cache
+              name: azurelustre-cache
           resources:   # TODO_JUSJIN: tune this for perf/scale
             limits:
               cpu: 1
@@ -138,7 +138,7 @@ spec:
               memory: 20Mi
       volumes:
         - hostPath:
-            path: /var/lib/kubelet/plugins/amlfs.csi.azure.com
+            path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
             type: DirectoryOrCreate
           name: socket-dir
         - hostPath:
@@ -156,4 +156,4 @@ spec:
         - hostPath:
             path: /mnt
             type: DirectoryOrCreate
-          name: amlfs-cache
+          name: azurelustre-cache

@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
@@ -40,15 +40,15 @@ var (
 	nodeID               = flag.String("nodeid", "", "node id")
 	version              = flag.Bool("version", false, "Print the version and exit.")
 	metricsAddress       = flag.String("metrics-address", "0.0.0.0:29634", "export the metrics")
-	driverName           = flag.String("drivername", amlfs.DefaultDriverName, "name of the driver")
-	enableAmlfsMockMount = flag.Bool("enable-amlfs-mock-mount", false, "Whether enable mock mount(only for testing)")
+	driverName           = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
+	enableAzureLustreMockMount = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
 )
 
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	if *version {
-		info, err := amlfs.GetVersionYAML(*driverName)
+		info, err := azurelustre.GetVersionYAML(*driverName)
 		if err != nil {
 			klog.Fatalln(err)
 		}
@@ -62,14 +62,14 @@ func main() {
 }
 
 func handle() {
-	driverOptions := amlfs.DriverOptions{
+	driverOptions := azurelustre.DriverOptions{
 		NodeID:               *nodeID,
 		DriverName:           *driverName,
-		EnableAmlfsMockMount: *enableAmlfsMockMount,
+		EnableAzureLustreMockMount: *enableAzureLustreMockMount,
 	}
-	driver := amlfs.NewDriver(&driverOptions)
+	driver := azurelustre.NewDriver(&driverOptions)
 	if driver == nil {
-		klog.Fatalln("Failed to initialize Azure Managed Lustre CSI driver")
+		klog.Fatalln("Failed to initialize Azure Lustre CSI driver")
 	}
 	driver.Run(*endpoint, "", false)
 }

@@ -23,7 +23,7 @@ import (
 	"log"
 	"os"
 
-	"sigs.k8s.io/amlfs-csi-driver/test/utils/testutil"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
 
 	"github.com/pborman/uuid"
 	"github.com/pelletier/go-toml"
@@ -31,7 +31,7 @@ import (
 
 const (
 	AzurePublicCloud            = "AzurePublicCloud"
-	ResourceGroupPrefix         = "amlfs-csi-driver-test-"
+	ResourceGroupPrefix         = "azurelustre-csi-driver-test-"
 	TempAzureCredentialFilePath = "/tmp/azure.json"
 
 	azureCredentialFileTemplate = `{
@@ -72,7 +72,7 @@ type FromProw struct {
 	StorageAccountKey  string
 }
 
-// Credentials is used in Azure Managed Lustre CSI driver to store Azure credentials
+// Credentials is used in Azure Lustre CSI driver to store Azure credentials
 type Credentials struct {
 	Cloud           string
 	TenantID        string
@@ -84,7 +84,7 @@ type Credentials struct {
 }
 
 // CreateAzureCredentialFile creates a temporary Azure credential file for
-// Azure Managed Lustre CSI driver tests and returns the credentials
+// Azure Lustre CSI driver tests and returns the credentials
 func CreateAzureCredentialFile() (*Credentials, error) {
 	// Search credentials through env vars first
 	var cloud, tenantID, subscriptionID, aadClientID, aadClientSecret, resourceGroup, location string
@@ -137,7 +137,7 @@ func DeleteAzureCredentialFile() error {
 }
 
 // getCredentialsFromAzureCredentials parses the azure credentials toml (AZURE_CREDENTIALS)
-// in Prow and returns the credential information usable to Azure Managed Lustre CSI driver
+// in Prow and returns the credential information usable to Azure Lustre CSI driver
 func getCredentialsFromAzureCredentials(azureCredentialsPath string) (*FromProw, error) {
 	content, err := ioutil.ReadFile(azureCredentialsPath)
 	log.Printf("Reading credentials file %v", azureCredentialsPath)

@@ -2,8 +2,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - csi-amlfs-controller.yaml
-  - csi-amlfs-driver.yaml
-  - csi-amlfs-node.yaml
-  - rbac-csi-amlfs-controller.yaml
-  - rbac-csi-amlfs-node.yaml
+  - csi-azurelustre-controller.yaml
+  - csi-azurelustre-driver.yaml
+  - csi-azurelustre-node.yaml
+  - rbac-csi-azurelustre-controller.yaml
+  - rbac-csi-azurelustre-node.yaml

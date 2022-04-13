@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: amlfs-claim
+  name: azurelustre-claim
   namespace: default
   labels:
     ml.azure.com/pvc: "true"
   annotations:
-    ml.azure.com/mountpath: "/amlfs-ml"
+    ml.azure.com/mountpath: "/azurelustre-ml"
 spec:
   accessModes:
     - ReadWriteMany
   volumeMode: Filesystem
-  storageClassName: sc.amlfs.csi.azure.com
+  storageClassName: sc.azurelustre.csi.azure.com
   resources:
     requests:
       storage: 100Mi

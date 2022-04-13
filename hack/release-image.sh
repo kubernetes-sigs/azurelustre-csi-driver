@@ -17,22 +17,22 @@
 set -euo pipefail
 
 if [[ "$#" -lt 1 ]]; then
-  echo "please provide a registry name"  
+  echo "please provide a registry name"
   exit 1
 fi
 
 export REGISTRY_NAME="$1"
 export REGISTRY=$REGISTRY_NAME.azurecr.io
-export IMAGE_NAME=public/k8s/csi/amlfs-csi
+export IMAGE_NAME=public/k8s/csi/azurelustre-csi
 export CI=1
 export PUBLISH=1
 az acr login --name $REGISTRY_NAME
-make amlfs-container
+make azurelustre-container
 make push
 make push-latest
 
 echo "sleep 60s ..."
 sleep 60
-image="mcr.microsoft.com/k8s/csi/amlfs-csi:latest"
+image="mcr.microsoft.com/k8s/csi/azurelustre-csi:latest"
 docker pull $image
 docker inspect $image | grep Created

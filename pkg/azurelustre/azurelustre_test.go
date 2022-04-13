@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package amlfs
+package azurelustre
 
 import (
 	"io/ioutil"
@@ -36,7 +36,7 @@ func NewFakeDriver() *Driver {
 	driverOptions := DriverOptions{
 		NodeID:               fakeNodeID,
 		DriverName:           DefaultDriverName,
-		EnableAmlfsMockMount: false,
+		EnableAzureLustreMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)
 	driver.Name = fakeDriverName
@@ -48,7 +48,7 @@ func TestNewFakeDriver(t *testing.T) {
 	driverOptions := DriverOptions{
 		NodeID:               fakeNodeID,
 		DriverName:           DefaultDriverName,
-		EnableAmlfsMockMount: false,
+		EnableAzureLustreMockMount: false,
 	}
 	d := NewDriver(&driverOptions)
 	assert.NotNil(t, d)
@@ -58,7 +58,7 @@ func TestNewDriver(t *testing.T) {
 	driverOptions := DriverOptions{
 		NodeID:               fakeNodeID,
 		DriverName:           DefaultDriverName,
-		EnableAmlfsMockMount: false,
+		EnableAzureLustreMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)
 	fakedriver := NewFakeDriver()
@@ -90,7 +90,7 @@ func TestIsRetriableError(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := ioutil.TempDir(os.TempDir(), "amlfs-csi-mount-test")
+	existingMountPath, err := ioutil.TempDir(os.TempDir(), "azurelustre-csi-mount-test")
 	if err != nil {
 		t.Fatalf("failed to create tmp dir: %v", err)
 	}

@@ -40,17 +40,17 @@ tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
 print_logs() {
     echo "print out driver logs ..."
-    bash ./test/utils/amlfs_log.sh
+    bash ./test/utils/azurelustre_log.sh
 }
 
 trap print_logs EXIT
 
 mkdir -p /tmp/csi
 
-echo "begin to run amlfs tests ...."
+echo "begin to run azurelustre tests ...."
 cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
-ginkgo -p --progress --v -focus="External.Storage.*.amlfs.csi.azure.com" \
+ginkgo -p --progress --v -focus="External.Storage.*.azurelustre.csi.azure.com" \
     -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down" \
     kubernetes/test/bin/e2e.test  -- \
-    -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-amlfs.yaml \
+    -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-azurelustre.yaml \
     --kubeconfig=$KUBECONFIG

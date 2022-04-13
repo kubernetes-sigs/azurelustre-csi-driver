@@ -1,9 +1,9 @@
 # Static Provisioning
 
-This document explains how to use an existing Azure Managed Lustre Cluster in
+This document explains how to use an existing Azure Lustre Cluster in
 AKS through this CSI driver static provisioning.
 
-## Create a Volume bounded to an existing Azure Managed Lustre Cluster
+## Create a Volume bounded to an existing Azure Lustre Cluster
 
 ### Option 1: Use Storage Class
 

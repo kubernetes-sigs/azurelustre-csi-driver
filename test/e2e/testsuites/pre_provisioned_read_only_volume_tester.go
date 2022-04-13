@@ -19,7 +19,7 @@ package testsuites
 import (
 	"fmt"
 
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/driver"
 
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"

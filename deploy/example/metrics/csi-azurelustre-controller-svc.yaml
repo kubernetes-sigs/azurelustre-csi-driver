@@ -2,11 +2,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: csi-amlfs-controller
+  name: csi-azurelustre-controller
   namespace: kube-system
 spec:
   selector:
-    app: csi-amlfs-controller
+    app: csi-azurelustre-controller
   ports:
     - port: 29634
       targetPort: 29634

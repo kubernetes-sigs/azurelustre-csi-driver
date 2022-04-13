@@ -28,7 +28,7 @@ rollout_and_wait() {
 }
 
 echo "begin to create deployment examples ..."
-kubectl apply -f deploy/example/storageclass-amlfs.yaml
+kubectl apply -f deploy/example/storageclass-azurelustre.yaml
 
 EXAMPLES=(\
     deploy/example/deployment.yaml \

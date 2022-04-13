@@ -2,20 +2,20 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: csi-amlfs-controller
+  name: csi-azurelustre-controller
   namespace: kube-system
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: csi-amlfs-controller
+      app: csi-azurelustre-controller
   template:
     metadata:
       labels:
-        app: csi-amlfs-controller
+        app: csi-azurelustre-controller
     spec:
       hostNetwork: true
-      serviceAccountName: csi-amlfs-controller-sa
+      serviceAccountName: csi-azurelustre-controller-sa
       nodeSelector:
         kubernetes.io/os: linux  # add "kubernetes.io/role: master" to run controller on master node
       priorityClassName: system-cluster-critical
@@ -64,8 +64,8 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
-        - name: amlfs
-          image: jusjin.azurecr.io/amlfs-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
+        - name: azurelustre
+          image: jusjin.azurecr.io/azurelustre-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
           imagePullPolicy: Always   # TODO_JUSJIN: for testing purpose
           args:
             - "--v=5"
@@ -89,7 +89,7 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AMLFS_CSI_INSTALL_LUSTRE_CLIENT
+            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
               value: "no"
           securityContext:
             privileged: true

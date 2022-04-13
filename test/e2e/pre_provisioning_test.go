@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/driver"
-	"sigs.k8s.io/amlfs-csi-driver/test/e2e/testsuites"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/driver"
+	"sigs.k8s.io/azurelustre-csi-driver/test/e2e/testsuites"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/onsi/ginkgo"
@@ -40,8 +40,8 @@ var (
 	defaultVolumeSizeBytes int64 = defaultVolumeSize * 1024 * 1024 * 1024
 )
 
-var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
-	f := framework.NewDefaultFramework("amlfs")
+var _ = ginkgo.Describe("[azurelustre-csi-e2e] Pre-Provisioned", func() {
+	f := framework.NewDefaultFramework("azurelustre")
 
 	var (
 		cs         clientset.Interface
@@ -63,7 +63,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 
 		cs = f.ClientSet
 		ns = f.Namespace
-		testDriver = driver.InitAmlfsCSIDriver()
+		testDriver = driver.InitAzureLustreCSIDriver()
 	})
 
 	ginkgo.AfterEach(func() {
@@ -71,7 +71,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 			req := &csi.DeleteVolumeRequest{
 				VolumeId: volumeID,
 			}
-			_, err := amlfsDriver.DeleteVolume(context.Background(), req)
+			_, err := azureLustreDriver.DeleteVolume(context.Background(), req)
 			if err != nil {
 				ginkgo.Fail(fmt.Sprintf("delete volume %q error: %v", volumeID, err))
 			}
@@ -80,12 +80,12 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 
 	ginkgo.It("[env] should use a pre-provisioned volume and mount it as readOnly in a pod", func() {
 		req := makeCreateVolumeReq("pre-provisioned-readonly", ns.Name)
-		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+		resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID = resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 		volumeSize := fmt.Sprintf("%dGi", defaultVolumeSize)
 		pods := []testsuites.PodDetails{
@@ -114,12 +114,12 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 
 	ginkgo.It(fmt.Sprintf("[env] should use a pre-provisioned volume and retain PV with reclaimPolicy %q", v1.PersistentVolumeReclaimRetain), func() {
 		req := makeCreateVolumeReq("pre-provisioned-retain-reclaimpolicy", ns.Name)
-		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+		resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID = resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 		volumeSize := fmt.Sprintf("%dGi", defaultVolumeSize)
 		reclaimPolicy := v1.PersistentVolumeReclaimRetain
@@ -143,12 +143,12 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 		pods := []testsuites.PodDetails{}
 		for i := 1; i <= 6; i++ {
 			req := makeCreateVolumeReq(fmt.Sprintf("pre-provisioned-multiple-pods%d", time.Now().UnixNano()), ns.Name)
-			resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+			resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 			if err != nil {
 				ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 			}
 			volumeID = resp.Volume.VolumeId
-			ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+			ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 			pod := testsuites.PodDetails{
 				Cmd: "echo 'hello world' > /mnt/test-1/data && grep 'hello world' /mnt/test-1/data",
@@ -175,12 +175,12 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 
 	ginkgo.It("should use existing credentials in k8s cluster", func() {
 		req := makeCreateVolumeReq("pre-provisioned-existing-credentials", ns.Name)
-		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+		resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID = resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 		volumeSize := fmt.Sprintf("%dGi", defaultVolumeSize)
 		reclaimPolicy := v1.PersistentVolumeReclaimRetain
@@ -213,12 +213,12 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 
 	ginkgo.It("should use provided credentials", func() {
 		req := makeCreateVolumeReq("pre-provisioned-provided-credentials", ns.Name)
-		resp, err := amlfsDriver.CreateVolume(context.Background(), req)
+		resp, err := azureLustreDriver.CreateVolume(context.Background(), req)
 		if err != nil {
 			ginkgo.Fail(fmt.Sprintf("create volume error: %v", err))
 		}
 		volumeID = resp.Volume.VolumeId
-		ginkgo.By(fmt.Sprintf("Successfully provisioned amlfs volume: %q\n", volumeID))
+		ginkgo.By(fmt.Sprintf("Successfully provisioned azurelustre volume: %q\n", volumeID))
 
 		volumeSize := fmt.Sprintf("%dGi", defaultVolumeSize)
 		reclaimPolicy := v1.PersistentVolumeReclaimRetain
@@ -246,7 +246,7 @@ var _ = ginkgo.Describe("[amlfs-csi-e2e] Pre-Provisioned", func() {
 		test := testsuites.PreProvisionedProvidedCredentiasTest{
 			CSIDriver: testDriver,
 			Pods:      pods,
-			Driver:    amlfsDriver,
+			Driver:    azureLustreDriver,
 		}
 		test.Run(cs, ns)
 	})

@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-PKG = sigs.k8s.io/amlfs-csi-driver
+PKG = sigs.k8s.io/azurelustre-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= jusjin.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
-IMAGE_NAME ?= amlfs-csi
+IMAGE_NAME ?= azurelustre-csi
 IMAGE_VERSION ?= v0.1.0
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
@@ -28,9 +28,9 @@ endif
 IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS ?= "-X ${PKG}/pkg/amlfs.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/amlfs.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/amlfs.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
-E2E_HELM_OPTIONS ?= --set image.amlfs.pullPolicy=Always --set image.amlfs.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.amlfs.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
-ifdef ENABLE_AMLFS
+LDFLAGS ?= "-X ${PKG}/pkg/azurelustre.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/azurelustre.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/azurelustre.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
+E2E_HELM_OPTIONS ?= --set image.azurelustre.pullPolicy=Always --set image.azurelustre.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.azurelustre.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
+ifdef ENABLE_AZURELUSTRE
 override E2E_HELM_OPTIONS := $(E2E_HELM_OPTIONS) --set controller.logLevel=6 --set node.logLevel=6
 endif
 E2E_HELM_OPTIONS += ${EXTRA_HELM_OPTIONS}
@@ -47,7 +47,7 @@ OUTPUT_TYPE ?= registry
 ALL_ARCH.linux = amd64 #arm64
 ALL_OS_ARCH = $(foreach arch, ${ALL_ARCH.linux}, linux-$(arch))
 
-all: amlfs
+all: azurelustre
 
 .PHONY: verify
 verify: unit-test
@@ -58,7 +58,7 @@ unit-test:
 	go test -covermode=count -coverprofile=profile.cov ./pkg/... ./test/utils/credentials
 
 .PHONY: sanity-test
-sanity-test: amlfs
+sanity-test: azurelustre
 	go test -v -timeout=30m ./test/sanity
 
 .PHONY: sanity-test-local
@@ -66,12 +66,12 @@ sanity-test-local:
 	go test -v -timeout=30m ./test/sanity_local -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should fail when the requested volume does not exist"
 
 .PHONY: integration-test
-integration-test: amlfs
+integration-test: azurelustre
 	go test -v -timeout=30m ./test/integration
 
 .PHONY: e2e-test
 e2e-test:
-	if [ ! -z "$(EXTERNAL_E2E_TEST_AMLFS)" ]; then \
+	if [ ! -z "$(EXTERNAL_E2E_TEST_AZURELUSTRE)" ]; then \
 		bash ./test/external-e2e/run.sh;\
 	else \
 		go test -v -timeout=0 ./test/e2e ${GINKGO_FLAGS};\
@@ -80,8 +80,8 @@ e2e-test:
 .PHONY: e2e-bootstrap
 e2e-bootstrap: install-helm
 	# Only build and push the image if it does not exist in the registry
-	docker pull $(IMAGE_TAG) || make amlfs-container push
-	helm install amlfs-csi-driver ./charts/latest/amlfs-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	docker pull $(IMAGE_TAG) || make azurelustre-container push
+	helm install azurelustre-csi-driver ./charts/latest/azurelustre-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
 		--set controller.runOnMaster=true \
 		--set controller.replicas=1 \
 		--set cloud=$(CLOUD) \
@@ -93,39 +93,39 @@ install-helm:
 
 .PHONY: e2e-teardown
 e2e-teardown:
-	helm delete amlfs-csi-driver --namespace kube-system
+	helm delete azurelustre-csi-driver --namespace kube-system
 
-.PHONY: amlfs
-amlfs:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
+.PHONY: azurelustre
+azurelustre:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
 
-.PHONY: amlfs-windows
-amlfs-windows:
-	CGO_ENABLED=0 GOOS=windows go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin.exe ./pkg/amlfsplugin
+.PHONY: azurelustre-windows
+azurelustre-windows:
+	CGO_ENABLED=0 GOOS=windows go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin.exe ./pkg/azurelustreplugin
 
-.PHONT: amlfs-darwin
-amlfs-darwin:
-	CGO_ENABLED=0 GOOS=darwin go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/amlfsplugin ./pkg/amlfsplugin
+.PHONT: azurelustre-darwin
+azurelustre-darwin:
+	CGO_ENABLED=0 GOOS=darwin go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
 
 .PHONY: container
-container: amlfs
-	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/amlfsplugin/Dockerfile .
-	# docker build -t $(IMAGE_TAG) -f ./pkg/amlfsplugin/Dockerfile .
+container: azurelustre
+	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/azurelustreplugin/Dockerfile .
+	# docker build -t $(IMAGE_TAG) -f ./pkg/azurelustreplugin/Dockerfile .
 
 .PHONY: container-linux
 container-linux:
 	docker buildx build --pull --output=type=$(OUTPUT_TYPE) --platform="linux/$(ARCH)" \
-		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f ./pkg/amlfsplugin/Dockerfile .
+		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f ./pkg/azurelustreplugin/Dockerfile .
 
-.PHONY: amlfs-container
-amlfs-container:
+.PHONY: azurelustre-container
+azurelustre-container:
 	docker buildx rm container-builder || true
 	docker buildx create --use --name=container-builder
 
 	# enable qemu for arm64 build
 	# docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 	for arch in $(ALL_ARCH.linux); do \
-		ARCH=$${arch} $(MAKE) amlfs; \
+		ARCH=$${arch} $(MAKE) azurelustre; \
 		ARCH=$${arch} $(MAKE) container-linux; \
 	done
 
@@ -159,7 +159,7 @@ else
 endif
 
 .PHONY: build-push
-build-push: amlfs-container
+build-push: azurelustre-container
 	docker tag $(IMAGE_TAG) $(IMAGE_TAG_LATEST)
 	docker push $(IMAGE_TAG_LATEST)
 
@@ -170,8 +170,8 @@ clean:
 
 .PHONY: create-metrics-svc
 create-metrics-svc:
-	kubectl create -f deploy/example/metrics/csi-amlfs-controller-svc.yaml
+	kubectl create -f deploy/example/metrics/csi-azurelustre-controller-svc.yaml
 
 .PHONY: delete-metrics-svc
 delete-metrics-svc:
-	kubectl delete -f deploy/example/metrics/csi-amlfs-controller-svc.yaml --ignore-not-found
+	kubectl delete -f deploy/example/metrics/csi-azurelustre-controller-svc.yaml --ignore-not-found

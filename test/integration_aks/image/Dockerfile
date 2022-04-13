@@ -1,6 +1,6 @@
 FROM ubuntu:18.04
 
-COPY "./amlfsplugin" "/app/amlfsplugin"
+COPY "./azurelustreplugin" "/app/azurelustreplugin"
 COPY "./run_integration_test.sh" "/app/run_integration_test.sh"
 
 RUN chmod +x "/app/run_integration_test.sh"
@@ -18,6 +18,6 @@ ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 WORKDIR "/app"
 
 LABEL maintainers="fuxiuyin;joe-atzinger;Justin-Jin"
-LABEL description="Azure Managed Lustre CSI driver integration test"
+LABEL description="Azure Lustre CSI driver integration test"
 
 ENTRYPOINT ["/app/run_integration_test.sh"]

@@ -34,10 +34,10 @@ import (
 	"github.com/pborman/uuid"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/config"
-	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
-	"sigs.k8s.io/amlfs-csi-driver/test/utils/azure"
-	"sigs.k8s.io/amlfs-csi-driver/test/utils/credentials"
-	"sigs.k8s.io/amlfs-csi-driver/test/utils/testutil"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/azure"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/credentials"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
 )
 
 const (
@@ -47,7 +47,7 @@ const (
 )
 
 var isAzureStackCloud = strings.EqualFold(os.Getenv("AZURE_CLOUD_NAME"), "AZURESTACKCLOUD")
-var amlfsDriver *amlfs.Driver
+var azureLustreDriver *azureLustre.Driver
 
 var bringKeyStorageClassParameters = map[string]string{
 	"csi.storage.k8s.io/provisioner-secret-namespace": "default",
@@ -91,12 +91,12 @@ var _ = ginkgo.BeforeSuite(func() {
 		log.Println("docker login is successful")
 	}
 
-	// Install Azure Managed Lustre CSI driver on cluster from project root
+	// Install Azure Lustre CSI driver on cluster from project root
 	e2eBootstrap := testCmd{
 		command:  "make",
 		args:     []string{"e2e-bootstrap"},
-		startLog: "Installing Azure Managed Lustre CSI driver ...",
-		endLog:   "Azure Managed Lustre CSI driver installed",
+		startLog: "Installing Azure Lustre CSI driver ...",
+		endLog:   "Azure Lustre CSI driver installed",
 	}
 
 	createMetricsSVC := testCmd{
@@ -108,15 +108,15 @@ var _ = ginkgo.BeforeSuite(func() {
 	execTestCmd([]testCmd{e2eBootstrap, createMetricsSVC})
 
 	kubeconfig := os.Getenv(kubeconfigEnvVar)
-	driverOptions := amlfs.DriverOptions{
+	driverOptions := azureLustre.DriverOptions{
 		NodeID:               os.Getenv("nodeid"),
-		DriverName:           amlfs.DefaultDriverName,
-		EnableAmlfsMockMount: false,
+		DriverName:           azureLustre.DefaultDriverName,
+		EnableAzureLustreMockMount: false,
 	}
-	amlfsDriver = amlfs.NewDriver(&driverOptions)
+	azureLustreDriver = azureLustre.NewDriver(&driverOptions)
 	go func() {
 		os.Setenv("AZURE_CREDENTIAL_FILE", credentials.TempAzureCredentialFilePath)
-		amlfsDriver.Run(fmt.Sprintf("unix:///tmp/csi-%s.sock", uuid.NewUUID().String()), kubeconfig, false)
+		azureLustreDriver.Run(fmt.Sprintf("unix:///tmp/csi-%s.sock", uuid.NewUUID().String()), kubeconfig, false)
 	}()
 })
 
@@ -129,10 +129,10 @@ var _ = ginkgo.AfterSuite(func() {
 	}
 	execTestCmd([]testCmd{createExampleDeployment})
 
-	amlfsLog := testCmd{
+	azureLustreLog := testCmd{
 		command:  "bash",
-		args:     []string{"test/utils/amlfs_log.sh"},
-		startLog: "===================amlfs log===================",
+		args:     []string{"test/utils/azurelustre_log.sh"},
+		startLog: "===================azurelustre log===================",
 		endLog:   "==================================================",
 	}
 	deleteMetricsSVC := testCmd{
@@ -144,21 +144,21 @@ var _ = ginkgo.AfterSuite(func() {
 	e2eTeardown := testCmd{
 		command:  "make",
 		args:     []string{"e2e-teardown"},
-		startLog: "Uninstalling Azure Managed Lustre CSI driver...",
-		endLog:   "Azure Managed Lustre CSI driver uninstalled",
+		startLog: "Uninstalling Azure Lustre CSI driver...",
+		endLog:   "Azure Lustre CSI driver uninstalled",
 	}
-	execTestCmd([]testCmd{amlfsLog, deleteMetricsSVC, e2eTeardown})
+	execTestCmd([]testCmd{azureLustreLog, deleteMetricsSVC, e2eTeardown})
 
 	// install/uninstall CSI Driver deployment scripts test
 	installDriver := testCmd{
 		command:  "bash",
-		args:     []string{"deploy/install-driver.sh", "master", "local,enable-amlfs"},
+		args:     []string{"deploy/install-driver.sh", "master", "local,enable-azurelustre"},
 		startLog: "===================install CSI Driver deployment scripts test===================",
 		endLog:   "===================================================",
 	}
 	uninstallDriver := testCmd{
 		command:  "bash",
-		args:     []string{"deploy/uninstall-driver.sh", "master", "local,enable-amlfs"},
+		args:     []string{"deploy/uninstall-driver.sh", "master", "local,enable-azurelustre"},
 		startLog: "===================uninstall CSI Driver deployment scripts test===================",
 		endLog:   "===================================================",
 	}
@@ -175,7 +175,7 @@ func TestE2E(t *testing.T) {
 		reportDir = defaultReportDir
 	}
 	r := []ginkgo.Reporter{reporters.NewJUnitReporter(path.Join(reportDir, "junit_01.xml"))}
-	ginkgo.RunSpecsWithDefaultAndCustomReporters(t, "Azure Managed Lustre CSI driver End-to-End Tests", r)
+	ginkgo.RunSpecsWithDefaultAndCustomReporters(t, "Azure Lustre CSI driver End-to-End Tests", r)
 }
 
 func execTestCmd(cmds []testCmd) {
@@ -188,7 +188,7 @@ func execTestCmd(cmds []testCmd) {
 
 	projectRoot, err := os.Getwd()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	gomega.Expect(strings.HasSuffix(projectRoot, "amlfs-csi-driver")).To(gomega.Equal(true))
+	gomega.Expect(strings.HasSuffix(projectRoot, "azurelustre-csi-driver")).To(gomega.Equal(true))
 
 	for _, cmd := range cmds {
 		log.Println(cmd.startLog)

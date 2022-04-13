@@ -14,14 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package amlfs
+package azurelustre
 
 import (
 	"fmt"
 	"io/ioutil"
 	"os"
 
-	volumehelper "sigs.k8s.io/amlfs-csi-driver/pkg/util"
+	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
@@ -69,13 +69,13 @@ func (d *Driver) NodePublishVolume(
 			"Context mds-ip-address must be provided")
 	}
 
-	amlFSName, found := context[VolumeContextFSName]
+	azureLustreName, found := context[VolumeContextFSName]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument,
 			"Context fs-name must be provided")
 	}
 
-	source := fmt.Sprintf("%s@tcp:/%s", mdsIPAddress, amlFSName)
+	source := fmt.Sprintf("%s@tcp:/%s", mdsIPAddress, azureLustreName)
 
 	mountOptions := []string{}
 	if req.GetReadonly() {
@@ -102,7 +102,7 @@ func (d *Driver) NodePublishVolume(
 		"NodePublishVolume: volume %s mounting %s at %s with mountOptions: %v",
 		volumeID, source, target, mountOptions,
 	)
-	if d.enableAmlfsMockMount {
+	if d.enableAzureLustreMockMount {
 		klog.Warningf(
 			"NodePublishVolume: mock mount on volumeID(%s), this is only for"+
 				"TESTING!!!",

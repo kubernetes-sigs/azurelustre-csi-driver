@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package amlfs
+package azurelustre
 
 import (
 	"strings"
@@ -25,14 +25,14 @@ import (
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 
-	csicommon "sigs.k8s.io/amlfs-csi-driver/pkg/csi-common"
-	"sigs.k8s.io/amlfs-csi-driver/pkg/util"
+	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
 
 const (
 	// DefaultDriverName holds the name of the csi-driver
-	DefaultDriverName  = "amlfs.csi.azure.com"
-	amlfsCSIDriverName = "amlfs_csi_driver"
+	DefaultDriverName  = "azurelustre.csi.azure.com"
+	azureLustreCSIDriverName = "azurelustre_csi_driver"
 	//separator          = "#"
 	volumeIDTemplate = "%s#%s#%s"
 	//ephemeralField     = "csi.storage.k8s.io/ephemeral"
@@ -54,7 +54,7 @@ var (
 type DriverOptions struct {
 	NodeID               string
 	DriverName           string
-	EnableAmlfsMockMount bool
+	EnableAzureLustreMockMount bool
 }
 
 // Driver implements all interfaces of CSI drivers
@@ -63,8 +63,8 @@ type Driver struct {
 	csicommon.DefaultIdentityServer
 	csicommon.DefaultControllerServer
 	csicommon.DefaultNodeServer
-	// enableAmlfsMockMount is only for testing, DO NOT set as true in non-testing scenario
-	enableAmlfsMockMount bool
+	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
+	enableAzureLustreMockMount bool
 	mounter              *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
 	volLockMap           *util.LockMap
 	// A map storing all volumes with ongoing operations so that additional operations
@@ -78,7 +78,7 @@ func NewDriver(options *DriverOptions) *Driver {
 	d := Driver{
 		volLockMap:           util.NewLockMap(),
 		volumeLocks:          newVolumeLocks(),
-		enableAmlfsMockMount: options.EnableAmlfsMockMount,
+		enableAzureLustreMockMount: options.EnableAzureLustreMockMount,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion

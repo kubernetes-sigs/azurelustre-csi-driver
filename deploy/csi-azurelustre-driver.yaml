@@ -2,7 +2,7 @@
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
-  name: amlfs.csi.azure.com
+  name: azurelustre.csi.azure.com
 spec:
   attachRequired: false
   podInfoOnMount: true

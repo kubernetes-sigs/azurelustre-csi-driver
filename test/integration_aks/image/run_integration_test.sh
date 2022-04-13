@@ -15,7 +15,7 @@ readonly lustre_client_version="2.14.0"
 
 mkdir -p $target_path
 
-urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
+urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
 echo "$(date -u) Installing Lustre kmod git and cert"
@@ -57,7 +57,7 @@ GO111MODULE=off go get github.com/rexray/gocsi/csc
 
 mkdir /csi
 echo "$(date -u) Exiting Lustre CSI driver"
-nohup 2>&1 ./amlfsplugin --v=5 \
+nohup 2>&1 ./azurelustreplugin --v=5 \
               --endpoint=$endpoint \
               --nodeid=integrationtestnode \
               --metrics-address=0.0.0.0:29635 >csi.log &

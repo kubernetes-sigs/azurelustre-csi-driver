@@ -18,8 +18,8 @@
 set -euo pipefail
 
 function cleanup {
-  echo "pkill -f amlfsplugin"
-  pkill -f amlfsplugin
+  echo "pkill -f azurelustreplugin"
+  pkill -f azurelustreplugin
 }
 
 readonly volname="citest-$(date +%s)"
@@ -34,7 +34,7 @@ readonly cloud="$5"
 echo "Begin to run integration test on $cloud..."
 
 # Run CSI driver as a background service
-_output/amlfsplugin --endpoint "$endpoint" --nodeid CSINode --enable-amlfs-mock-mount -v=5 &
+_output/azurelustreplugin --endpoint "$endpoint" --nodeid CSINode --enable-azurelustre-mock-mount -v=5 &
 trap cleanup EXIT
 
 if [[ "$cloud" == "AzureChinaCloud" ]]; then

@@ -2,21 +2,21 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: pvc-amlfs
+  name: pvc-azurelustre
 spec:
   accessModes:
     - ReadWriteMany
   resources:
     requests:
       storage: 1Gi
-  storageClassName: amlfs
+  storageClassName: azurelustre
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
     app: nginx
-  name: deployment-amlfs
+  name: deployment-azurelustre
 spec:
   replicas: 1
   selector:
@@ -26,25 +26,25 @@ spec:
     metadata:
       labels:
         app: nginx
-      name: deployment-amlfs
+      name: deployment-azurelustre
     spec:
       nodeSelector:
         "kubernetes.io/os": linux
       containers:
-        - name: deployment-amlfs
+        - name: deployment-azurelustre
           image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
           command:
             - "/bin/sh"
             - "-c"
-            - while true; do echo $(date) >> /mnt/amlfs/outfile; sleep 1; done
+            - while true; do echo $(date) >> /mnt/azurelustre/outfile; sleep 1; done
           volumeMounts:
-            - name: amlfs
-              mountPath: "/mnt/amlfs"
+            - name: azurelustre
+              mountPath: "/mnt/azurelustre"
               readOnly: false
       volumes:
-        - name: amlfs
+        - name: azurelustre
           persistentVolumeClaim:
-            claimName: pvc-amlfs
+            claimName: pvc-azurelustre
   strategy:
     rollingUpdate:
       maxSurge: 0

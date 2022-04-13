@@ -8,11 +8,11 @@ spec:
   accessModes:
     - ReadWriteMany
   capacity:
-    # This field should be the true size of the Azure Managed Lustre you want
+    # This field should be the true size of the Azure Lustre you want
     # to used. So that, k8s can allocate resources better.
     storage: 4Ti
   csi:
-    driver: amlfs.csi.azure.com
+    driver: azurelustre.csi.azure.com
     volumeAttributes:
       # The file system name of the existing Lustre
       fs-name: ${EXISTING_LUSTRE_FS_NAME}
@@ -22,4 +22,4 @@ spec:
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
   # "Delete" is not supported in static provisioning PV
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: sc.amlfs.csi.azure.com
+  storageClassName: sc.azurelustre.csi.azure.com

@@ -10,12 +10,12 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-installClientPackages=${AMLFS_CSI_INSTALL_LUSTRE_CLIENT:-yes}
+installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
 echo "$(date -u) Command line arguments: $@"
 
-urlPrefix="https://amlfscsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
+urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
 kernelVersion=$(uname -r)
 
 if [[ "${installClientPackages}" == "yes" ]]; then

@@ -9,8 +9,8 @@ spec:
     - ReadWriteMany
   resources:
     requests:
-      # This size must be the true size of the Azure Managed Lustre you want
+      # This size must be the true size of the Azure Lustre you want
       # to used. Or the volume create process may fail.
       storage: 4Ti
   # This field must be the same as the name in StorageClass
-  storageClassName: sc.amlfs.csi.azure.com
+  storageClassName: sc.azurelustre.csi.azure.com

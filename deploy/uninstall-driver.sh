@@ -18,14 +18,14 @@ set -euo pipefail
 
 repo="$(git rev-parse --show-toplevel)/deploy"
 ver="main"
-workload="amlfs"
+workload="azurelustre"
 
 if [[ "$#" -gt 0 ]]; then
   ver="$1"
 fi
 
 if [[ "$#" -gt 1 ]] && [[ "$2" == *"remote"* ]]; then
-  repo="https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/$ver/deploy"
+  repo="https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/$ver/deploy"
 fi
 
 if [[ "$#" -gt 2 ]]; then
@@ -48,10 +48,10 @@ else
   echo 'No workload.'
 fi
 
-echo "Uninstalling Azure Managed Lustre CSI driver, repo: $repo ..."
-kubectl delete -f $repo/csi-amlfs-controller.yaml --ignore-not-found
-kubectl delete -f $repo/csi-amlfs-node.yaml --ignore-not-found
-kubectl delete -f $repo/csi-amlfs-driver.yaml --ignore-not-found
-kubectl delete -f $repo/rbac-csi-amlfs-controller.yaml --ignore-not-found
-kubectl delete -f $repo/rbac-csi-amlfs-node.yaml --ignore-not-found
-echo 'Uninstalled Azure Managed Lustre CSI driver successfully.'
+echo "Uninstalling Azure Lustre CSI driver, repo: $repo ..."
+kubectl delete -f $repo/csi-azurelustre-controller.yaml --ignore-not-found
+kubectl delete -f $repo/csi-azurelustre-node.yaml --ignore-not-found
+kubectl delete -f $repo/csi-azurelustre-driver.yaml --ignore-not-found
+kubectl delete -f $repo/rbac-csi-azurelustre-controller.yaml --ignore-not-found
+kubectl delete -f $repo/rbac-csi-azurelustre-node.yaml --ignore-not-found
+echo 'Uninstalled Azure Lustre CSI driver successfully.'

@@ -19,7 +19,7 @@ package driver
 import (
 	"fmt"
 
-	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -28,24 +28,24 @@ import (
 )
 
 // Implement DynamicPVTestDriver interface
-type amlfsCSIDriver struct {
+type azureLustreCSIDriver struct {
 	driverName string
 }
 
-// InitAmlfsCSIDriver returns amlfsCSIDriver that implemnts DynamicPVTestDriver interface
-func InitAmlfsCSIDriver() PVTestDriver {
-	return &amlfsCSIDriver{
-		driverName: amlfs.DefaultDriverName,
+// InitAzureLustreCSIDriver returns azureLustreCSIDriver that implemnts DynamicPVTestDriver interface
+func InitAzureLustreCSIDriver() PVTestDriver {
+	return &azureLustreCSIDriver{
+		driverName: azureLustre.DefaultDriverName,
 	}
 }
 
-func (d *amlfsCSIDriver) GetDynamicProvisionStorageClass(parameters map[string]string, mountOptions []string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, bindingMode *storagev1.VolumeBindingMode, allowedTopologyValues []string, namespace string) *storagev1.StorageClass {
+func (d *azureLustreCSIDriver) GetDynamicProvisionStorageClass(parameters map[string]string, mountOptions []string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, bindingMode *storagev1.VolumeBindingMode, allowedTopologyValues []string, namespace string) *storagev1.StorageClass {
 	provisioner := d.driverName
 	generateName := fmt.Sprintf("%s-%s-dynamic-sc-", namespace, provisioner)
 	return getStorageClass(generateName, provisioner, parameters, mountOptions, reclaimPolicy, bindingMode, nil)
 }
 
-func (d *amlfsCSIDriver) GetPersistentVolume(volumeID string, fsType string, size string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, namespace string, attrib map[string]string, nodeStageSecretRef string) *v1.PersistentVolume {
+func (d *azureLustreCSIDriver) GetPersistentVolume(volumeID string, fsType string, size string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, namespace string, attrib map[string]string, nodeStageSecretRef string) *v1.PersistentVolume {
 	provisioner := d.driverName
 	generateName := fmt.Sprintf("%s-%s-preprovsioned-pv-", namespace, provisioner)
 	// Default to Retain ReclaimPolicy for pre-provisioned volumes
@@ -88,7 +88,7 @@ func (d *amlfsCSIDriver) GetPersistentVolume(volumeID string, fsType string, siz
 	}
 }
 
-func (d *amlfsCSIDriver) GetPreProvisionStorageClass(parameters map[string]string, mountOptions []string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, bindingMode *storagev1.VolumeBindingMode, allowedTopologyValues []string, namespace string) *storagev1.StorageClass {
+func (d *azureLustreCSIDriver) GetPreProvisionStorageClass(parameters map[string]string, mountOptions []string, reclaimPolicy *v1.PersistentVolumeReclaimPolicy, bindingMode *storagev1.VolumeBindingMode, allowedTopologyValues []string, namespace string) *storagev1.StorageClass {
 	provisioner := d.driverName
 	generateName := fmt.Sprintf("%s-%s-pre-provisioned-sc-", namespace, provisioner)
 	return getStorageClass(generateName, provisioner, parameters, mountOptions, reclaimPolicy, bindingMode, nil)

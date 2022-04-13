@@ -1,17 +1,22 @@
-## Sanity Tests
-Testing the Azure Managed Lustre CSI driver using the [`sanity`](https://github.com/kubernetes-csi/csi-test/tree/master/pkg/sanity) package test suite.
+# Sanity Tests
 
-## Run Integration Tests Locally
-### Prerequisite
- - Make sure `GOPATH` is set
+Testing the Azure Lustre CSI driver using the [`sanity`](https://github.com/kubernetes-csi/csi-test/tree/master/pkg/sanity) package test suite.
 
-```
+# Run Integration Tests Locally
+
+## Prerequisite
+
+- Make sure `GOPATH` is set
+
+```console
 export set GOPATH=$HOME/go
 ```
 
- - Set Azure credentials by environment variables
+- Set Azure credentials by environment variables
+
  > You could get these variables from `/etc/kubernetes/azure.json` on a kubernetes cluster node
-```
+
+```console
 # Required environment variables:
 export set AZURE_TENANT_ID=
 export set AZURE_SUBSCRIPTION_ID=
@@ -28,8 +33,8 @@ export set AZURE_ENVIRONMENT_FILEPATH=
 export set AZURE_RESOURCE_GROUP=
 ```
 
-### Run integration tests
-```
+## Run integration tests
+
+```console
 make sanity-test
 ```
-

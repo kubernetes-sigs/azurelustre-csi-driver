@@ -6,14 +6,14 @@ This project uses GitHub Issues to track bugs and feature requests. Please searc
 
 For help and questions about using this project, please:
 
-  - Read the [documentation][docs]
-  - Join us on the [#provider-azure][provider-azure-slack] Slack channel
+- Read the [documentation][docs]
+- Join us on the [#provider-azure][provider-azure-slack] Slack channel
 
 This project maintainers will respond to the best of their abilities.
 
 [provider-azure-slack]: https://kubernetes.slack.com/archives/C5HJXTT9Q
-[docs]: https://github.com/kubernetes-sigs/amlfs-csi-driver/tree/master/docs
-[github-issues]: https://github.com/kubernetes-sigs/amlfs-csi-driver/issues
+[docs]: https://github.com/kubernetes-sigs/azurelustre-csi-driver/tree/master/docs
+[github-issues]: https://github.com/kubernetes-sigs/azurelustre-csi-driver/issues
 
 ## Microsoft Support Policy
 

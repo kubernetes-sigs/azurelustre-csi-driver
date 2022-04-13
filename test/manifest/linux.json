@@ -12,7 +12,7 @@
                 "containerRuntime": "containerd",
                 "addons": [
                     {
-                        "name": "amlfs-csi-driver",
+                        "name": "azurelustre-csi-driver",
                         "enabled": false
                     },
                     {

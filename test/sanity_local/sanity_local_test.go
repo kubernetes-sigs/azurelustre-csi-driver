@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/kubernetes-csi/csi-test/v4/pkg/sanity"
-	"sigs.k8s.io/amlfs-csi-driver/pkg/amlfs"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 func TestSanity(t *testing.T) {
@@ -39,15 +39,15 @@ func TestSanity(t *testing.T) {
 	config.TargetPath = targetPath
 	config.StagingPath = stagingPath
 	config.TestVolumeParameters = map[string]string{
-		amlfs.VolumeContextMDSIPAddress: "127.0.0.1",
-		amlfs.VolumeContextFSName:       "test",
+		azureLustre.VolumeContextMDSIPAddress: "127.0.0.1",
+		azureLustre.VolumeContextFSName:       "test",
 	}
-	driverOptions := amlfs.DriverOptions{
+	driverOptions := azureLustre.DriverOptions{
 		NodeID:               "fakeNodeID",
 		DriverName:           "fake",
-		EnableAmlfsMockMount: true,
+		EnableAzureLustreMockMount: true,
 	}
-	driver := amlfs.NewDriver(&driverOptions)
+	driver := azureLustre.NewDriver(&driverOptions)
 	go func() {
 		driver.Run(socketEndpoint, "", true)
 	}()
