@@ -15,7 +15,7 @@ echo "installClientPackages: ${installClientPackages}"
 
 echo "$(date -u) Command line arguments: $@"
 
-urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
+urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/azurelustre-client-packages/bionic"
 kernelVersion=$(uname -r)
 
 if [[ "${installClientPackages}" == "yes" ]]; then

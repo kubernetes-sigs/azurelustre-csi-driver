@@ -15,7 +15,7 @@ readonly lustre_client_version="2.14.0"
 
 mkdir -p $target_path
 
-urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/lustre-client-module/canonical/ubuntuserver/18.04-lts"
+urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/azurelustre-client-packages/bionic"
 kernelVersion=$(uname -r)
 
 echo "$(date -u) Installing Lustre kmod git and cert"
