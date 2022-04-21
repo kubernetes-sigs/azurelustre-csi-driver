@@ -9,7 +9,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: azurelustre
+  storageClassName: sc.azurelustre.csi.azure.com
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -36,7 +36,7 @@ spec:
           command:
             - "/bin/sh"
             - "-c"
-            - while true; do echo $(date) >> /mnt/azurelustre/outfile; sleep 1; done
+            - while true; do echo $(date) > /mnt/azurelustre/example_out_file; sleep 1; cat /mnt/azurelustre/example_out_file; sleep 5; done
           volumeMounts:
             - name: azurelustre
               mountPath: "/mnt/azurelustre"
