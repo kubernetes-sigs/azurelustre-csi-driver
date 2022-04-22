@@ -35,7 +35,7 @@ type azureLustreCSIDriver struct {
 // InitAzureLustreCSIDriver returns azureLustreCSIDriver that implemnts DynamicPVTestDriver interface
 func InitAzureLustreCSIDriver() PVTestDriver {
 	return &azureLustreCSIDriver{
-		driverName: azureLustre.DefaultDriverName,
+		driverName: azurelustre.DefaultDriverName,
 	}
 }
 
