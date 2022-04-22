@@ -96,7 +96,9 @@ func serve(ctx context.Context, l net.Listener, serveFunc func(net.Listener) err
 
 func serveMetrics(l net.Listener) error {
 	m := http.NewServeMux()
-	m.Handle("/metrics", legacyregistry.Handler()) //nolint, because azure cloud provider uses legacyregistry currently
+
+	// azure cloud provider uses legacyregistry currently
+	m.Handle("/metrics", legacyregistry.Handler()) //nolint
 	return trapClosedConnErr(http.Serve(l, m))
 }
 

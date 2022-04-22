@@ -236,8 +236,6 @@ github.com/spf13/pflag
 # github.com/stretchr/testify v1.7.0
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
-# github.com/wastore/go-lustre v0.0.4-0.20220304212757-17582e83560c
-## explicit; go 1.13
 # golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 ## explicit; go 1.11
 golang.org/x/crypto/blowfish
