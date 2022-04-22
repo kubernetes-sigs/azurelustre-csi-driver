@@ -6,11 +6,11 @@ github.com/Azure/azure-sdk-for-go/version
 # github.com/Azure/go-autorest v14.2.0+incompatible
 ## explicit
 github.com/Azure/go-autorest
-# github.com/Azure/go-autorest/autorest v0.11.21
+# github.com/Azure/go-autorest/autorest v0.11.22
 ## explicit; go 1.15
 github.com/Azure/go-autorest/autorest
 github.com/Azure/go-autorest/autorest/azure
-# github.com/Azure/go-autorest/autorest/adal v0.9.16
+# github.com/Azure/go-autorest/autorest/adal v0.9.17
 ## explicit; go 1.15
 github.com/Azure/go-autorest/autorest/adal
 # github.com/Azure/go-autorest/autorest/date v0.3.0
@@ -22,7 +22,7 @@ github.com/Azure/go-autorest/autorest/mocks
 # github.com/Azure/go-autorest/autorest/to v0.4.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/autorest/to
-# github.com/Azure/go-autorest/autorest/validation v0.1.0
+# github.com/Azure/go-autorest/autorest/validation v0.3.1
 ## explicit; go 1.12
 github.com/Azure/go-autorest/autorest/validation
 # github.com/Azure/go-autorest/logger v0.2.1
@@ -916,7 +916,7 @@ k8s.io/kube-openapi/pkg/util/proto
 ## explicit; go 1.16
 k8s.io/kubectl/pkg/scale
 k8s.io/kubectl/pkg/util/podutils
-# k8s.io/kubelet v0.22.2 => k8s.io/kubelet v0.23.3
+# k8s.io/kubelet v0.23.0 => k8s.io/kubelet v0.23.3
 ## explicit; go 1.16
 k8s.io/kubelet/pkg/apis/stats/v1alpha1
 # k8s.io/kubernetes v1.23.3
@@ -966,6 +966,7 @@ k8s.io/kubernetes/pkg/volume/util/types
 k8s.io/kubernetes/test/e2e/framework
 k8s.io/kubernetes/test/e2e/framework/auth
 k8s.io/kubernetes/test/e2e/framework/config
+k8s.io/kubernetes/test/e2e/framework/deployment
 k8s.io/kubernetes/test/e2e/framework/events
 k8s.io/kubernetes/test/e2e/framework/ginkgowrapper
 k8s.io/kubernetes/test/e2e/framework/kubectl
@@ -1008,8 +1009,8 @@ k8s.io/utils/trace
 ## explicit; go 1.17
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cloud-provider-azure v0.7.4 => sigs.k8s.io/cloud-provider-azure v0.7.4-0.20211027081624-3e749658438f
-## explicit; go 1.16
+# sigs.k8s.io/cloud-provider-azure v0.7.4 => sigs.k8s.io/cloud-provider-azure v0.7.4-0.20211229055535-9d966a194558
+## explicit; go 1.17
 sigs.k8s.io/cloud-provider-azure/pkg/consts
 sigs.k8s.io/cloud-provider-azure/pkg/metrics
 sigs.k8s.io/cloud-provider-azure/pkg/retry
@@ -1058,4 +1059,4 @@ sigs.k8s.io/yaml
 # k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.23.3
 # k8s.io/sample-cli-plugin => k8s.io/sample-cli-plugin v0.23.3
 # k8s.io/sample-controller => k8s.io/sample-controller v0.23.3
-# sigs.k8s.io/cloud-provider-azure => sigs.k8s.io/cloud-provider-azure v0.7.4-0.20211027081624-3e749658438f
+# sigs.k8s.io/cloud-provider-azure => sigs.k8s.io/cloud-provider-azure v0.7.4-0.20211229055535-9d966a194558
