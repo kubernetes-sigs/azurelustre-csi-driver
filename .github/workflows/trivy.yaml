@@ -29,7 +29,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'test/amlfs-csi:latest'
+          image-ref: 'test/azurelustre-csi:latest'
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
