@@ -31,7 +31,7 @@ import (
 
 const (
 	// DefaultDriverName holds the name of the csi-driver
-	DefaultDriverName  = "azurelustre.csi.azure.com"
+	DefaultDriverName        = "azurelustre.csi.azure.com"
 	azureLustreCSIDriverName = "azurelustre_csi_driver"
 	//separator          = "#"
 	volumeIDTemplate = "%s#%s#%s"
@@ -52,8 +52,8 @@ var (
 
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
-	NodeID               string
-	DriverName           string
+	NodeID                     string
+	DriverName                 string
 	EnableAzureLustreMockMount bool
 }
 
@@ -65,8 +65,8 @@ type Driver struct {
 	csicommon.DefaultNodeServer
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
-	mounter              *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
-	volLockMap           *util.LockMap
+	mounter                    *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
+	volLockMap                 *util.LockMap
 	// A map storing all volumes with ongoing operations so that additional operations
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks *volumeLocks
@@ -76,8 +76,8 @@ type Driver struct {
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(options *DriverOptions) *Driver {
 	d := Driver{
-		volLockMap:           util.NewLockMap(),
-		volumeLocks:          newVolumeLocks(),
+		volLockMap:                 util.NewLockMap(),
+		volumeLocks:                newVolumeLocks(),
 		enableAzureLustreMockMount: options.EnableAzureLustreMockMount,
 	}
 	d.Name = options.DriverName

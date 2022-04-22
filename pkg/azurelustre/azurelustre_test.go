@@ -34,8 +34,8 @@ const (
 
 func NewFakeDriver() *Driver {
 	driverOptions := DriverOptions{
-		NodeID:               fakeNodeID,
-		DriverName:           DefaultDriverName,
+		NodeID:                     fakeNodeID,
+		DriverName:                 DefaultDriverName,
 		EnableAzureLustreMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)
@@ -46,8 +46,8 @@ func NewFakeDriver() *Driver {
 
 func TestNewFakeDriver(t *testing.T) {
 	driverOptions := DriverOptions{
-		NodeID:               fakeNodeID,
-		DriverName:           DefaultDriverName,
+		NodeID:                     fakeNodeID,
+		DriverName:                 DefaultDriverName,
 		EnableAzureLustreMockMount: false,
 	}
 	d := NewDriver(&driverOptions)
@@ -56,8 +56,8 @@ func TestNewFakeDriver(t *testing.T) {
 
 func TestNewDriver(t *testing.T) {
 	driverOptions := DriverOptions{
-		NodeID:               fakeNodeID,
-		DriverName:           DefaultDriverName,
+		NodeID:                     fakeNodeID,
+		DriverName:                 DefaultDriverName,
 		EnableAzureLustreMockMount: false,
 	}
 	driver := NewDriver(&driverOptions)

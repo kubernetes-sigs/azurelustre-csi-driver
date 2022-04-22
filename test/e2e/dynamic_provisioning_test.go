@@ -148,8 +148,8 @@ var _ = ginkgo.Describe("[azurelustre-csi-e2e] Dynamic Provisioning", func() {
 				ExpectedString: "hello world\nhello world\n", // pod will be restarted so expect to see 2 instances of string
 			},
 			StorageClassParameters: map[string]string{
-				"skuName":                "Premium_LRS",
-				"isHnsEnabled":           "true",
+				"skuName":                      "Premium_LRS",
+				"isHnsEnabled":                 "true",
 				"allowAzureLustrePublicAccess": "false",
 			},
 		}
@@ -219,7 +219,7 @@ var _ = ginkgo.Describe("[azurelustre-csi-e2e] Dynamic Provisioning", func() {
 			Pods:         pods,
 			ColocatePods: true,
 			StorageClassParameters: map[string]string{
-				"skuName":                "Standard_RAGRS",
+				"skuName":                      "Standard_RAGRS",
 				"allowAzureLustrePublicAccess": "false",
 			},
 		}
@@ -260,7 +260,7 @@ var _ = ginkgo.Describe("[azurelustre-csi-e2e] Dynamic Provisioning", func() {
 			Volumes:   volumes,
 			Driver:    azureLustreDriver,
 			StorageClassParameters: map[string]string{
-				"skuName":                "Standard_GRS",
+				"skuName":                      "Standard_GRS",
 				"allowAzureLustrePublicAccess": "false",
 			},
 		}
@@ -320,7 +320,7 @@ var _ = ginkgo.Describe("[azurelustre-csi-e2e] Dynamic Provisioning", func() {
 			CSIDriver: testDriver,
 			Pods:      pods,
 			StorageClassParameters: map[string]string{
-				"skuName":                "Standard_LRS",
+				"skuName":                      "Standard_LRS",
 				"allowAzureLustrePublicAccess": "true",
 			},
 		}

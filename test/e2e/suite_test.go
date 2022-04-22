@@ -109,8 +109,8 @@ var _ = ginkgo.BeforeSuite(func() {
 
 	kubeconfig := os.Getenv(kubeconfigEnvVar)
 	driverOptions := azureLustre.DriverOptions{
-		NodeID:               os.Getenv("nodeid"),
-		DriverName:           azureLustre.DefaultDriverName,
+		NodeID:                     os.Getenv("nodeid"),
+		DriverName:                 azureLustre.DefaultDriverName,
 		EnableAzureLustreMockMount: false,
 	}
 	azureLustreDriver = azureLustre.NewDriver(&driverOptions)

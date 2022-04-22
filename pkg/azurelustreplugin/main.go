@@ -36,11 +36,11 @@ func init() {
 }
 
 var (
-	endpoint             = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	nodeID               = flag.String("nodeid", "", "node id")
-	version              = flag.Bool("version", false, "Print the version and exit.")
-	metricsAddress       = flag.String("metrics-address", "0.0.0.0:29634", "export the metrics")
-	driverName           = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
+	endpoint                   = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
+	nodeID                     = flag.String("nodeid", "", "node id")
+	version                    = flag.Bool("version", false, "Print the version and exit.")
+	metricsAddress             = flag.String("metrics-address", "0.0.0.0:29634", "export the metrics")
+	driverName                 = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
 	enableAzureLustreMockMount = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
 )
 
@@ -63,8 +63,8 @@ func main() {
 
 func handle() {
 	driverOptions := azurelustre.DriverOptions{
-		NodeID:               *nodeID,
-		DriverName:           *driverName,
+		NodeID:                     *nodeID,
+		DriverName:                 *driverName,
 		EnableAzureLustreMockMount: *enableAzureLustreMockMount,
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
