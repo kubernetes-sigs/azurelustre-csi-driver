@@ -39,15 +39,15 @@ func TestSanity(t *testing.T) {
 	config.TargetPath = targetPath
 	config.StagingPath = stagingPath
 	config.TestVolumeParameters = map[string]string{
-		azureLustre.VolumeContextMDSIPAddress: "127.0.0.1",
-		azureLustre.VolumeContextFSName:       "test",
+		azurelustre.VolumeContextMDSIPAddress: "127.0.0.1",
+		azurelustre.VolumeContextFSName:       "test",
 	}
-	driverOptions := azureLustre.DriverOptions{
-		NodeID:               "fakeNodeID",
-		DriverName:           "fake",
+	driverOptions := azurelustre.DriverOptions{
+		NodeID:                     "fakeNodeID",
+		DriverName:                 "fake",
 		EnableAzureLustreMockMount: true,
 	}
-	driver := azureLustre.NewDriver(&driverOptions)
+	driver := azurelustre.NewDriver(&driverOptions)
 	go func() {
 		driver.Run(socketEndpoint, "", true)
 	}()
