@@ -17,28 +17,6 @@
 set -euo pipefail
 
 repo="$(git rev-parse --show-toplevel)/deploy"
-ver="main"
-workload="amlfs"
-
-if [[ "$#" -gt 0 ]]; then
-  ver="$1"
-fi
-
-if [[ "$#" -gt 1 ]] && [[ "$2" == *"remote"* ]]; then
-  repo="https://raw.githubusercontent.com/kubernetes-sigs/amlfs-csi-driver/$ver/deploy"
-fi
-
-if [[ "$#" -gt 2 ]]; then
-  workload="$3"
-fi
-
-if [ $workload != "noworkload" ]; then
-  workload="$repo/example/$workload"
-fi
-
-if [ $ver != "main" ]; then
-  repo="$repo/$ver"
-fi
 
 echo "Installing Azure Managed Lustre CSI driver, repo: $repo ..."
 kubectl apply -f $repo/rbac-csi-amlfs-controller.yaml
@@ -47,11 +25,3 @@ kubectl apply -f $repo/csi-amlfs-driver.yaml
 kubectl apply -f $repo/csi-amlfs-controller.yaml
 kubectl apply -f $repo/csi-amlfs-node.yaml
 echo 'Azure Managed Lustre CSI driver installed successfully.'
-
-if [ $workload != "noworkload" ]; then
-  echo "Installing workload, repo: $workload ..."
-  kubectl apply -f $workload
-  echo 'Workload installed successfully.'
-else
-  echo 'No workload.'
-fi
