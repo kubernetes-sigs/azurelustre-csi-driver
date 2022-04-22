@@ -29,7 +29,7 @@ import (
 type DynamicallyProvisionedReclaimPolicyTest struct {
 	CSIDriver              driver.DynamicPVTestDriver
 	Volumes                []VolumeDetails
-	Driver                 *azureLustre.Driver
+	Driver                 *azurelustre.Driver
 	StorageClassParameters map[string]string
 }
 

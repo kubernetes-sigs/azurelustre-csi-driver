@@ -278,7 +278,7 @@ func (t *TestPersistentVolumeClaim) DeleteBoundPersistentVolume() {
 	framework.ExpectNoError(err)
 }
 
-func (t *TestPersistentVolumeClaim) DeleteBackingVolume(azfile *azureLustre.Driver) {
+func (t *TestPersistentVolumeClaim) DeleteBackingVolume(azfile *azurelustre.Driver) {
 	volumeID := t.persistentVolume.Spec.CSI.VolumeHandle
 	ginkgo.By(fmt.Sprintf("deleting azurelustre volume %q", volumeID))
 	req := &csi.DeleteVolumeRequest{
@@ -540,7 +540,7 @@ func (t *TestPod) SetupInlineVolume(name, mountPath, secretName, containerName s
 		Name: name,
 		VolumeSource: v1.VolumeSource{
 			CSI: &v1.CSIVolumeSource{
-				Driver: azureLustre.DefaultDriverName,
+				Driver: azurelustre.DefaultDriverName,
 				VolumeAttributes: map[string]string{
 					"secretName":      secretName,
 					"secretNamespace": "default",

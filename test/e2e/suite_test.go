@@ -47,7 +47,7 @@ const (
 )
 
 var isAzureStackCloud = strings.EqualFold(os.Getenv("AZURE_CLOUD_NAME"), "AZURESTACKCLOUD")
-var azureLustreDriver *azureLustre.Driver
+var azureLustreDriver *azurelustre.Driver
 
 var bringKeyStorageClassParameters = map[string]string{
 	"csi.storage.k8s.io/provisioner-secret-namespace": "default",
@@ -108,12 +108,12 @@ var _ = ginkgo.BeforeSuite(func() {
 	execTestCmd([]testCmd{e2eBootstrap, createMetricsSVC})
 
 	kubeconfig := os.Getenv(kubeconfigEnvVar)
-	driverOptions := azureLustre.DriverOptions{
+	driverOptions := azurelustre.DriverOptions{
 		NodeID:                     os.Getenv("nodeid"),
-		DriverName:                 azureLustre.DefaultDriverName,
+		DriverName:                 azurelustre.DefaultDriverName,
 		EnableAzureLustreMockMount: false,
 	}
-	azureLustreDriver = azureLustre.NewDriver(&driverOptions)
+	azureLustreDriver = azurelustre.NewDriver(&driverOptions)
 	go func() {
 		os.Setenv("AZURE_CREDENTIAL_FILE", credentials.TempAzureCredentialFilePath)
 		azureLustreDriver.Run(fmt.Sprintf("unix:///tmp/csi-%s.sock", uuid.NewUUID().String()), kubeconfig, false)
