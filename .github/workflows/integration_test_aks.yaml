@@ -1,0 +1,48 @@
+---
+name: Integration Test on AKS
+
+on:
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  Run-Integration-Test-on-AKS:
+    name: Run Integration Test on AKS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.17
+        id: go
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: Build Code
+        run: |
+          make azurelustre
+          cp ./_output/azurelustreplugin ./test/integration_aks/image/
+      - name: Docker login
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ secrets.TEST_ACR_URI }}
+          username: ${{ secrets.TEST_ACR_USERNAME }}
+          password: ${{ secrets.TEST_ACR_PASSWORD }}
+      - name: Build and push integration test container
+        uses: docker/build-push-action@v2
+        with:
+          context: ./test/integration_aks/image
+          push: true
+          tags: ${{ secrets.TEST_ACR_URI }}/azurelustre-csi-integration-test:latest
+      - name: Run integration test
+        run: |
+          ./hack/verify-integration-test-aks.sh
+        env:
+          kube_config: ${{ secrets.KUBE_CONFIG }}
+          test_acr_uri: ${{ secrets.TEST_ACR_URI }}
+          lustre_fs_name: ${{ secrets.LUSTRE_FS_NAME }}
+          lustre_fs_ip: ${{ secrets.LUSTRE_FS_IP }}

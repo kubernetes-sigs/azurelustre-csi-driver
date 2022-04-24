@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aml-integration-test
+spec:
+  containers:
+    - name: integration-test
+      image: {test_acr_uri}/azurelustre-csi-integration-test:latest
+      args:
+        - "{lustre_fs_name}"
+        - "{lustre_fs_ip}"
+      securityContext:
+        privileged: true
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/os: linux
