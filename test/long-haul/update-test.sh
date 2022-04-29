@@ -1,12 +1,14 @@
-#set -o xtrace
 set -o errexit
 set -o pipefail
 set -o nounset
 
 source ./utils.sh
 
+trap print_debug_on_ERR ERR
+trap reset_all_on_EXIT EXIT
+
 function print_versions () {
-	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name  $PoolName)
+	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
 	currentNodeImageVersion=$(echo $nodepool | jq -r '.nodeImageVersion')
 
 	nodepoolUpgrades=$(az aks nodepool get-upgrades --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
@@ -43,3 +45,12 @@ az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes
 
 print_logs_title "Print versions after"
 print_versions
+
+print_logs_title "Start and verify sample workload"
+sleep 60
+
+start_sample_workload
+
+sleep 10
+
+verify_sample_workload workloadPodName workloadNodeName

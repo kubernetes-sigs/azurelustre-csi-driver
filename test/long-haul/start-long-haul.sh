@@ -1,4 +1,3 @@
-set -o xtrace
 set -o errexit
 set -o pipefail
 set -o nounset
@@ -16,8 +15,8 @@ print_logs_info "Connecting to AKS Cluster=$ClusterName, ResourceGroup=$Resource
 az configure --defaults group=$ResourceGroup
 az aks get-credentials --resource-group $ResourceGroup --name $ClusterName
 
-print_logs_case " Executing fault test"
+print_logs_case "Executing fault test"
 ./fault-test.sh
 
-print_logs_case " Executing update test"
+print_logs_case "Executing update test"
 ./update-test.sh
