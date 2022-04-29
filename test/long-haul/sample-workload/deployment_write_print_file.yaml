@@ -40,6 +40,7 @@ spec:
     spec:
       nodeSelector:
         "kubernetes.io/os": linux
+        "agentpool": {longhaul_agentpool}
       containers:
         - name: azurelustre-container-longhaulsample
           image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
