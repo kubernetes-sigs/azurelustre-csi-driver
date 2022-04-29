@@ -1,5 +1,5 @@
 ---
-name: long-haul
+name: Long-Haul Test
 
 on:
   schedule:

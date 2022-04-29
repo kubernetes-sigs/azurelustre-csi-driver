@@ -3,6 +3,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+pushd "./test/long-haul/"
 source ./utils.sh
 
 export ClusterName="jusjin-csi-sub2"
