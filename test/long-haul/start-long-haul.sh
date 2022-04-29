@@ -5,9 +5,9 @@ set -o nounset
 
 source ./utils.sh
 
-export ClusterName="${aks_cluster_name}"
-export ResourceGroup="${aks_resource_group}"
-export PoolName="${aks_pool_name}"
+export ClusterName="jusjin-csi-sub2"
+export ResourceGroup="jusjin-csi-sub2"
+export PoolName="longhaul"
 
 print_logs_info "Connecting to AKS Cluster=$ClusterName, ResourceGroup=$ResourceGroup, AKS pool=$PoolName"
 az configure --defaults group=$ResourceGroup

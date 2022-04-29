@@ -1,19 +1,19 @@
 Repo="../../"
 
 print_logs_case () {
-    printf "\n$(date '+%Y-%m-%d %H:%M:%S') INFO: =================  $1 ================= \n"
+    echo -e "\n$(date '+%Y-%m-%d %H:%M:%S') INFO: =================  $1 ================= \n"
 }
 
 print_logs_title () {
-    printf "\n$(date '+%Y-%m-%d %H:%M:%S') INFO: -----------------  $1 ----------------- \n"
+    echo -e "\n$(date '+%Y-%m-%d %H:%M:%S') INFO: -----------------  $1 ----------------- \n"
 }
 
 print_logs_info () {
-    printf "$(date '+%Y-%m-%d %H:%M:%S') INFO: $1 \n"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') INFO: $1 \n"
 }
 
 print_logs_error () {
-    printf "$(date '+%Y-%m-%#d %H:%M:%S') ERROR: $1 \n"
+    echo -e "$(date '+%Y-%m-%#d %H:%M:%S') ERROR: $1 \n"
 }
 
 reset_csi_driver () {
@@ -28,35 +28,34 @@ reset_csi_driver () {
     }    
 }
 
-failfast () {
-    exit 1
-}
-
-failfast_resetnode () {
-    reset_csi_driver
-    failfast
-}
-
 get_worker_node_num () {
     workerNodeNum=$(kubectl get nodes | grep Ready | wc -l)
 
     echo $workerNodeNum
 }
 
-get_running_pod () {
+get_running_pod () {    
     podKeyword=$1
     podKeyword=${podKeyword:-""}
-    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep Running | grep $podKeyword | head -n 1)
+
+    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep Running | grep "$podKeyword" | head -n 1 || true)
 
     if  [ -z "$pod" ] 
     then
-        echo "1" "" ""
+        print_logs_error "can't find running pod with keyword=$podKeyword"
+        return 1
     fi
 
     podName=$(echo $pod | awk '{print $2}')
     nodeName=$(echo $pod | awk '{print $8}')
 
-    echo "0" "$podName" "$nodeName"
+    print_logs_info "workload pod $podName is running on $nodeName"
+
+    local return_podName=$2
+    local return_nodeName=$3
+
+    eval $return_podName=$podName
+    eval $return_nodeName=$nodeName
 }
 
 get_pod_state () {
@@ -76,7 +75,7 @@ verify_csi_driver () {
     if  [ "$controllerPodsNum" != "2" ] 
     then
         print_logs_error "Expected controller pods num 2, actual $controllerPodsNum"
-        failfast
+        return 1
     else
         print_logs_info "2 controller pods running..."        
     fi
@@ -87,7 +86,7 @@ verify_csi_driver () {
     if  [ "$nodePodsNum" != "$workerNodeNum" ] 
     then
         print_logs_error "Expected node pods num $workerNodeNum, actual $nodePodsNum"
-        failfast
+        return 1
     else
         print_logs_info "$nodePodsNum node pods running..."        
     fi

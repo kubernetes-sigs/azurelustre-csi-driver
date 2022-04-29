@@ -8,51 +8,54 @@ source ./utils.sh
 SleepInSecs="60"
 TimeIntervalCheckLogInSecs="10"
 NodePodNameKeyword="csi-azurelustre-node"
-WorkloadPodNameKeyword="deployment-azurelustre"
+WorkloadPodNameKeyword="azurelustre-deployment-longhaulsample"
+
+print_debug_on_ERR() {
+    print_logs_title "DEBUG START"
+
+    csiDriver=$(kubectl get po -n kube-system | grep azurelustre)
+    print_logs_info $csiDriver
+
+    workload=$(kubectl get po | grep $WorkloadPodNameKeyword)
+    print_logs_info $workload
+
+    print_logs_info "DEBUG END"
+}
+trap print_debug_on_ERR ERR
+
+reset_all_on_EXIT() {
+    print_logs_title "RESET ALL"
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found
+    reset_csi_driver
+}
+trap reset_all_on_EXIT EXIT
 
 start_workload () {
-    kubectl apply -f $Repo/deploy/example/azurelustre/storageclass.yaml
-    kubectl apply -f $Repo/deploy/example/deployment.yaml
+    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml
 }
 
 verify_workload_logs () {
     podName=$1
-    threshold=$2
-
-    threshold=${threshold:-10}
-
     lastOutput=$(kubectl logs $podName | tail -n 1 | awk -F, '{print $1}')
     dateOfLastOutput=$(date -d "$lastOutput" +%s)
     dateOfNow=$(date +%s)
-
     delta=$(($dateOfNow-$dateOfLastOutput))
 
-    if [[ ! $delta -lt $threshold ]]; 
-    then
-        echo "1" "$delta"
-    fi
+    threshold=$2
+    threshold=${threshold:-10}
 
-    echo "0" "$delta"
+    if [[ $delta -lt $threshold ]]; 
+    then
+        print_logs_info "last output of workload pod is $delta secs before, which is within threshold=$threshold"
+    else
+        print_logs_error "last output of workload pod is $delta secs before, which is greater than threshold=$threshold"
+        failfast
+    fi
 }
 
 verify_workload () {
-    read errorCode podName nodeName < <(get_running_pod $WorkloadPodNameKeyword)
-
-    if [[ $errorCode -eq "0" ]]; then
-        print_logs_info "workload pod $podName is running on $nodeName"
-    else
-        print_logs_error "no running workload pod, errorCode=$errorCode"
-        failfast_resetnode
-    fi
-
-    read errorCode delta < <(verify_workload_logs $podName $TimeIntervalCheckLogInSecs)
-
-    if [[ $errorCode -eq "0" ]]; then
-        print_logs_info "last output of workload pod is $delta secs before"
-    else
-        print_logs_error "last output of workload pod is $delta secs before, which is greater than threshold $TimeIntervalCheckLogInSecs"
-        failfast_resetnode
-    fi
+    get_running_pod $WorkloadPodNameKeyword podName nodeName
+    verify_workload_logs $podName $TimeIntervalCheckLogInSecs
 
     local return_podName=$1
     local return_nodeName=$2
@@ -60,23 +63,10 @@ verify_workload () {
     eval $return_nodeName=$nodeName
 }
 
-fault_test_failfast () {
-    csiDriver=$(kubectl get po -n kube-system | grep azurelustre)
-    print_logs_info $csiDriver
-
-    workload=$(kubectl get po | grep $WorkloadPodNameKeyword)
-    print_logs_info $workload
-
-    kubectl delete -f $Repo/deploy/example/azurelustre/storageclass.yaml --ignore-not-found
-    kubectl delete -f $Repo/deploy/example/deployment.yaml --ignore-not-found
-
-    failfast_resetnode
-}
-
 print_logs_title "Reset AKS environment and start sample workload"
 reset_csi_driver
 start_workload
-sleep $SleepInSecs
+sleep 5
 verify_csi_driver
 verify_workload workloadPodName workloadNodeName
 
@@ -91,10 +81,11 @@ if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     failfast_resetnode
 fi
 
-
-print_logs_title "Add label for worker nodes"
 workloadPodName=$workloadPodNameNew
 workloadNodeName=$workloadNodeNameNew
+
+
+print_logs_title "Add label for worker nodes"
 kubectl get nodes --no-headers | awk '{print $1}' | 
 {
     while read n;
@@ -120,7 +111,7 @@ podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
 
 if  [[ ! -z "$podState" ]]; then
     print_logs_error "Lustre CSI node pod can't be deleted on $workloadNodeName, state=$podState"
-    failfast_resetnode
+    return 1
 else
     print_logs_info "Lustre CSI node pod is deleted on $workloadNodeName"
 fi
@@ -130,7 +121,7 @@ print_logs_title "Verify workload pod on worker node"
 verify_workload workloadPodNameNew workloadNodeNameNew
 if [[ "$workloadPodName" != "$workloadPodNameNew" || "$workloadNodeName" != "$workloadNodeNameNew" ]] ; then
     print_logs_error "expected workload pod $workloadPodName on $workloadNodeName, actual new workload pod $workloadPodNameNew on $workloadNodeNameNew"
-    failfast_resetnode
+    return 1
 fi
 
 
@@ -142,7 +133,7 @@ sleep $SleepInSecs
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
 if [[ -z $podState || "$podState" != "Terminating" ]]; then
     print_logs_error "Workload pod $workloadPodName should be in Terminating state on node $workloadNodeName, but its actual state is $podState"
-    failfast_resetnode
+    return 1
 else
     print_logs_info "Workload pod $workloadPodName is in Terminating state on node $workloadNodeName"
 fi
@@ -152,7 +143,7 @@ print_logs_title "Verify the new workload pod in running state"
 verify_workload workloadPodNameNew workloadNodeNameNew
 if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     print_logs_error "New workload pod should be started, but still find old running pod $workloadPodName"
-    failfast_resetnode
+    return 1
 else
     print_logs_info "new workload pod $workloadPodNameNew started on another node $workloadNodeNameNew"
 fi
@@ -165,7 +156,7 @@ sleep $SleepInSecs
 podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
 if  [[ -z "$podState" || "$podState" != "Running" ]]; then
     print_logs_error "Lustre CSI node pod can't be started on $nodeName, state=$podState"
-    failfast_resetnode
+    return 1
 else
     print_logs_info "Lustre CSI node pod started on $nodeName again"
 fi
@@ -177,13 +168,7 @@ sleep $SleepInSecs
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
 if [[ ! -z $podState ]]; then
     print_logs_error "Still can find workload pod $workloadPodName in $podState state on node $workloadNodeName, it should be deleted successfully"
-    failfast_resetnode
+    return 1
 else
     print_logs_info "workload pod $workloadPodName has been deleted successfully from node $workloadNodeName"
 fi
-
-
-print_logs_title "Reset"
-kubectl delete -f $Repo/deploy/example/azurelustre/storageclass.yaml --ignore-not-found
-kubectl delete -f $Repo/deploy/example/deployment.yaml --ignore-not-found
-reset_csi_driver
