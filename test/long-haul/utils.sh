@@ -4,7 +4,9 @@ set -o nounset
 
 export Repo="../../"
 export NodePodNameKeyword="csi-azurelustre-node"
-export SampleWorkloadKeyword="azurelustre-deployment-longhaulsample"
+export SampleWorkloadKeyword="azurelustre-longhaulsample-deployment"
+
+PoolName=${PoolName:-""}
 
 TimeIntervalCheckLogInSecs="10"
 
@@ -46,11 +48,10 @@ get_worker_node_num () {
     echo $workerNodeNum
 }
 
-get_running_pod () {    
-    podNameKeyword=$1
-    podNameKeyword=${podNameKeyword:-""}
+get_running_pod () {
+    podNameKeyword=${1:-""}
 
-    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep "$PoolName" | grep Running | grep "$podNameKeyword" | head -n 1 || true)
+    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep "$PoolName" | grep Running | grep "$podNameKeyword" || true)
 
     if  [ -z "$pod" ] 
     then
@@ -64,6 +65,13 @@ get_running_pod () {
         fi
 
         signal_err
+    else
+         numOfPod=$(echo "$pod" | grep -o -i "$podNameKeyword" | wc -l)
+
+        if [ $numOfPod != 1 ]
+        then
+            print_logs_error "find $numOfPod running pod with keyword=$podNameKeyword, expect only one"
+        fi
     fi
 
     podName=$(echo $pod | awk '{print $2}')
@@ -79,11 +87,8 @@ get_running_pod () {
 }
 
 get_pod_state () {
-    podNameKeyword=$1
-    podNameKeyword=${podNameKeyword:-""}
-
-    nodeNameKeyword=$2
-    nodeNameKeyword=${nodeNameKeyword:-""}
+    podNameKeyword=${1:-""}
+    nodeNameKeyword=${2:-""}
 
     state=$(kubectl get po --all-namespaces -o wide | grep "$PoolName" | grep "$podNameKeyword" | grep "$nodeNameKeyword" | awk '{print $4}' | head -n 1 || true)
     echo "$state"
@@ -127,8 +132,7 @@ verify_sample_workload_logs () {
     dateOfNow=$(date +%s)
     delta=$(($dateOfNow-$dateOfLastOutput))
 
-    threshold=$2
-    threshold=${threshold:-10}
+    threshold=${2:-10}
 
     if [[ $delta -lt $threshold ]]; 
     then
@@ -140,7 +144,9 @@ verify_sample_workload_logs () {
 }
 
 verify_sample_workload () {
-    get_running_pod $SampleWorkloadKeyword podName nodeName
+    workloadKeyword=${3:-$SampleWorkloadKeyword}
+
+    get_running_pod $workloadKeyword podName nodeName
     verify_sample_workload_logs $podName $TimeIntervalCheckLogInSecs
 
     local return_podName=$1
@@ -152,11 +158,7 @@ verify_sample_workload () {
 print_debug_on_ERR() {
     print_logs_title "Print DEBUG Start"
 
-    csiDriver=$(kubectl get po -n kube-system -o wide | grep "$PoolName"  | grep azurelustre)
-    echo $csiDriver
-
-    workload=$(kubectl get po -o wide | grep "$PoolName" | grep $SampleWorkloadKeyword)
-    echo $workload
+    bash $Repo/utils/azurelustre_log.sh
 
     print_logs_title "Print DEBUG End"
 }

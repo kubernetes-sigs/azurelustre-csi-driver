@@ -40,7 +40,7 @@ tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
 print_logs() {
     echo "print out driver logs ..."
-    bash ./test/utils/azurelustre_log.sh
+    bash ./utils/azurelustre_log.sh
 }
 
 trap print_logs EXIT
