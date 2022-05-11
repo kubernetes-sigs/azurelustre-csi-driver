@@ -30,10 +30,6 @@ follow guide [here](./docs/install-csi-driver.md)
 
 - Please see our [support policy][support-policy]
 
-### Limitations
-
-- Please refer to [Azure Lustre CSI Driver Limitations](./docs/limitations.md)
-
 ## Kubernetes Development
 
 - Please refer to [development guide](./docs/csi-dev.md)
