@@ -18,13 +18,13 @@ cd azurelustre-csi-driver
 ```shell
 $ kubectl get -n kube-system pod -l app=csi-azurelustre-controller
 
-NAME                                    READY   STATUS    RESTARTS   AGE
+NAME                                         READY    STATUS    RESTARTS   AGE
 csi-azurelustre-controller-778bf84cc5-4vrth   3/3     Running   0          30s
 csi-azurelustre-controller-778bf84cc5-5zqhl   3/3     Running   0          30s
 
 $ kubectl get -n kube-system pod -l app=csi-azurelustre-node
 
-NAME                   READY   STATUS    RESTARTS   AGE
+NAME                        READY    STATUS    RESTARTS   AGE
 csi-azurelustre-node-7lw2n   3/3     Running   0          30s
 csi-azurelustre-node-drlq2   3/3     Running   0          30s
 csi-azurelustre-node-g6sfx   3/3     Running   0          30s
