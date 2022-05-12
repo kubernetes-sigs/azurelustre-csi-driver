@@ -43,8 +43,8 @@ claim_file="${PROJECT_ROOT}/test/external-e2e/test_claim.yaml"
 
 print_logs() {
     echo "clean up"
-    kubectl delete -f $PROJECT_ROOT/test/external-e2e/test_claim.yaml --ignore-not-found
-    kubectl delete -f $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml --ignore-not-found
+    kubectl delete -f ${claim_file} --ignore-not-found
+    kubectl delete -f ${sc_file} --ignore-not-found
     echo "print out driver logs ..."
     bash ./test/utils/azurelustre_log.sh
 }
@@ -71,8 +71,8 @@ kubectl wait --for=delete -f ${claim_file} --timeout=300s
 echo "wait for pv ${bounded_pv} to be deleted"
 kubectl wait --for=delete pv/${bounded_pv} --timeout=300s
 
-echo "delete test pvc"
-kubectl 
+echo "delete test storageclass"
+kubectl delete -f ${sc_file}
 
 echo "begin to run azurelustre tests ...."
 cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
