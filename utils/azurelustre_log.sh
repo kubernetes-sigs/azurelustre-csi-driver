@@ -23,27 +23,26 @@ if [[ "$#" -gt 0 ]]; then
     DRIVER=$1
 fi
 
-echo "print out all nodes status ..."
+echo -e "Print out all nodes status ... \n"
 kubectl get nodes -o wide
-echo "======================================================================================"
 
-echo "print out all default namespace pods status ..."
+echo -e "\n======================================================================================"
+echo -e "Print out all default namespace pods status ... \n"
 kubectl get pods -n default -o wide
-echo "======================================================================================"
 
-echo "print out all $NS namespace pods status ..."
+echo -e "\n======================================================================================"
+echo -e "Print out all $NS namespace pods status ... \n"
 kubectl get pods -n${NS} -o wide
-echo "======================================================================================"
 
-echo "print out csi-$DRIVER-controller logs ..."
-echo "======================================================================================"
+echo -e "\n======================================================================================"
+echo -e "Print out csi-$DRIVER-controller logs ... \n"
 LABEL="app=csi-$DRIVER-controller"
 kubectl get pods -n${NS} -l${LABEL} \
     | awk 'NR>1 {print $1}' \
     | xargs -I {} kubectl logs {} --prefix -c${CONTAINER} -n${NS}
 
-echo "print out csi-$DRIVER-node logs ..."
-echo "======================================================================================"
+echo -e "\n======================================================================================"
+echo -e "Print out csi-$DRIVER-node logs ... \n"
 LABEL="app=csi-$DRIVER-node"
 kubectl get pods -n${NS} -l${LABEL} \
     | awk 'NR>1 {print $1}' \
