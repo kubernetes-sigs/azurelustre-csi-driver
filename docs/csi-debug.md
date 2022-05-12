@@ -120,3 +120,17 @@ Git Commit: 43017c96b7cecaa09bc05ce9fad3fb9860a4c0ce
 Go Version: go1.18.1
 Platform: linux/amd64
 </pre>
+
+&nbsp;
+&nbsp;
+
+### Collect logs for Lustre CSI Driver Product Team for further investigation
+
+&nbsp;
+
+- get utility from /utils/azurelustre_log.sh, run it and share output lustre.logs with us
+  
+```console
+$ chmod +x ./azurelustre_log.sh
+$ ./azurelustre_log.sh > lustre.logs 2>&1
+```
