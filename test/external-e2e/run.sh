@@ -38,7 +38,13 @@ cp ./kubectl /usr/bin/
 curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
+sc_file="${PROJECT_ROOT}/test/external-e2e/e2etest_storageclass.yaml"
+claim_file="${PROJECT_ROOT}/test/external-e2e/test_claim.yaml"
+
 print_logs() {
+    echo "clean up"
+    kubectl delete -f ${claim_file} --ignore-not-found
+    kubectl delete -f ${sc_file} --ignore-not-found
     echo "print out driver logs ..."
     bash ./test/utils/azurelustre_log.sh
 }
@@ -46,6 +52,27 @@ print_logs() {
 trap print_logs EXIT
 
 mkdir -p /tmp/csi
+
+# reclaim policy test
+echo "begin to test reclaim policy"
+echo "deploy test storageclass with default reclaim policy (delete)"
+kubectl apply -f ${sc_file}
+echo "deploy test pvc"
+kubectl apply -f ${claim_file}
+echo "wait pvc to Bound status"
+# wait for json is supported in kubectl v1.24
+kubectl wait --for=jsonpath='{.status.phase}'=Bound -f ${claim_file} --timeout=300s
+bounded_pv=$(kubectl get -f ${claim_file} -ojsonpath='{.spec.volumeName}')
+echo "bounded pv is ${bounded_pv}"
+echo "delete pvc"
+kubectl delete -f ${claim_file}
+echo "wait for the pvc to be deleted"
+kubectl wait --for=delete -f ${claim_file} --timeout=300s
+echo "wait for pv ${bounded_pv} to be deleted"
+kubectl wait --for=delete pv/${bounded_pv} --timeout=300s
+
+echo "delete test storageclass"
+kubectl delete -f ${sc_file}
 
 echo "begin to run azurelustre tests ...."
 cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
