@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: azurelustre-testclaim
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeMode: Filesystem
+  storageClassName: testazurelustre.csi.azure.com
+  resources:
+    requests:
+      storage: 100Mi
