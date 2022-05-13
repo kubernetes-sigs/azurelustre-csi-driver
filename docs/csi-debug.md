@@ -95,7 +95,7 @@ $ kubectl edit ds csi-azurelustre-node -n kube-system
 
 &nbsp;
 
-- Change lustre image config
+- Change lustre CSI docker image config
 
 ```console
 image: mcr.microsoft.com/k8s/csi/azurelustre-csi:v0.1.0

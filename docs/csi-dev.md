@@ -117,7 +117,7 @@ $ csc controller new --endpoint $endpoint --cap $cap --req-bytes 2147483648 --pa
 
 ```console
 $ mkdir /tmp/target-path
-$ csc node publish --endpoint $endpoint --cap $cap --target-path $target_path --vol-context "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" $volname
+$ volumeid=$(csc node publish --endpoint $endpoint --cap $cap --target-path $target_path --vol-context "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" $volname)
 ```
 
 &nbsp;
@@ -133,7 +133,7 @@ $ csc node unpublish --endpoint $endpoint --target-path $target_path $volname
 #### 5. Delete azurelustre volume
 
 ```console
-$ csc controller del --endpoint $endpoint CSIVolumeID
+$ csc controller del --endpoint $endpoint volumeid
 ```
 
 &nbsp;
@@ -141,7 +141,7 @@ $ csc controller del --endpoint $endpoint CSIVolumeID
 #### 6. Validate volume capabilities
 
 ```console
-$ csc controller validate-volume-capabilities --endpoint $endpoint --cap $cap CSIVolumeID
+$ csc controller validate-volume-capabilities --endpoint $endpoint --cap $cap volumeid
 ```
 
 &nbsp;
