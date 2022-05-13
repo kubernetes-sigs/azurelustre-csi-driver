@@ -33,7 +33,7 @@ RUN apt-get install -y --no-install-recommends libreadline7 libkeyutils1 wget   
     libssl-dev libudev-dev libwrap0 libwrap0-dev libyaml-0-2 linux-base         \
     linux-image-unsigned-5.3.0-1045-gke linux-libc-dev                          \
     linux-modules-5.3.0-1045-gke manpages manpages-dev netbase os-prober perl   \
-    perl-modules-5.26 ucf zlib1g-dev
+    perl-modules-5.26 ucf zlib1g-dev lsb-release ca-certificates gpg curl
 
 WORKDIR "/app"
 

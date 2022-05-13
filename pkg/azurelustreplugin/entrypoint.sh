@@ -15,29 +15,18 @@ echo "installClientPackages: ${installClientPackages}"
 
 echo "$(date -u) Command line arguments: $@"
 
-urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/azurelustre-client-packages/bionic"
-kernelVersion=$(uname -r)
-
 if [[ "${installClientPackages}" == "yes" ]]; then
 
-  echo "$(date -u) Downloading Lustre client packages."
-
-  # For some reason, wget doesn't trust the cert of azure blob url today
-  # Use --no-check-certificate as a workaround for now before we onboard to packages.microsoft.com
-  wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_2.14.0_amd64.deb"
-  wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_2.14.0_amd64.deb"
-
-  echo "$(date -u) Downloaded Lustre client packages."
-
+  osReleaseCodeName=$(lsb_release -cs)
+  kernelVersion=$(uname -r)
+  echo "$(date -u) OS release code name is ${osReleaseCodeName}, kernel version is ${kernelVersion}"
+  
   echo "$(date -u) Installing Lustre client packages."
 
+  curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
+  echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
   apt-get update
-  apt-get install -y --no-install-recommends "./lustre-client-utils_2.14.0_amd64.deb" "./lustre-client-modules_2.14.0_amd64.deb"
-
-  apt-get autoremove -y wget
-
-  rm --force ./lustre-client-utils_2.14.0_amd64.deb
-  rm --force ./lustre-client-modules_2.14.0_amd64.deb
+  apt install -y --no-install-recommends lustre-client-modules-${kernelVersion} lustre-client-utils
 
   echo "$(date -u) Installed Lustre client packages."
 
