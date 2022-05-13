@@ -41,6 +41,9 @@ GOBIN ?= $(GOPATH)/bin
 DOCKER_CLI_EXPERIMENTAL = enabled
 export GOPATH GOBIN GO111MODULE DOCKER_CLI_EXPERIMENTAL
 
+# The current context of image building
+# The architecture of the image
+ARCH ?= amd64
 # Output type of docker buildx build
 OUTPUT_TYPE ?= registry
 

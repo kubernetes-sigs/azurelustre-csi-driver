@@ -15,27 +15,22 @@ readonly lustre_client_version="2.14.0"
 
 mkdir -p $target_path
 
-urlPrefix="https://azurelustrecsiinfrasa.blob.core.windows.net/azurelustre-client-packages/bionic"
-kernelVersion=$(uname -r)
-
 echo "$(date -u) Installing Lustre kmod git and cert"
 apt-get update
-apt-get install -y --no-install-recommends kmod wget git ca-certificates
+apt-get install -y --no-install-recommends kmod wget git ca-certificates lsb-release gpg curl
 update-ca-certificates
 
-echo "$(date -u) Kernel version is ${kernelVersion}"
-
-echo "$(date -u) Downloading Lustre client packages."
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-utils_${lustre_client_version}_amd64.deb"
-wget --no-check-certificate "${urlPrefix}/${kernelVersion}/lustre-client-modules_${lustre_client_version}_amd64.deb"
-echo "$(date -u) Downloaded Lustre client packages."
+osReleaseCodeName=$(lsb_release -cs)
+kernelVersion=$(uname -r)
+echo "$(date -u) OS release code name is ${osReleaseCodeName}, kernel version is ${kernelVersion}"
 
 echo "$(date -u) Installing Lustre client packages."
 
-apt-get install -y --no-install-recommends "./lustre-client-utils_${lustre_client_version}_amd64.deb" "./lustre-client-modules_${lustre_client_version}_amd64.deb"
+curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
+echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
+apt-get update
+apt install -y --no-install-recommends lustre-client-modules-${kernelVersion} lustre-client-utils
 
-rm --force ./lustre-client-utils_${lustre_client_version}_amd64.deb
-rm --force ./lustre-client-modules_${lustre_client_version}_amd64.deb
 echo "$(date -u) Installed Lustre client packages."
 
 echo "$(date -u) Enabling Lustre client kernel modules."
