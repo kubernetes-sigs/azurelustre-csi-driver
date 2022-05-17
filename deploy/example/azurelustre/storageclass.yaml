@@ -5,6 +5,6 @@ metadata:
   name: sc.azurelustre.csi.azure.com
 provisioner: azurelustre.csi.azure.com
 parameters:
-  mds-ip-address: "172.18.8.7"      # 1st azurelustre cluster for daily work
-  #mds-ip-address: "172.18.8.12"     # 2nd azurelustre cluster for long-haul and PR gated check-in
+  mgs-ip-address: "172.18.8.7"      # 1st azurelustre cluster for daily work
+  #mgs-ip-address: "172.18.8.12"     # 2nd azurelustre cluster for long-haul and PR gated check-in
   fs-name: "lustrefs"

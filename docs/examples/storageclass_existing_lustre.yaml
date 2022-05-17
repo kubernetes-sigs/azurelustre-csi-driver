@@ -8,7 +8,7 @@ parameters:
   # The file system name of the existing Lustre
   fs-name: ${EXISTING_LUSTRE_FS_NAME}
   # The IP address of the existing Lustre
-  mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+  mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
 provisioner: azurelustre.csi.azure.com
 # If reclaimPolicy set as "Delete" Azure Lustre Cluster would be removed after PVC
 # deletion.

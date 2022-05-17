@@ -8,7 +8,7 @@ cluster.
 * install
 
 ```shell
-git clone https://github.com/jusjin-org/azurelustre-csi-driver.git
+git clone https://github.com/kubernetes-sigs/azurelustre-csi-driver.git
 cd azurelustre-csi-driver
 ./deploy/install-driver.sh
 ```
