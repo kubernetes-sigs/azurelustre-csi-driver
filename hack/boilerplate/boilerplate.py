@@ -21,6 +21,7 @@ import difflib
 import glob
 import json
 import mmap
+from operator import truediv
 import os
 import re
 import sys
@@ -33,7 +34,7 @@ parser.add_argument(
     nargs='*')
 
 # Rootdir defaults to the directory **above** the repo-infra dir.
-rootdir = os.path.dirname(__file__) + "./../../../"
+rootdir = os.path.dirname(__file__) + "./../../"
 rootdir = os.path.abspath(rootdir)
 parser.add_argument(
     "--rootdir", default=rootdir, help="root directory to examine")
@@ -200,11 +201,12 @@ def main():
     refs = get_refs()
     filenames = get_files(refs.keys())
 
+    error_code = 0
     for filename in filenames:
         if not file_passes(filename, refs, regexs):
             print(filename, file=sys.stdout)
-
-    return 0
+            error_code = 1
+    return error_code
 
 if __name__ == "__main__":
     sys.exit(main())
