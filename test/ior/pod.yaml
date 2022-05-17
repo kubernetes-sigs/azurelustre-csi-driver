@@ -25,7 +25,7 @@ spec:
         effect: NoSchedule
       containers:
       - name: ior
-        image: jusjin.azurecr.io/ior:latest
+        image: azurelustre.azurecr.io/ior:latest
         resources:
           limits:
             cpu: 1000m

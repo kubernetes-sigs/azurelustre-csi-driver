@@ -10,7 +10,7 @@ RUN apt-get -y install autoconf gcc git make mpich* \
 
 WORKDIR "/app"
 
-RUN git clone https://github.com/jusjin-org/ior.git
+RUN git clone https://github.com/hpc/ior.git
 
 RUN cd ior                      \
     && ./bootstrap              \
