@@ -71,7 +71,7 @@ func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
 		},
 		Parameters: map[string]string{
 			"fs-name":        "tfs",
-			"mds-ip-address": "127.0.0.1",
+			"mgs-ip-address": "127.0.0.1",
 		},
 	}
 	return req

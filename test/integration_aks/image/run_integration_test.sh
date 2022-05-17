@@ -66,7 +66,7 @@ value="$(csc controller new --endpoint "$endpoint" \
                             --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                             "$volname" \
                             --req-bytes "$volsize" \
-                            --params fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip)"
+                            --params fs-name=$lustre_fs_name,mgs-ip-address=$lustre_fs_ip)"
 sleep 5
 
 volumeid="$(echo "$value" | awk '{print $1}' | sed 's/"//g')"
@@ -81,7 +81,7 @@ echo "====: $(date -u) Node publish volume test:"
 csc node publish --endpoint "$endpoint" \
                  --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                  --target-path "$target_path" \
-                 --vol-context "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" \
+                 --vol-context "fs-name=$lustre_fs_name,mgs-ip-address=$lustre_fs_ip" \
                  "$volumeid"
 sleep 3
 

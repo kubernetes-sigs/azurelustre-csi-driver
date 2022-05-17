@@ -26,6 +26,6 @@ jobs:
         run: |
           ./test/long-haul/start-long-haul.sh
         env:
-          aks_cluster_name: "jusjin-csi-sub2"
-          aks_resource_group: "jusjin-csi-sub2"
+          aks_cluster_name: "aks-lustre-longhaul"
+          aks_resource_group: "lustre-longhaul"
           aks_pool_name: "longhaul"
