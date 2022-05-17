@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	VolumeContextMDSIPAddress = "mds-ip-address"
+	VolumeContextMDSIPAddress = "mgs-ip-address"
 	VolumeContextFSName       = "fs-name"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
@@ -147,7 +147,7 @@ func (d *Driver) CreateVolume(
 	if len(mdsIPAddress) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
-			"CreateVolume Parameter mds-ip-address must be provided",
+			"CreateVolume Parameter mgs-ip-address must be provided",
 		)
 	}
 	azureLustreName := parameters[VolumeContextFSName]

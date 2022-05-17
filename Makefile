@@ -14,7 +14,7 @@
 
 PKG = sigs.k8s.io/azurelustre-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
-REGISTRY ?= jusjin.azurecr.io
+REGISTRY ?= azurelustre.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 IMAGE_NAME ?= azurelustre-csi
 IMAGE_VERSION ?= v0.1.0
