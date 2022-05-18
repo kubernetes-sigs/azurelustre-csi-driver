@@ -58,8 +58,8 @@ mounted
 ```shell
 $ kubectl exec -it lustre-echo-date -- df -h
 
-Filesystem                Size      Used Available Use% Mounted on
+Filesystem                Size      Used     Available Use% Mounted on
 ...
-${ip}@tcp:/${fs}          976.6G    154.7G    821.9G  16% /mnt/lustre
+${ip}@tcp:/${fs}          976.6G    154.7G    821.9G   16%  /mnt/lustre
 ...
 ```
