@@ -32,14 +32,6 @@ $ make verify
 
 &nbsp;
 
-- If there is config file changed under `charts` directory, run following command to update chart file.
-
-```console
-$ helm package charts/latest/azurelustre-csi-driver -d charts/latest/
-```
-
-&nbsp;
-
 - Build container image and push to dockerhub
 
 ```console
@@ -150,13 +142,4 @@ $ csc controller validate-volume-capabilities --endpoint $endpoint --cap $cap vo
 
 ```console
 $ csc node get-info --endpoint $endpoint
-```
-
-&nbsp;
-&nbsp;
-
-## How to update chart index
-
-```console
-$ helm repo index charts --url=https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/master/charts
 ```

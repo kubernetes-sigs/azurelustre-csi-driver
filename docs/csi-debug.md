@@ -6,10 +6,16 @@
 
 &nbsp;
 
+- Symptoms
+  - PVC can't go into Bound status
+  - User workload pod can't go into a Running status
+
+&nbsp;
+
 - Locate csi driver pod
 
 ```console
-$ kubectl get po -o wide -n kube-system | grep csi-azurelustre-controller
+$ kubectl get po -o wide -n kube-system -l app=csi-azurelustre-controller
 ```
 
 <pre>
@@ -26,8 +32,21 @@ csi-azurelustre-controller-56bfddd689-sl4ll       3/3     Running   0          3
 $ kubectl logs csi-azurelustre-controller-56bfddd689-dh5tk -c azurelustre -n kube-system > csi-lustre-controller.log
 ```
 
-> note: there could be multiple controller pods, logs can be taken from all of them simultaneously, also with `follow` (realtime) mode
-> `kubectl logs deploy/csi-azurelustre-controller -c azurelustre -f -n kube-system`
+> note:
+>
+> - add --previous to retrieve logs from a previous running container
+>
+> - there could be multiple controller pods, logs can be taken from all of them simultaneously
+>
+> ```console
+> $ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=-1 --prefix 
+> ```
+>
+> - retrieve logs with `follow` (realtime) mode
+>
+> ```console
+> $ kubectl logs deploy/csi-azurelustre-controller -c azurelustre -f -n kube-system
+> ```
 
 &nbsp;
 
@@ -36,7 +55,7 @@ $ kubectl logs csi-azurelustre-controller-56bfddd689-dh5tk -c azurelustre -n kub
 - Locate csi driver pod and find out the pod does the actual volume mount/unmount operation
 
 ```console
-$ kubectl get po -o wide -n kube-system | grep csi-azurelustre-node
+$ kubectl get po -o wide -n kube-system -l app=csi-azurelustre-node
 ```
 
 <pre>
