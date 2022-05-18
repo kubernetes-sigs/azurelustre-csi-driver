@@ -20,7 +20,8 @@ RUN apt-get -y install autoconf gcc git make mpich* \
 
 WORKDIR "/app"
 
-RUN git clone https://github.com/hpc/ior.git
+# 3.3.0 is a tag, not a branch
+RUN git clone --branch 3.3.0 https://github.com/hpc/ior.git
 
 RUN cd ior                      \
     && ./bootstrap              \
