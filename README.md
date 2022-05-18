@@ -18,18 +18,9 @@ This driver allows Kubernetes to access Azure Lustre filesystem.
 |----------------|--------------------------------------------------|-----------------------|
 |main branch     |mcr.microsoft.com/k8s/csi/azurelustre-csi:latest  | 1.21+                 |
 
-### Driver parameters
-
-Please refer to `azurelustre.csi.azure.com` [driver parameters](./docs/driver-parameters.md)
-
 ### Set up CSI driver on AKS cluster (only for AKS users)
 
-follow guide [here](./docs/install-driver-on-aks.md)
-
-### Usage
-
-- [Basic usage](./deploy/example/e2e_usage.md)
-- [fsGroupPolicy](./deploy/example/fsgroup)
+follow guide [here](./docs/install-csi-driver.md)
 
 ### Troubleshooting
 
@@ -38,10 +29,6 @@ follow guide [here](./docs/install-driver-on-aks.md)
 ### Support
 
 - Please see our [support policy][support-policy]
-
-### Limitations
-
-- Please refer to [Azure Lustre CSI Driver Limitations](./docs/limitations.md)
 
 ## Kubernetes Development
 
