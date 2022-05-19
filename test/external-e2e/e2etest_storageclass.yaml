@@ -5,6 +5,6 @@ metadata:
   name: testazurelustre.csi.azure.com
 provisioner: azurelustre.csi.azure.com
 parameters:
-  mgs-ip-address: "172.18.8.7"      # 1st azurelustre cluster for daily work
-  #mgs-ip-address: "172.18.8.12"     # 2nd azurelustre cluster for long-haul and PR gated check-in
+  mgs-ip-address: "172.17.0.7"      # 1st azurelustre cluster for daily work, dev1
+  #mgs-ip-address: "172.16.0.4"     # 2nd azurelustre cluster for long-haul and PR gated check-in
   fs-name: "lustrefs"
