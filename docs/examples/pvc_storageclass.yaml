@@ -2,15 +2,14 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  # You can change the name to identify this PVC
+  # The name of the PVC
   name: pvc-lustre
 spec:
   accessModes:
     - ReadWriteMany
   resources:
     requests:
-      # This size must be the true size of the Azure Lustre you want
-      # to used. Or the volume create process may fail.
-      storage: 4Ti
-  # This field must be the same as the name in StorageClass
+      # The real storage capacity in the claim
+      storage: 1Gi
+  # This field must be the same as the storage class name in StorageClass
   storageClassName: sc.azurelustre.csi.azure.com
