@@ -18,10 +18,10 @@ set -euo pipefail
 
 repo="$(git rev-parse --show-toplevel)/deploy"
 
-echo "Installing Azure Managed Lustre CSI driver, repo: $repo ..."
+echo "Installing Azure Lustre CSI driver, repo: $repo ..."
 kubectl apply -f $repo/rbac-csi-azurelustre-controller.yaml
 kubectl apply -f $repo/rbac-csi-azurelustre-node.yaml
 kubectl apply -f $repo/csi-azurelustre-driver.yaml
 kubectl apply -f $repo/csi-azurelustre-controller.yaml
 kubectl apply -f $repo/csi-azurelustre-node.yaml
-echo 'Azure Managed Lustre CSI driver installed successfully.'
+echo 'Azure Lustre CSI driver installed successfully.'

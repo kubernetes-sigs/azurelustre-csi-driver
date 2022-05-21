@@ -1,6 +1,6 @@
 # Static Provisioning
 
-This document explains how to deploy your workload with an existing Azure Managed Lustre using Lustre CSI driver.
+This document explains how to deploy your workload with an existing Azure Lustre cluster using Lustre CSI driver.
 
 &nbsp;
 
