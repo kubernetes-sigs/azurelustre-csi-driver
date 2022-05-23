@@ -100,7 +100,7 @@ $ csc identity plugin-info --endpoint $endpoint
 #### 2. Create an azurelustre volume
 
 ```console
-$ csc controller new --endpoint $endpoint --cap $cap --req-bytes 2147483648 --params "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" $volname
+$ csc controller new --endpoint $endpoint --cap $cap --req-bytes 2147483648 --params "fs-name=$lustre_fs_name,mgs-ip-address=$lustre_fs_ip" $volname
 ```
 
 &nbsp;
@@ -109,7 +109,7 @@ $ csc controller new --endpoint $endpoint --cap $cap --req-bytes 2147483648 --pa
 
 ```console
 $ mkdir /tmp/target-path
-$ volumeid=$(csc node publish --endpoint $endpoint --cap $cap --target-path $target_path --vol-context "fs-name=$lustre_fs_name,mds-ip-address=$lustre_fs_ip" $volname)
+$ volumeid=$(csc node publish --endpoint $endpoint --cap $cap --target-path $target_path --vol-context "fs-name=$lustre_fs_name,mgs-ip-address=$lustre_fs_ip" $volname)
 ```
 
 &nbsp;

@@ -1,9 +1,10 @@
 # Static Provisioning
 
-This document explains how to use an existing Azure Lustre Cluster in
-AKS through this CSI driver static provisioning.
+This document explains how to deploy your workload with an existing Azure Lustre cluster using Lustre CSI driver.
 
-## Create a Volume bounded to an existing Azure Lustre Cluster
+&nbsp;
+
+## Create a Volume bound to an existing Azure Lustre Cluster
 
 ### Option 1: Use Storage Class
 
@@ -21,6 +22,8 @@ kubectl create -f storageclass_existing_lustre.yaml
 kubectl create -f pvc_storageclass.yaml
 ```
 
+&nbsp;
+
 ### Option 2: Use PV
 
 * Download [PV file](./examples/pv.yaml) and
@@ -35,6 +38,8 @@ kubectl create -f pvc_storageclass.yaml
 kubectl create -f pv.yaml
 kubectl create -f pvc_pv.yaml
 ```
+
+&nbsp;
 
 ## Use the Volume
 
