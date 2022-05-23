@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  # You can change the name to identify this PVC
+  # The name of the PVC
   name: pvc-lustre
 spec:
   accessModes:
@@ -10,7 +10,6 @@ spec:
   resources:
     requests:
       storage: 100Mi
-  # volumeName must be the same as the name in PV.
-  # If you changed the name in PV, you need to change this field.
+  # This field must be the same as PV name in PersistentVolume.
   volumeName: pv-lustre
   storageClassName: ""

@@ -1,7 +1,6 @@
-# Install Azure Managed Lustre CSI on a kubernetes cluster
+# Install Azure Lustre CSI driver on a kubernetes cluster
 
-This document explains how to install Azure Managed Lustre CSI on a kubernetes
-cluster.
+This document explains how to install Azure Lustre CSI driver on a kubernetes cluster.
 
 ## Install with kubectl
 
