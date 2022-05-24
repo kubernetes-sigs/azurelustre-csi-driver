@@ -45,6 +45,7 @@ func (d *Driver) NodePublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume capability missing in request")
 	}
+	userMountFlags := volCap.GetMount().GetMountFlags()
 	volumeID := req.GetVolumeId()
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
@@ -80,6 +81,12 @@ func (d *Driver) NodePublishVolume(
 	mountOptions := []string{}
 	if req.GetReadonly() {
 		mountOptions = append(mountOptions, "ro")
+	}
+	for _, userMountFlag := range userMountFlags {
+		if userMountFlag == "ro" && req.GetReadonly() {
+			continue
+		}
+		mountOptions = append(mountOptions, userMountFlag)
 	}
 
 	mnt, err := d.ensureMountPoint(target)

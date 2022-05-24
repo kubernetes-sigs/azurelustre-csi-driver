@@ -170,6 +170,42 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:          true},
 			expectedErr: nil,
 		},
+		{
+			desc: "Valid mount options",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "noflock"}},
+			}},
+				VolumeId:          "vol_1",
+				TargetPath:        targetTest,
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mds-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          false},
+			expectedErr: nil,
+		},
+		{
+			desc: "Valid mount options with readonly",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "noflock"}},
+			}},
+				VolumeId:          "vol_1",
+				TargetPath:        targetTest,
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mds-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: nil,
+		},
+		{
+			desc: "Valid mount options with duplicated readonly",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "noflock", "ro"}},
+			}},
+				VolumeId:          "vol_1",
+				TargetPath:        targetTest,
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mds-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: nil,
+		},
 		//{
 		//	desc: "Error creating directory",
 		//	req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
