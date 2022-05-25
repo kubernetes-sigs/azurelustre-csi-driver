@@ -131,7 +131,7 @@ var _ = ginkgo.AfterSuite(func() {
 
 	azureLustreLog := testCmd{
 		command:  "bash",
-		args:     []string{"test/utils/azurelustre_log.sh"},
+		args:     []string{"utils/azurelustre_log.sh"},
 		startLog: "===================azurelustre log===================",
 		endLog:   "==================================================",
 	}
