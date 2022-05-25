@@ -1,0 +1,63 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: azurelustre-longhaulsample-sc
+provisioner: azurelustre.csi.azure.com
+parameters:
+  mds-ip-address: "172.18.8.12"     # 2nd azurelustre cluster for long-haul and PR gated check-in
+  fs-name: "lustrefs"
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: azurelustre-longhaulsample-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: azurelustre-longhaulsample-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: azurelustre-longhaulsample-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+      name: azurelustre-longhaulsample-deployment
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+        "agentpool": {longhaul_agentpool}
+      containers:
+        - name: azurelustre-longhaulsample-container
+          image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
+          command:
+            - "/bin/sh"
+            - "-c"
+            - while true; do echo $(date) > /mnt/azurelustre_longhaulsample/example_out_file; sleep 1; cat /mnt/azurelustre_longhaulsample/example_out_file; sleep 5; done
+          volumeMounts:
+            - name: azurelustre-longhaulsample-volume
+              mountPath: "/mnt/azurelustre_longhaulsample"
+              readOnly: false
+      volumes:
+        - name: azurelustre-longhaulsample-volume
+          persistentVolumeClaim:
+            claimName: azurelustre-longhaulsample-pvc
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
