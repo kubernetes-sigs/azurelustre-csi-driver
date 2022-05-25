@@ -115,7 +115,14 @@ func (d *Driver) NodePublishVolume(
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	err = d.mounter.Mount(source, target, "lustre", mountOptions)
+	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
+		source,
+		target,
+		"lustre",
+		mountOptions,
+		nil,
+		[]string{"--no-mtab"},
+	)
 
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
