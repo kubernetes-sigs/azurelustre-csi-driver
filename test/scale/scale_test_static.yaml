@@ -12,7 +12,7 @@ spec:
     driver: azurelustre.csi.azure.com
     volumeAttributes:
       fs-name: "lustrefs"
-      mds-ip-address: "172.18.16.8"
+      mgs-ip-address: "172.18.16.8"
     volumeHandle: scale-pv-lustre-01
   persistentVolumeReclaimPolicy: Retain
 

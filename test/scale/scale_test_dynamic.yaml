@@ -6,7 +6,7 @@ metadata:
 provisioner: azurelustre.csi.azure.com
 reclaimPolicy: Delete
 parameters:
-  mds-ip-address: "172.17.0.7"
+  mgs-ip-address: "172.17.0.7"
   fs-name: "lustrefs"
 
 ---
