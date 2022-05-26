@@ -67,7 +67,7 @@ func (d *Driver) NodePublishVolume(
 	mdsIPAddress, found := context[VolumeContextMDSIPAddress]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument,
-			"Context mds-ip-address must be provided")
+			"Context mgs-ip-address must be provided")
 	}
 
 	azureLustreName, found := context[VolumeContextFSName]

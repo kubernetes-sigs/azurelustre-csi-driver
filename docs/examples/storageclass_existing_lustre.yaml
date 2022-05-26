@@ -2,15 +2,14 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  # You can change the name to identify this StorageClass.
+  # The name of the StorageClass.
   name: sc.azurelustre.csi.azure.com
 parameters:
-  # The file system name of the existing Lustre
+  # The file system name of the existing Lustre, "lustrefs" in common case
   fs-name: ${EXISTING_LUSTRE_FS_NAME}
   # The IP address of the existing Lustre
-  mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+  mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
 provisioner: azurelustre.csi.azure.com
-# If reclaimPolicy set as "Delete" Azure Lustre Cluster would be removed after PVC
-# deletion.
+# Azure Lustre Cluster is removed after PVC deletion if reclaimPolicy is the default value "Delete".
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
