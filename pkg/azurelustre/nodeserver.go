@@ -45,6 +45,7 @@ func (d *Driver) NodePublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume capability missing in request")
 	}
+	userMountFlags := volCap.GetMount().GetMountFlags()
 	volumeID := req.GetVolumeId()
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
@@ -66,7 +67,7 @@ func (d *Driver) NodePublishVolume(
 	mdsIPAddress, found := context[VolumeContextMDSIPAddress]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument,
-			"Context mds-ip-address must be provided")
+			"Context mgs-ip-address must be provided")
 	}
 
 	azureLustreName, found := context[VolumeContextFSName]
@@ -80,6 +81,12 @@ func (d *Driver) NodePublishVolume(
 	mountOptions := []string{}
 	if req.GetReadonly() {
 		mountOptions = append(mountOptions, "ro")
+	}
+	for _, userMountFlag := range userMountFlags {
+		if userMountFlag == "ro" && req.GetReadonly() {
+			continue
+		}
+		mountOptions = append(mountOptions, userMountFlag)
 	}
 
 	mnt, err := d.ensureMountPoint(target)
@@ -114,7 +121,8 @@ func (d *Driver) NodePublishVolume(
 		}
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
-
+  
+  d.kernelModuleLock.Lock()
 	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
 		source,
 		target,
@@ -123,6 +131,7 @@ func (d *Driver) NodePublishVolume(
 		nil,
 		[]string{"--no-mtab"},
 	)
+	d.kernelModuleLock.Unlock()
 
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
@@ -164,8 +173,10 @@ func (d *Driver) NodeUnpublishVolume(
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
+	d.kernelModuleLock.Lock()
 	err := mount.CleanupMountPoint(targetPath, d.mounter,
 		true /*extensiveMountPointCheck*/)
+	d.kernelModuleLock.Unlock()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)

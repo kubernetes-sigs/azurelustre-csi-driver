@@ -46,7 +46,7 @@ print_logs() {
     kubectl delete -f ${claim_file} --ignore-not-found
     kubectl delete -f ${sc_file} --ignore-not-found
     echo "print out driver logs ..."
-    bash ./test/utils/azurelustre_log.sh
+    bash ./utils/azurelustre_log.sh
 }
 
 trap print_logs EXIT

@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  # You can change the name to identify this PV
+  # The name of the PV
   name: pv-lustre
 spec:
   accessModes:
@@ -17,7 +17,7 @@ spec:
       # The file system name of the existing Lustre
       fs-name: ${EXISTING_LUSTRE_FS_NAME}
       # The IP address of the existing Lustre
-      mds-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+      mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
     # Make sure this VolumeID is unique in the cluster
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
   # "Delete" is not supported in static provisioning PV

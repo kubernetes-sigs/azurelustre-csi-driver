@@ -88,13 +88,12 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: jusjin.azurecr.io/azurelustre-csi:v0.1.0   # TODO_JUSJIN: replace to private preview ACR
-          imagePullPolicy: Always   # TODO_JUSJIN: for testing only
+          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.1
+          imagePullPolicy: IfNotPresent
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--nodeid=$(KUBE_NODE_NAME)"
-            - "--metrics-address=0.0.0.0:29635"
           ports:
             - containerPort: 29633
               name: healthz
@@ -129,7 +128,7 @@ spec:
               name: azure-cred
             - mountPath: /mnt
               name: azurelustre-cache
-          resources:   # TODO_JUSJIN: tune this for perf/scale
+          resources:
             limits:
               cpu: 1
               memory: 200Mi
