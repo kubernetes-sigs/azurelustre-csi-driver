@@ -12,10 +12,10 @@ echo "log path ${log_path}"
 echo "target yaml file ${target_yaml}"
 
 echo "= setup"
-echo "== clenup old workload"
+echo "== cleanup old workload"
 kubectl delete -f ${work_path}/${target_yaml} --ignore-not-found
 
-echo "== clenup old logs"
+echo "== cleanup old logs"
 rm -rf ${log_path} || true
 
 echo "== create log path ${log_path}"
@@ -48,7 +48,7 @@ function catlog_and_cleanup {
     echo "begin delete time ${begin_delete_time}"
     echo "begin_delete_time: ${begin_delete_time}" >>${log_path}/test_time
     kubectl delete -f ${work_path}/${target_yaml} --ignore-not-found
-    echo "== wait for worload deleted"
+    echo "== wait for workload deleted"
     kubectl wait --for=delete pod selector=app=csi-scale-test
     end_delete_time=$(date "+%Y-%m-%d %H:%M:%S.%3N")
     echo "end delete time ${end_delete_time}"
@@ -78,7 +78,7 @@ function catlog_and_cleanup {
 
 trap catlog_and_cleanup ERR EXIT
 
-echo "== wait for worload ready"
+echo "== wait for workload ready"
 kubectl wait --for=condition=Ready pod --selector=app=csi-scale-test --timeout=300s
 pods_ready_time=$(date "+%Y-%m-%d %H:%M:%S.%3N")
 echo "pods ready time ${pods_ready_time}"
