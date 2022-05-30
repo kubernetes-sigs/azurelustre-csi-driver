@@ -43,8 +43,8 @@ func (d *Driver) NodePublishVolume(
 ) (*csi.NodePublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_publish_volume",
-		"<unknown>",
-		"<unknown>",
+		"",
+		"",
 		d.Name)
 
 	volCap := req.GetVolumeCapability()
@@ -160,8 +160,8 @@ func (d *Driver) NodeUnpublishVolume(
 ) (*csi.NodeUnpublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_unpublish_volume",
-		"<unknown>",
-		"<unknown>",
+		"",
+		"",
 		d.Name)
 
 	if len(req.GetVolumeId()) == 0 {

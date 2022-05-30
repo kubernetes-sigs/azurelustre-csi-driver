@@ -2,7 +2,7 @@
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: scale.sc.azurelustre.csi.azure.com
+  name: scale.sc.azurelustre
 provisioner: azurelustre.csi.azure.com
 reclaimPolicy: Delete
 parameters:
@@ -69,7 +69,7 @@ spec:
         name: scale-pvc-lustre
       spec:
         accessModes: ["ReadWriteMany"]
-        storageClassName: scale.sc.azurelustre.csi.azure.com
+        storageClassName: scale.sc.azurelustre
         resources:
           requests:
             storage: 1Gi

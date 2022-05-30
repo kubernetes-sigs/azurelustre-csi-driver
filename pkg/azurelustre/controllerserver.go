@@ -86,8 +86,8 @@ func (d *Driver) CreateVolume(
 	mc := metrics.NewMetricContext(
 		azureLustreCSIDriverName,
 		"controller_create_volume",
-		"<unknown>",
-		"<unknown>",
+		"",
+		"",
 		d.Name,
 	)
 
@@ -220,8 +220,8 @@ func (d *Driver) DeleteVolume(
 ) (*csi.DeleteVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"controller_delete_volume",
-		"<unknown>",
-		"<unknown>",
+		"",
+		"",
 		d.Name)
 
 	volumeID := req.GetVolumeId()
