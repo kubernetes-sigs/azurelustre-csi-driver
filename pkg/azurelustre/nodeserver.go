@@ -123,7 +123,14 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	d.kernelModuleLock.Lock()
-	err = d.mounter.Mount(source, target, "lustre", mountOptions)
+	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
+		source,
+		target,
+		"lustre",
+		mountOptions,
+		nil,
+		[]string{"--no-mtab"},
+	)
 	d.kernelModuleLock.Unlock()
 
 	if err != nil {
