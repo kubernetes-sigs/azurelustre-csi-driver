@@ -83,6 +83,14 @@ func (d *Driver) CreateVolume(
 	ctx context.Context,
 	req *csi.CreateVolumeRequest,
 ) (*csi.CreateVolumeResponse, error) {
+	mc := metrics.NewMetricContext(
+		azureLustreCSIDriverName,
+		"controller_create_volume",
+		"",
+		"",
+		d.Name,
+	)
+
 	volumeCapabilities := req.GetVolumeCapabilities()
 	volName := req.GetName()
 	if len(volName) == 0 {
@@ -177,13 +185,6 @@ func (d *Driver) CreateVolume(
 		)
 	}
 
-	mc := metrics.NewMetricContext(
-		azureLustreCSIDriverName,
-		"controller_create_volume",
-		"<unknown>",
-		"<unknown>",
-		d.Name,
-	)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
@@ -217,6 +218,12 @@ func (d *Driver) CreateVolume(
 func (d *Driver) DeleteVolume(
 	ctx context.Context, req *csi.DeleteVolumeRequest,
 ) (*csi.DeleteVolumeResponse, error) {
+	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
+		"controller_delete_volume",
+		"",
+		"",
+		d.Name)
+
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
@@ -236,11 +243,6 @@ func (d *Driver) DeleteVolume(
 	}
 	defer d.volumeLocks.Release(volumeID)
 
-	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
-		"controller_delete_volume",
-		"<unknown>",
-		"<unknown>",
-		d.Name)
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)

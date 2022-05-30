@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: scale-pv-lustre
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 4Ti
+  csi:
+    driver: azurelustre.csi.azure.com
+    volumeAttributes:
+      fs-name: "lustrefs"
+      mgs-ip-address: "172.18.16.8"
+    volumeHandle: scale-pv-lustre-01
+  persistentVolumeReclaimPolicy: Retain
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scale-pvc-lustre
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Mi
+  volumeName: scale-pv-lustre
+  storageClassName: ""
+
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: scale-test-set
+spec:
+  replicas: 64
+  selector:
+    matchLabels:
+      app: csi-scale-test
+  template:
+    metadata:
+      labels:
+        app: csi-scale-test
+    spec:
+      nodeSelector:
+        agentpool: ior
+      containers:
+        - image: busybox
+          name: lustre-echo-date
+          command:
+            - "/bin/sh"
+            - "-c"
+            - while true; do echo $(date) >> /mnt/lustre/outfile_$(POD_NAME); sleep 10; done
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: lustre01
+              mountPath: "/mnt/lustre"
+          resources:
+            requests:
+              memory: 100M
+              cpu: 10m
+            limits:
+              memory: 100M
+              cpu: 10m
+      volumes:
+        - name: lustre01
+          persistentVolumeClaim:
+            claimName: scale-pvc-lustre
