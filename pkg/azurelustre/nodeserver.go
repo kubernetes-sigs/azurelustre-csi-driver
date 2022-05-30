@@ -121,8 +121,8 @@ func (d *Driver) NodePublishVolume(
 		}
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
-  
-  d.kernelModuleLock.Lock()
+
+	d.kernelModuleLock.Lock()
 	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
 		source,
 		target,
