@@ -22,6 +22,7 @@ import (
 	"os"
 
 	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
@@ -40,6 +41,12 @@ func (d *Driver) NodePublishVolume(
 	ctx context.Context,
 	req *csi.NodePublishVolumeRequest,
 ) (*csi.NodePublishVolumeResponse, error) {
+	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
+		"node_publish_volume",
+		"",
+		"",
+		d.Name)
+
 	volCap := req.GetVolumeCapability()
 	if volCap == nil {
 		return nil, status.Error(codes.InvalidArgument,
@@ -75,6 +82,11 @@ func (d *Driver) NodePublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Context fs-name must be provided")
 	}
+
+	isOperationSucceeded := false
+	defer func() {
+		mc.ObserveOperationWithResult(isOperationSucceeded)
+	}()
 
 	source := fmt.Sprintf("%s@tcp:/%s", mdsIPAddress, azureLustreName)
 
@@ -145,12 +157,14 @@ func (d *Driver) NodePublishVolume(
 		return nil, status.Errorf(codes.Internal,
 			"Could not mount %q at %q: %v", source, target, err)
 	}
+
 	klog.V(2).Infof(
 		"NodePublishVolume: volume %s mount %s at %s successfully",
 		volumeID,
 		source,
 		target,
 	)
+	isOperationSucceeded = true
 
 	return &csi.NodePublishVolumeResponse{}, nil
 }
@@ -160,6 +174,12 @@ func (d *Driver) NodeUnpublishVolume(
 	ctx context.Context,
 	req *csi.NodeUnpublishVolumeRequest,
 ) (*csi.NodeUnpublishVolumeResponse, error) {
+	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
+		"node_unpublish_volume",
+		"",
+		"",
+		d.Name)
+
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID missing in request")
@@ -168,6 +188,12 @@ func (d *Driver) NodeUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Target path missing in request")
 	}
+
+	isOperationSucceeded := false
+	defer func() {
+		mc.ObserveOperationWithResult(isOperationSucceeded)
+	}()
+
 	targetPath := req.GetTargetPath()
 	volumeID := req.GetVolumeId()
 
@@ -186,6 +212,8 @@ func (d *Driver) NodeUnpublishVolume(
 		volumeID,
 		targetPath,
 	)
+
+	isOperationSucceeded = true
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
