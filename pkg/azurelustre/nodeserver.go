@@ -115,7 +115,9 @@ func (d *Driver) NodePublishVolume(
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
+	d.kernelModuleLock.Lock()
 	err = d.mounter.Mount(source, target, "lustre", mountOptions)
+	d.kernelModuleLock.Unlock()
 
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
@@ -157,8 +159,10 @@ func (d *Driver) NodeUnpublishVolume(
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
+	d.kernelModuleLock.Lock()
 	err := mount.CleanupMountPoint(targetPath, d.mounter,
 		true /*extensiveMountPointCheck*/)
+	d.kernelModuleLock.Unlock()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)
