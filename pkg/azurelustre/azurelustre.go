@@ -18,6 +18,7 @@ package azurelustre
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
@@ -69,7 +70,8 @@ type Driver struct {
 	volLockMap                 *util.LockMap
 	// A map storing all volumes with ongoing operations so that additional operations
 	// for that same volume (as defined by VolumeID) return an Aborted error
-	volumeLocks *volumeLocks
+	volumeLocks      *volumeLocks
+	kernelModuleLock sync.Mutex
 }
 
 // NewDriver Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
