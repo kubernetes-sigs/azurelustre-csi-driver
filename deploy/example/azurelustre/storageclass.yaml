@@ -6,5 +6,5 @@ metadata:
 provisioner: azurelustre.csi.azure.com
 parameters:
   mgs-ip-address: "172.18.16.8"      # dev1, azurelustre cluster for daily work 
-  #mgs-ip-address: "172.18.17.8"      # dev2, azurelustre cluster for long-haul and PR gated check-in
+  #mgs-ip-address: "172.18.17.7"      # dev2, azurelustre cluster for long-haul and PR gated check-in
   fs-name: "lustrefs"

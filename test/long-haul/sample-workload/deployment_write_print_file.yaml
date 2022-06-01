@@ -5,8 +5,8 @@ metadata:
   name: azurelustre-longhaulsample-sc
 provisioner: azurelustre.csi.azure.com
 parameters:
-  mds-ip-address: "172.18.8.12"     # 2nd azurelustre cluster for long-haul and PR gated check-in
-  fs-name: "lustrefs"
+  mds-ip-address: "{lustre_fs_ip}"     # 2nd azurelustre cluster for long-haul and PR gated check-in
+  fs-name: "{lustre_fs_name}"
 
 ---
 kind: PersistentVolumeClaim

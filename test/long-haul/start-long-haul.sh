@@ -24,8 +24,10 @@ source ./utils.sh
 export ClusterName="${aks_cluster_name}"
 export ResourceGroup="${aks_resource_group}"
 export PoolName="${aks_pool_name}"
+export LustreFSName="${lustre_fs_name}"
+export LustreFSIP="${lustre_fs_ip}"
 
-sed -i "s/{longhaul_agentpool}/$PoolName/g" ./sample-workload/deployment_write_print_file.yaml
+sed -i "s/{longhaul_agentpool}/$PoolName/g;s/{lustre_fs_name}/$LustreFSName/g;s/{lustre_fs_ip}/$LustreFSIP/g" ./sample-workload/deployment_write_print_file.yaml
 
 print_logs_info "Connecting to AKS Cluster=$ClusterName, ResourceGroup=$ResourceGroup, AKS pool=$PoolName"
 az configure --defaults group=$ResourceGroup
