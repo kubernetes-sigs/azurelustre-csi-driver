@@ -26,6 +26,8 @@ jobs:
         run: |
           ./test/long-haul/start-long-haul.sh
         env:
-          aks_cluster_name: "aks-lustre-longhaul"
-          aks_resource_group: "lustre-longhaul"
-          aks_pool_name: "longhaul"
+          aks_cluster_name: ${{ secrets.AKS_LONGHAUL_CLUSTER }}
+          aks_resource_group: ${{ secrets.AKS_LONGHAUL_RG }}
+          aks_pool_name: ${{ secrets.AKS_LONGHAUL_POOL }}
+          lustre_fs_name: ${{ secrets.LUSTRE_FS_NAME }}
+          lustre_fs_ip: ${{ secrets.LUSTRE_FS_IP }}
