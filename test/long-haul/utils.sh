@@ -118,6 +118,8 @@ verify_csi_driver () {
 }
 
 start_sample_workload () {
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found
+    sleep 15
     kubectl apply -f ./sample-workload/deployment_write_print_file.yaml
 }
 
