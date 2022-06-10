@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 
 	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
@@ -135,14 +136,41 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	d.kernelModuleLock.Lock()
-	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
-		source,
-		target,
-		"lustre",
-		mountOptions,
-		nil,
-		[]string{"--no-mtab"},
-	)
+
+	command := exec.Command("/sbin/mount.lustre", source, target)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		if err.Error() == "wait: no child processes" {
+			if !command.ProcessState.Success() {
+				// Rewrite err with the actual exit error of the process.
+				err = &exec.ExitError{ProcessState: command.ProcessState}
+			}
+		}
+		klog.Errorf("Mount failed: %v\nMounting source: %s\nMounting target: %s\nOutput: %s\n", err, source, target, string(output))
+
+		return nil, err
+	}
+
+	// err = d.mounter.DoMount("/sbin/mount.lustre",
+	// 	"",
+	// 	source,
+	// 	target,
+	// 	"",
+	// 	nil,
+	// 	nil,
+	// 	nil,
+	// 	false,
+	// )
+
+	// err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
+	// 	source,
+	// 	target,
+	// 	"lustre",
+	// 	mountOptions,
+	// 	nil,
+	// 	[]string{"--no-mtab"},
+	// )
+
 	d.kernelModuleLock.Unlock()
 
 	if err != nil {
