@@ -47,43 +47,43 @@ mkdir $resultsDirectory
 echo "$(date -u) Starting IOR execution, find test results in directory $resultsDirectory"
 
 sleep 60
-testcase="bw_n_to_n_rnd_buffered.yaml"
-echo "executing $testcase"
+testcase="bw_n_to_n_rnd_buffered"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="bw_n_to_n_rnd_direct.yaml"
-echo "executing $testcase"
+testcase="bw_n_to_n_rnd_direct"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="bw_n_to_n_seq_buffered.yaml"
-echo "executing $testcase"
+testcase="bw_n_to_n_seq_buffered"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="bw_n_to_n_seq_direct.yaml"
-echo "executing $testcase"
+testcase="bw_n_to_n_seq_direct"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="iops_n_to_1_rnd_buffered.yaml"
-echo "executing $testcase"
+testcase="iops_n_to_1_rnd_buffered"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="iops_n_to_1_rnd_direct.yaml"
-echo "executing $testcase"
+testcase="iops_n_to_1_rnd_direct"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="iops_n_to_n_rnd_buffered.yaml"
-echo "executing $testcase"
+testcase="iops_n_to_n_rnd_buffered"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 sleep 60
-testcase="iops_n_to_n_rnd_direct.yaml"
-echo "executing $testcase"
+testcase="iops_n_to_n_rnd_direct"
+echo "$(date -u) executing $testcase"
 kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $resultsDirectory/$testcase
 
 echo "$(date -u) Finished IOR execution"

@@ -47,6 +47,9 @@ done
 
 cat ./host_file | sort -u | tee ./host_file
 
+echo "show host_file content"
+cat ./host_file
+
 for pod in $pods
 do
   echo "Copying host_file to Pod $pod"
