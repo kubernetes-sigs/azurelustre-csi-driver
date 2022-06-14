@@ -47,7 +47,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   lustreClientModulePackageVersion=$(apt list -a lustre-client-modules-${kernelVersion} | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
 
   if [[ -z $lustreClientModulePackageVersion ]]; then
-    echo "can't find package lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion in Microsoft Linux Repo, exiting"
+    echo "can't find package lustre-client-modules-${kernelVersion} for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
     exit 1
   fi
 
@@ -57,7 +57,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   lustreClientUtilsPackageVersion=$(apt list -a lustre-client-utils | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
 
   if [[ -z $lustreClientUtilsPackageVersion ]]; then
-    echo "can't find package lustre-client-utils=$lustreClientUtilsPackageVersion in Microsoft Linux Repo, exiting"
+    echo "can't find package lustre-client-utils for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
     exit 1
   fi
 
