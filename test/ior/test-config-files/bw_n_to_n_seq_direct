@@ -1,0 +1,14 @@
+IOR START
+    api=POSIX
+    blockSize=4g
+    filePerProc=1
+    fsync=1
+    interTestDelay=5
+    multiFile=1
+    readFile=1
+    repetitions=3
+    transferSize=4m
+    useO_DIRECT=1
+    writeFile=1
+RUN
+IOR STOP
