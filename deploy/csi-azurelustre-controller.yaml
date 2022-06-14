@@ -90,6 +90,8 @@ spec:
               value: unix:///csi/csi.sock
             - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
               value: "no"
+            - name: LUSTRE_VERSION
+              value: "2.14"
           securityContext:
             privileged: true
           volumeMounts:

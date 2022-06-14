@@ -27,6 +27,9 @@ set -o nounset
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
+requiredLustreVersion=${LUSTRE_VERSION:-"2.14"}
+echo "requiredLustreVersion: ${requiredLustreVersion}"
+
 echo "$(date -u) Command line arguments: $@"
 
 if [[ "${installClientPackages}" == "yes" ]]; then
@@ -40,7 +43,26 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
   echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
   apt-get update
-  apt install -y --no-install-recommends lustre-client-modules-${kernelVersion} lustre-client-utils
+
+  lustreClientModulePackageVersion=$(apt list -a lustre-client-modules-${kernelVersion} | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
+
+  if [[ -z $lustreClientModulePackageVersion ]]; then
+    echo "can't find package lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion in Microsoft Linux Repo, exiting"
+    exit 1
+  fi
+
+  echo "$(date -u) Installing Lustre client modules: lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion"
+  apt install -y --no-install-recommends lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion
+
+  lustreClientUtilsPackageVersion=$(apt list -a lustre-client-utils | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
+
+  if [[ -z $lustreClientUtilsPackageVersion ]]; then
+    echo "can't find package lustre-client-utils=$lustreClientUtilsPackageVersion in Microsoft Linux Repo, exiting"
+    exit 1
+  fi
+
+  echo "$(date -u) Installing Lustre client utils: lustre-client-utils=$lustreClientUtilsPackageVersion"
+  apt install -y --no-install-recommends lustre-client-utils=$lustreClientUtilsPackageVersion
 
   echo "$(date -u) Installed Lustre client packages."
 
