@@ -2,7 +2,7 @@
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: sc.azurelustre.csi.azure.com
+  name: ior.sc.azurelustre.csi.azure.com
 provisioner: azurelustre.csi.azure.com
 parameters:
   mgs-ip-address: "172.18.16.8"      
@@ -14,7 +14,7 @@ mountOptions:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: azurelustre-claim
+  name: azurelustre-ior-claim
   namespace: default
   labels:
     ml.azure.com/pvc: "true"
@@ -24,7 +24,7 @@ spec:
   accessModes:
     - ReadWriteMany
   volumeMode: Filesystem
-  storageClassName: sc.azurelustre.csi.azure.com
+  storageClassName: ior.sc.azurelustre.csi.azure.com
   resources:
     requests:
       storage: 100Mi
@@ -75,4 +75,4 @@ spec:
           path: /var/lib/docker/containers
       - name: azurelustre
         persistentVolumeClaim:
-          claimName: azurelustre-claim
+          claimName: azurelustre-ior-claim
