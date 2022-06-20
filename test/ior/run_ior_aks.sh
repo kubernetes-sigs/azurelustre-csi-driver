@@ -48,44 +48,47 @@ mkdir $repo/$resultsDirectory
 
 echo "$(date -u) Starting IOR execution, find test results in directory $repo/$resultsDirectory"
 
+clientPerNode=64
+echo "$(date -u) executing IOR cases for $clientPerNode client per node"
+
 sleep 60
 testcase="bw_n_to_n_rnd_buffered"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="bw_n_to_n_rnd_direct"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="bw_n_to_n_seq_buffered"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="bw_n_to_n_seq_direct"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="iops_n_to_1_rnd_buffered"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="iops_n_to_1_rnd_direct"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="iops_n_to_n_rnd_buffered"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod1 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 sleep 60
 testcase="iops_n_to_n_rnd_direct"
 echo "$(date -u) executing $testcase"
-kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np 64 ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> $repo/$resultsDirectory/$testcase
+kubectl exec -it $pod2 -- mpirun --hostfile /app/host_file --map-by node -np $clientPerNode ior -o /azurelustre/test_file -f /app/$testcase 2>&1 >> "$repo/$resultsDirectory/${testcase}_${clientPerNode}"
 
 echo "$(date -u) Finished IOR execution"
