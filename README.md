@@ -48,12 +48,6 @@ follow guide [here](./docs/install-csi-driver.md)
 
 &nbsp;
 
-### View CI Results
-
-- Check testgrid [provider-azure-azurelustre-csi-driver](https://testgrid.k8s.io/provider-azure-azurelustre-csi-driver) dashboard.
-
-&nbsp;
-
 ### Links
 
 - [Kubernetes CSI Documentation](https://kubernetes-csi.github.io/docs/)
