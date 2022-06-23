@@ -13,3 +13,6 @@ provisioner: azurelustre.csi.azure.com
 # Azure Lustre Cluster is removed after PVC deletion if reclaimPolicy is the default value "Delete".
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
+mountOptions:
+  - noatime
+  - flock

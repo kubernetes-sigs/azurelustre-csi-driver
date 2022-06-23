@@ -21,5 +21,8 @@ spec:
     # Make sure this VolumeID is unique in the cluster
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
   # "Delete" is not supported in static provisioning PV
+  mountOptions:
+    - noatime
+    - flock
   persistentVolumeReclaimPolicy: Retain
   storageClassName: sc.azurelustre.csi.azure.com
