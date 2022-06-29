@@ -16,10 +16,6 @@ kind: PersistentVolumeClaim
 metadata:
   name: azurelustre-ior-claim
   namespace: default
-  labels:
-    ml.azure.com/pvc: "true"
-  annotations:
-    ml.azure.com/mountpath: "/azurelustre-ml"
 spec:
   accessModes:
     - ReadWriteMany
