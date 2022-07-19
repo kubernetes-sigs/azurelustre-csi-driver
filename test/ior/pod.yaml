@@ -1,4 +1,30 @@
 ---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: ior.sc.azurelustre.csi.azure.com
+provisioner: azurelustre.csi.azure.com
+parameters:
+  mgs-ip-address: "172.18.16.8"      
+  fs-name: "lustrefs"
+mountOptions:
+  - noatime
+  - flock
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: azurelustre-ior-claim
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeMode: Filesystem
+  storageClassName: ior.sc.azurelustre.csi.azure.com
+  resources:
+    requests:
+      storage: 100Mi
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -17,6 +43,7 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/os: linux
+        agentpool: ior
       tolerations:
       # this toleration is to have the daemonset runnable on master nodes
       # remove it if your masters can't run pods
@@ -26,13 +53,6 @@ spec:
       containers:
       - name: ior
         image: azurelustre.azurecr.io/ior:latest
-        resources:
-          limits:
-            cpu: 1000m
-            memory: 2000Mi
-          requests:
-            cpu: 100m
-            memory: 200Mi
         volumeMounts:
         - name: azurelustre
           mountPath: /azurelustre
@@ -51,4 +71,4 @@ spec:
           path: /var/lib/docker/containers
       - name: azurelustre
         persistentVolumeClaim:
-          claimName: azurelustre-claim
+          claimName: azurelustre-ior-claim
