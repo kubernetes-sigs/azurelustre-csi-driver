@@ -130,6 +130,8 @@ spec:
               name: azure-cred
             - mountPath: /mnt
               name: azurelustre-cache
+            - mountPath: /dev
+              name: host-dev
           resources:
             limits:
               cpu: 1
@@ -158,3 +160,7 @@ spec:
             path: /mnt
             type: DirectoryOrCreate
           name: azurelustre-cache
+        - hostPath:
+            path: /dev
+            type: Directory
+          name: host-dev
