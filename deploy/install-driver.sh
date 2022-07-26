@@ -16,9 +16,25 @@
 
 set -euo pipefail
 
-repo="$(git rev-parse --show-toplevel)/deploy"
+ver="main"
+if [[ "$#" -gt 0 ]]; then
+  ver="$1"
+fi
 
-echo "Installing Azure Lustre CSI driver, repo: $repo ..."
+repo="https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/$ver/deploy"
+
+if [[ "$#" -gt 1 ]]; then
+  if [[ "$2" == *"local"* ]]; then
+    echo "use local deploy"
+    repo="./deploy"
+  fi
+fi
+
+if [ $ver != "main" ]; then
+  repo="$repo/$ver"
+fi
+
+echo "Installing Azure Lustre CSI driver, version: $ver, repo: $repo ..."
 kubectl apply -f $repo/rbac-csi-azurelustre-controller.yaml
 kubectl apply -f $repo/rbac-csi-azurelustre-node.yaml
 kubectl apply -f $repo/csi-azurelustre-driver.yaml
