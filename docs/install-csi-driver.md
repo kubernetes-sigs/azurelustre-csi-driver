@@ -7,7 +7,7 @@ This document explains how to install Azure Lustre CSI driver on a kubernetes cl
 - Option 1: Remote install
 
     ```shell
-    curl -skSL https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/master/deploy/install-driver.sh | bash -s master --
+    curl -skSL https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/main/deploy/install-driver.sh | bash -s main --
     ```
 
 - Option 2: Local install

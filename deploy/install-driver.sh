@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-ver="master"
+ver="main"
 if [[ "$#" -gt 0 ]]; then
   ver="$1"
 fi
@@ -30,7 +30,7 @@ if [[ "$#" -gt 1 ]]; then
   fi
 fi
 
-if [ $ver != "master" ]; then
+if [ $ver != "main" ]; then
   repo="$repo/$ver"
 fi
 
