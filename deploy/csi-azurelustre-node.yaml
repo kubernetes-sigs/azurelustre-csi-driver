@@ -132,6 +132,16 @@ spec:
               name: azurelustre-cache
             - mountPath: /dev
               name: host-dev
+            - mountPath: /host/var/log
+              name: host-var-log
+            - mountPath: /usr
+              name: host-usr
+            - mountPath: /etc
+              name: host-etc
+            - mountPath: /lib
+              name: host-lib
+            - mountPath: /sbin
+              name: host-sbin
           resources:
             limits:
               cpu: 1
@@ -164,3 +174,23 @@ spec:
             path: /dev
             type: Directory
           name: host-dev
+        - hostPath:
+            path: /var/log
+            type: Directory
+          name: host-var-log
+        - hostPath:
+            path: /usr
+            type: Directory
+          name: host-usr
+        - hostPath:
+            path: /etc
+            type: Directory
+          name: host-etc
+        - hostPath:
+            path: /lib
+            type: Directory
+          name: host-lib
+        - hostPath:
+            path: /sbin
+            type: Directory
+          name: host-sbin
