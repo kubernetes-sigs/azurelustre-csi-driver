@@ -14,34 +14,33 @@
 
 #!/bin/bash
 
+set -o xtrace
 set -o errexit
 set -o pipefail
 set -o nounset
 
 source ./utils.sh
 
-SleepInSecs="60"
+SleepInSecs="100"
 
-trap print_debug_on_ERR ERR
-trap reset_all_on_EXIT EXIT
-
+trap print_debug ERR
 
 print_logs_title "Reset AKS environment and start sample workload"
-reset_csi_driver
+reset_all
 start_sample_workload
-sleep $SleepInSecs
 verify_csi_driver
-verify_sample_workload workloadPodName workloadNodeName
+verify_sample_workload_by_pod_status workloadPodName workloadNodeName
 
 
 print_logs_title "Delete workload pod and verify new workload pod "
 kubectl delete po $workloadPodName
 sleep $SleepInSecs
 
-verify_sample_workload workloadPodNameNew workloadNodeNameNew
+verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew
 if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     print_logs_error "workload pod $workloadPodName should be killed and new workload should be started"
-    signal_err
+    print_debug_on_ERR
+    fast_exit
 fi
 
 workloadPodName=$workloadPodNameNew
@@ -74,17 +73,17 @@ podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
 
 if  [[ ! -z "$podState" ]]; then
     print_logs_error "Lustre CSI node pod can't be deleted on $workloadNodeName, state=$podState"
-    signal_err
+    fast_exit
 else
     print_logs_info "Lustre CSI node pod is deleted on $workloadNodeName"
 fi
 
 
-print_logs_title "Verify workload pod on worker node"
-verify_sample_workload workloadPodNameNew workloadNodeNameNew
+print_logs_title "Verify workload pod on the same worker node is still working"
+verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew
 if [[ "$workloadPodName" != "$workloadPodNameNew" || "$workloadNodeName" != "$workloadNodeNameNew" ]] ; then
     print_logs_error "expected workload pod $workloadPodName on $workloadNodeName, actual new workload pod $workloadPodNameNew on $workloadNodeNameNew"
-    signal_err
+    fast_exit
 fi
 
 
@@ -96,17 +95,19 @@ sleep $SleepInSecs
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
 if [[ -z $podState || "$podState" != "Terminating" ]]; then
     print_logs_error "Workload pod $workloadPodName should be in Terminating state on node $workloadNodeName, but its actual state is $podState"
-    signal_err
+    print_debug_on_ERR
+    fast_exit
 else
     print_logs_info "Workload pod $workloadPodName is in Terminating state on node $workloadNodeName"
 fi
 
 
-print_logs_title "Verify the new workload pod in running state"
-verify_sample_workload workloadPodNameNew workloadNodeNameNew
+print_logs_title "Verify the new workload pod in Running state on other nodes or ContainerCreating state on the same node"
+verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew "Running\|ContainerCreating"
 if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     print_logs_error "New workload pod should be started, but still find old running pod $workloadPodName"
-    signal_err
+    print_debug_on_ERR
+    fast_exit
 else
     print_logs_info "new workload pod $workloadPodNameNew started on another node $workloadNodeNameNew"
 fi
@@ -119,7 +120,8 @@ sleep $SleepInSecs
 podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
 if  [[ -z "$podState" || "$podState" != "Running" ]]; then
     print_logs_error "Lustre CSI node pod can't be started on $nodeName, state=$podState"
-    signal_err
+    print_debug_on_ERR
+    fast_exit
 else
     print_logs_info "Lustre CSI node pod started on $nodeName again"
 fi
@@ -131,7 +133,10 @@ sleep $SleepInSecs
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
 if [[ ! -z $podState ]]; then
     print_logs_error "Still can find workload pod $workloadPodName in $podState state on node $workloadNodeName, it should be deleted successfully"
-    signal_err
+    print_debug_on_ERR
+    fast_exit
 else
     print_logs_info "workload pod $workloadPodName has been deleted successfully from node $workloadNodeName"
 fi
+
+reset_all
