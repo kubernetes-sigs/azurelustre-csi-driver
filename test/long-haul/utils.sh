@@ -26,20 +26,34 @@ print_logs_error () {
     echo -e "$(date '+%Y-%m-%#d %H:%M:%S') ERROR: $1"
 }
 
-signal_err () {
-    return 1
+fast_exit () {
+    print_debug
+    exit 1
 }
 
 reset_csi_driver () {
-    kubectl replace -f $Repo/deploy/csi-azurelustre-node.yaml
+    echo "Reset CSI driver"
+    kubectl replace -f $Repo/deploy/csi-azurelustre-node.yaml --grace-period=0 --force
 
+    echo "Reset node label"
     kubectl get nodes --no-headers | grep "$PoolName" | awk '{print $1}' | 
     {
         while read n; 
         do
             kubectl label nodes $n node4faulttest-
         done 
-    }    
+    }
+
+    sleep 100
+
+    csiDriverPods=$(kubectl get po --all-namespaces -o wide | grep csi-azurelustre-node)
+    if [[ $(echo "$csiDriverPods" | awk '{print $4}' | sort -u)  == "Running" ]]; then
+        echo "CSI Driver is up and running now"
+    else
+        echo "Bad CSI Driver state"
+        echo "$csiDriverPods"
+        fast_exit
+    fi
 }
 
 get_worker_node_num () {
@@ -48,23 +62,26 @@ get_worker_node_num () {
     echo $workerNodeNum
 }
 
-get_running_pod () {
+get_pod_by_status () {
     podNameKeyword=${1:-""}
+    podStatus=${2:-""}
 
-    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep "$PoolName" | grep Running | grep "$podNameKeyword" || true)
+    pod=$(kubectl get po --all-namespaces -o wide --sort-by=.metadata.creationTimestamp | grep "$PoolName" | grep "$podStatus" | grep "$podNameKeyword" || true)
 
     if  [ -z "$pod" ] 
     then
         print_logs_error "can't find running pod with keyword=$podNameKeyword"
 
-        podState=$(get_pod_state $podNameKeyword)
+        pod=$(get_pod $podNameKeyword)
 
         if  [ -z "$pod" ] 
         then
-            print_logs_error "find pod with keyword=$podNameKeyword in $podState state, expect running"
+            podName=$(echo "$pod" | awk '{print $2}')
+            podStatus=$(echo "$pod" | awk '{print $4}')
+            print_logs_error "find pod $podName in $podStatus state, expect running"
         fi
 
-        signal_err
+        fast_exit
     else
          numOfPod=$(echo "$pod" | grep -o -i "$podNameKeyword" | wc -l)
 
@@ -76,14 +93,17 @@ get_running_pod () {
 
     podName=$(echo $pod | awk '{print $2}')
     nodeName=$(echo $pod | awk '{print $8}')
+    actualPodStatus=$(echo $pod | awk '{print $4}')
 
     print_logs_info "workload pod $podName is running on $nodeName"
 
-    local return_podName=$2
-    local return_nodeName=$3
+    local return_podName=$3
+    local return_nodeName=$4
+    local return_podStatus=$5
 
     eval $return_podName=$podName
     eval $return_nodeName=$nodeName
+    eval $return_podStatus=$actualPodStatus
 }
 
 get_pod_state () {
@@ -94,13 +114,21 @@ get_pod_state () {
     echo "$state"
 }
 
+get_pod () {
+    podNameKeyword=${1:-""}
+    nodeNameKeyword=${2:-""}
+
+    pod=$(kubectl get po --all-namespaces -o wide | grep "$PoolName" | grep "$podNameKeyword" | grep "$nodeNameKeyword" | head -n 1 || true)
+    echo "$pod"
+}
+
 verify_csi_driver () {
     controllerPodsNum=$(kubectl get po -n kube-system --field-selector=status.phase=Running | grep 'csi-azurelustre-controller' | awk '{print $1}' | wc -l)
     
     if  [ "$controllerPodsNum" != "2" ] 
     then
         print_logs_error "Expected controller pods num 2, actual $controllerPodsNum"
-        signal_err
+        fast_exit
     else
         print_logs_info "2 controller pods running..."        
     fi
@@ -111,20 +139,30 @@ verify_csi_driver () {
     if  [ "$nodePodsNum" != "$workerNodeNum" ] 
     then
         print_logs_error "Expected node pods num $workerNodeNum, actual $nodePodsNum"
-        signal_err
+        fast_exit
     else
         print_logs_info "$nodePodsNum node pods running..."        
     fi
 }
 
+restart_sample_workload () {
+    stop_sample_workload
+    start_sample_workload
+}
+
 start_sample_workload () {
-    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found
-    sleep 15
+    echo "Start sample workload"
     kubectl apply -f ./sample-workload/deployment_write_print_file.yaml
+    sleep 100
 }
 
 stop_sample_workload () {
-    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found
+    echo "Stop sample workload"
+    if [[ ! -z $(kubectl get pvc azurelustre-longhaulsample-pvc --ignore-not-found) ]]; then
+        kubectl patch pvc azurelustre-longhaulsample-pvc -p '{"metadata":{"finalizers":null}}'
+    fi    
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --grace-period=0 --force --cascade
+    sleep 60
 }
 
 verify_sample_workload_logs () {
@@ -141,23 +179,26 @@ verify_sample_workload_logs () {
         print_logs_info "last output of workload pod is $delta secs before, which is within threshold=$threshold"
     else
         print_logs_error "last output of workload pod is $delta secs before, which is greater than threshold=$threshold"
-        signal_err
+        fast_exit
     fi
 }
 
-verify_sample_workload () {
-    workloadKeyword=${3:-$SampleWorkloadKeyword}
+verify_sample_workload_by_pod_status () {
+    podStatus=${3:-'Running'}
 
-    get_running_pod $workloadKeyword podName nodeName
-    verify_sample_workload_logs $podName $TimeIntervalCheckLogInSecs
+    get_pod_by_status $SampleWorkloadKeyword $podStatus podName nodeName actualPodStatus
 
+    if [[ "$actualPodStatus" == "Running" ]]; then
+        verify_sample_workload_logs $podName $TimeIntervalCheckLogInSecs
+    fi
+    
     local return_podName=$1
     local return_nodeName=$2
     eval $return_podName=$podName
     eval $return_nodeName=$nodeName
 }
 
-print_debug_on_ERR() {
+print_debug() {
     print_logs_title "Print DEBUG Start"
 
     bash $Repo/utils/azurelustre_log.sh
@@ -165,9 +206,8 @@ print_debug_on_ERR() {
     print_logs_title "Print DEBUG End"
 }
 
-reset_all_on_EXIT() {
-    sleep 30
-
+reset_all() {
+    sleep 15
     print_logs_title "RESET ALL Start"
 
     stop_sample_workload
