@@ -9,10 +9,10 @@ spec:
   capacity:
     storage: 4Ti
   csi:
-    driver: azurelustre.csi.azure.com
+    driver: ${csi_name}
     volumeAttributes:
-      fs-name: "lustrefs"
-      mgs-ip-address: "172.18.16.8"
+      fs-name: ${fs_name}
+      mgs-ip-address: ${mgs_ip_address}
     volumeHandle: scale-pv-lustre-01
   persistentVolumeReclaimPolicy: Retain
 
@@ -36,7 +36,7 @@ kind: ReplicaSet
 metadata:
   name: scale-test-set
 spec:
-  replicas: 64
+  replicas: ${scale}
   selector:
     matchLabels:
       app: csi-scale-test
@@ -45,22 +45,24 @@ spec:
       labels:
         app: csi-scale-test
     spec:
-      nodeSelector:
-        agentpool: ior
       containers:
         - image: busybox
           name: lustre-echo-date
           command:
             - "/bin/sh"
             - "-c"
-            - while true; do echo $(date) >> /mnt/lustre/outfile_$(POD_NAME); sleep 10; done
+            - while true;
+              do
+                echo $(date) >> /mnt/lustre/outfile_$(POD_NAME);
+                sleep 10;
+              done
           env:
             - name: POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
           volumeMounts:
-            - name: lustre01
+            - name: lustre-test-volume
               mountPath: "/mnt/lustre"
           resources:
             requests:
@@ -70,6 +72,6 @@ spec:
               memory: 100M
               cpu: 10m
       volumes:
-        - name: lustre01
+        - name: lustre-test-volume
           persistentVolumeClaim:
             claimName: scale-pvc-lustre
