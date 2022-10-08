@@ -106,7 +106,7 @@ func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
 		Exec:      utilexec.New(),
 	}
 
-	// TODO_JUSJIN: revist these caps
+	// TODO_JUSJIN: revisit these caps
 	// Initialize default library driver
 	// TODO_CHYIN: move this to {service}.go
 	d.AddControllerServiceCapabilities(
