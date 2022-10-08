@@ -36,15 +36,15 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   osReleaseCodeName=$(lsb_release -cs)
   kernelVersion=$(uname -r)
-  echo "$(date -u) OS release code name is ${osReleaseCodeName}, kernel version is ${kernelVersion}"
   
-  echo "$(date -u) Installing Lustre client packages."
+  echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
 
   curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
   echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
   apt-get update
 
-  lustreClientModulePackageVersion=$(apt list -a lustre-client-modules-${kernelVersion} | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
+  # Install Lustre client module
+  lustreClientModulePackageVersion=$(apt list -a lustre-client-modules-${kernelVersion} | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1  || true)
 
   if [[ -z $lustreClientModulePackageVersion ]]; then
     echo "can't find package lustre-client-modules-${kernelVersion} for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
@@ -52,17 +52,25 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   fi
 
   echo "$(date -u) Installing Lustre client modules: lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion"
-  apt install -y --no-install-recommends lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion
 
-  lustreClientUtilsPackageVersion=$(apt list -a lustre-client-utils | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1)
+  # grub issue
+  # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
+  DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
+    lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion
 
-  if [[ -z $lustreClientUtilsPackageVersion ]]; then
+  # Install Lustre Client Util package only for Lustre 2.14
+  lustreClientUtilsPackageVersion=$(apt list -a lustre-client-utils | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1 || true)
+
+  if [[ -z $lustreClientUtilsPackageVersion && "$requiredLustreVersion" == "2.14" ]]; then
     echo "can't find package lustre-client-utils for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
     exit 1
   fi
 
-  echo "$(date -u) Installing Lustre client utils: lustre-client-utils=$lustreClientUtilsPackageVersion"
-  apt install -y --no-install-recommends lustre-client-utils=$lustreClientUtilsPackageVersion
+  if [[ ! -z $lustreClientUtilsPackageVersion ]]; then
+    echo "$(date -u) Installing Lustre client utils: lustre-client-utils=$lustreClientUtilsPackageVersion"
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
+      lustre-client-utils=$lustreClientUtilsPackageVersion
+  fi
 
   echo "$(date -u) Installed Lustre client packages."
 
