@@ -33,7 +33,8 @@ fast_exit () {
 
 reset_csi_driver () {
     echo "Reset CSI driver"
-    kubectl replace -f $Repo/deploy/csi-azurelustre-node.yaml --grace-period=0 --force
+    kubectl replace -f $Repo/deploy/csi-azurelustre-controller.yaml
+    kubectl replace -f $Repo/deploy/csi-azurelustre-node.yaml
 
     echo "Reset node label"
     kubectl get nodes --no-headers | grep "$PoolName" | awk '{print $1}' | 
@@ -44,16 +45,7 @@ reset_csi_driver () {
         done 
     }
 
-    sleep 100
-
-    csiDriverPods=$(kubectl get po --all-namespaces -o wide | grep csi-azurelustre-node)
-    if [[ $(echo "$csiDriverPods" | awk '{print $4}' | sort -u)  == "Running" ]]; then
-        echo "CSI Driver is up and running now"
-    else
-        echo "Bad CSI Driver state"
-        echo "$csiDriverPods"
-        fast_exit
-    fi
+    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 }
 
 get_worker_node_num () {
@@ -151,18 +143,19 @@ restart_sample_workload () {
 }
 
 start_sample_workload () {
-    echo "Start sample workload"
-    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml
-    sleep 100
+    stop_sample_workload
+    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=60s
+    kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=60s
 }
 
 stop_sample_workload () {
     echo "Stop sample workload"
     if [[ ! -z $(kubectl get pvc azurelustre-longhaulsample-pvc --ignore-not-found) ]]; then
         kubectl patch pvc azurelustre-longhaulsample-pvc -p '{"metadata":{"finalizers":null}}'
-    fi    
-    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --grace-period=0 --force --cascade
-    sleep 60
+    fi
+
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --timeout=60s --grace-period=0 --force --cascade
+    kubectl wait pod --for=delete --selector=app=azurelustre-longhaulsample-deployment --timeout=60s
 }
 
 verify_sample_workload_logs () {
