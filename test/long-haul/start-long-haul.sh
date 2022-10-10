@@ -18,7 +18,9 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-pushd "./test/long-haul/"
+REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
+
+pushd "$REPO_ROOT_PATH/test/long-haul/"
 source ./utils.sh
 
 export ClusterName="${aks_cluster_name}"

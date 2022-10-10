@@ -68,7 +68,7 @@ print_versions
 
 samplePod=$(get_pod "azurelustre-longhaulsample-deployment")
 
-if [[ -z "$samplePod" ]]
+if [[ ! -z "$samplePod" ]]
 then
 	podName=$(echo "$samplePod" | awk '{print $2}')
 	podStatus=$(echo "$samplePod" | awk '{print $4}')

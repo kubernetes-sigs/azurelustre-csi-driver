@@ -2,7 +2,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-export Repo="../../"
+REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
+
 export NodePodNameKeyword="csi-azurelustre-node"
 export SampleWorkloadKeyword="azurelustre-longhaulsample-deployment"
 
@@ -33,8 +34,9 @@ fast_exit () {
 
 reset_csi_driver () {
     echo "Reset CSI driver"
-    kubectl replace -f $Repo/deploy/csi-azurelustre-controller.yaml
-    kubectl replace -f $Repo/deploy/csi-azurelustre-node.yaml
+    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml
+    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml
+    kubectl wait pod -n kube-system --for=delete --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 
     echo "Reset node label"
     kubectl get nodes --no-headers | grep "$PoolName" | awk '{print $1}' | 
@@ -44,6 +46,9 @@ reset_csi_driver () {
             kubectl label nodes $n node4faulttest-
         done 
     }
+
+    kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml
+    kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml
 
     kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 }
@@ -135,11 +140,8 @@ verify_csi_driver () {
     else
         print_logs_info "$nodePodsNum node pods running..."        
     fi
-}
 
-restart_sample_workload () {
-    stop_sample_workload
-    start_sample_workload
+    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 }
 
 start_sample_workload () {
@@ -194,7 +196,7 @@ verify_sample_workload_by_pod_status () {
 print_debug() {
     print_logs_title "Print DEBUG Start"
 
-    bash $Repo/utils/azurelustre_log.sh
+    bash $REPO_ROOT_PATH/utils/azurelustre_log.sh
 
     print_logs_title "Print DEBUG End"
 }
