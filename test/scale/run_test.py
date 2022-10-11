@@ -330,7 +330,7 @@ class PerfScaleTest:
         for result_file in self._result_files:
             with open(result_file, "r") as f:
                 result_data = json.load(f)
-            for func_perf_result in result_data:
+            for func_perf_result in result_data["func_results"]:
                 func_name = func_perf_result["func_name"]
                 if func_perf_result["max"] > latency_thresholds[func_name]:
                     raise RuntimeError(f"function {func_name} max latency "
