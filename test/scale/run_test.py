@@ -28,7 +28,8 @@ from itertools import chain
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger()
 
-ROOT_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_PATH = os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))))
 WORK_PATH = os.path.join(os.path.join(ROOT_PATH, "test"), "scale")
 
 logger.info(f"ROOT_PATH: {ROOT_PATH}")
@@ -37,10 +38,11 @@ logger.info(f"WORK_PATH: {WORK_PATH}")
 
 class FuncPerfResult:
     FUNC_NAME = ""
+    LATENCY_THRESHOLD = 3
 
     def __init__(self):
         self.latencies = []
-        
+
         tmp_buf = []
         for char in self.FUNC_NAME:
             if char.isupper():
@@ -48,20 +50,20 @@ class FuncPerfResult:
             else:
                 tmp_buf.append(char)
         self.identity = "".join(tmp_buf)
-    
+
     def reset(self):
         self.latencies = []
 
     def add_latency(self, latency):
         self.latencies.append(latency)
-    
+
     def get_result(self):
         if len(self.latencies) == 0:
             self.latencies.append(0)
         return {
             "func_name": self.FUNC_NAME,
             "num": len(self.latencies),
-            "min": min(self.latencies),            
+            "min": min(self.latencies),
             "max": max(self.latencies),
             "avg": round(sum(self.latencies) / len(self.latencies), 4),
             "points": self.latencies
@@ -118,7 +120,7 @@ class PerfResultCollector:
 
 
 class PerfScaleTest:
-    WORK_LOAD_YAML_PATH = ""
+    WORKLOAD_YAML_PATH = ""
     TARGET_FUNCS = []
 
     def __init__(self, args):
@@ -136,21 +138,22 @@ class PerfScaleTest:
                                                      "tmp_workload.yml")
         self._csi_log_path = os.path.join(WORK_PATH, "logs")
         self._result_path = WORK_PATH
-        logger.info(f"template workload yaml {self.WORK_LOAD_YAML_PATH} "
+        logger.info(f"template workload yaml {self.WORKLOAD_YAML_PATH} "
                     f"result path {self._result_path}")
+        self._result_files = []
 
         self._current_scale = 0
 
     def generate_workload_yaml(self):
         with open(self.WORKLOAD_YAML_PATH, "r") as source_file, \
-             open(self._generated_workload_yaml, "w") as target_file:
+                open(self._generated_workload_yaml, "w") as target_file:
             for line in source_file:
                 output_line_parts = []
                 status = 0
                 parameter_start = -1
                 parameter_end = -1
-                
-                for idx, char in enumerate(line):            
+
+                for idx, char in enumerate(line):
                     if status == 0:
                         if char == '$':
                             status = 1
@@ -188,17 +191,17 @@ class PerfScaleTest:
                             )
                             parameter_start = -1
                             status = 0
-                
+
                 if status != 0:
                     raise Exception(
                         f"template in '{line}' doesn't end in one line"
                     )
 
                 target_file.write("".join(output_line_parts))
-        
+
         logger.info("generated workload yaml:")
         self.run_command(f"cat {self._generated_workload_yaml}")
-    
+
     def run_command(self, command: str, need_stdout=False, raise_error=True):
         logger.info(f"run command {command}")
         stdout = None
@@ -212,7 +215,7 @@ class PerfScaleTest:
         if need_stdout:
             logger.info(stdout)
         return stdout
-    
+
     def setup(self, current_scale):
         logger.info("reinstalling CSI driver")
         self.run_command(f"{ROOT_PATH}/deploy/uninstall-driver.sh")
@@ -223,9 +226,9 @@ class PerfScaleTest:
         for target_func in self.TARGET_FUNCS:
             target_func.reset()
             self._perf_result.register_func(target_func)
-        
+
         self._current_scale = current_scale
-    
+
     def deploy_workload(self):
         logger.info("deploying workload")
         self.run_command(
@@ -233,31 +236,32 @@ class PerfScaleTest:
         )
         logger.info("waiting for workload ready")
         self.run_command(
-            "kubectl wait pod"
-            " --for=condition=Ready"
-            " --selector=app=csi-scale-test"
+            "kubectl rollout status deployment"
+            " scale-test-set"
             " --timeout=300s"
         )
         logger.info("workload was ready")
-    
+
     def delete_workload(self):
         logger.info("deleting workload")
+        """
+        We can use --wait=true to wait for all pods to be deleted. Although
+        wait only wait for the deployment object itself to be deleted. But PVC
+        needs to wait for all pods to finish properly before it will be
+        deleted.
+        """
         self.run_command(
             f"kubectl delete"
             f" -f {self._generated_workload_yaml}"
             f" --ignore-not-found"
-        )
-        logger.info("waiting for workload to be deleted")
-        self.run_command(
-            "kubectl wait pod"
-            " --for=delete"
-            " --selector=app=csi-scale-test"
+            f" --wait=true"
+            f" --timeout=300s"
         )
         logger.info("workload was deleted")
 
     def collection_logs(self):
         logger.info("collecting CSI log")
-        controller_pods = self.run_command(            
+        controller_pods = self.run_command(
             "kubectl get pods"
             " -nkube-system"
             " --selector=app=csi-azurelustre-controller"
@@ -267,7 +271,7 @@ class PerfScaleTest:
         )
         controller_pods = controller_pods.strip('\n').split('\n')
         logger.info(f"got controller pods {controller_pods}")
-                
+
         node_pods = self.run_command(
             "kubectl get pods"
             " -nkube-system"
@@ -286,7 +290,6 @@ class PerfScaleTest:
                              f" -cazurelustre"
                              f" >{self._csi_log_path}/{pod}")
 
-    
     def parse_result_from_log(self):
         logger.info("parsing log file for perf result")
         for log_file in os.listdir(self._csi_log_path):
@@ -306,18 +309,37 @@ class PerfScaleTest:
         with open(result_file_path, "w") as f:
             f.write(perf_result)
         logger.info(f"result have been wrote to {result_file_path}")
+        self._result_files.append(result_file_path)
 
     def clean_up(self):
         logger.info("cleaning")
-        self.delete_workload()
-        if os.path.exists(self._csi_log_path):
-            logger.info("deleting log folder")
-            shutil.rmtree(self._csi_log_path)
         if os.path.exists(self._generated_workload_yaml):
+            logger.info("deleting workload")
+            self.delete_workload()
             logger.info("deleting tmp yaml file")
             os.remove(self._generated_workload_yaml)
+        if os.path.exists(self._csi_log_path):
+            logger.info("deleting log folder")
+            shutil.rmtree(self._csi_log_path)            
 
-    def run(self):        
+    def check_results(self):
+        logger.info("checking result")
+        latency_thresholds = {func.FUNC_NAME: func.LATENCY_THRESHOLD
+                              for func in self.TARGET_FUNCS}
+        logger.info(f"latency thresholds are {latency_thresholds}")
+        for result_file in self._result_files:
+            with open(result_file, "r") as f:
+                result_data = json.load(f)
+            for func_perf_result in result_data:
+                func_name = func_perf_result["func_name"]
+                if func_perf_result["max"] > latency_thresholds[func_name]:
+                    raise RuntimeError(f"function {func_name} max latency "
+                                       f"{func_perf_result['max']} exceeds the"
+                                       f"threshold "
+                                       f"{latency_thresholds[func_name]}")
+        logger.info(f"all passed")
+
+    def run(self):
         for scale in self._scales:
             logger.info(f"run scale test {scale}")
             self.configurations["scale"] = str(scale)
@@ -333,24 +355,25 @@ class PerfScaleTest:
             finally:
                 self.clean_up()
 
+        self.check_results()
+
 
 class StaticPerfScaleTest(PerfScaleTest):
     WORKLOAD_YAML_PATH = os.path.join(WORK_PATH,
-                                     "static_workload.yml.template")
+                                      "static_workload.yml.template")
     TARGET_FUNCS = [
         FuncNodePublishVolume(),
         FuncNodeUnpublishVolume()
     ]
 
 
-
 def run_scale_test(args):
     logger.info(f"test csi perf for {args.provisioning_type} provisioning")
-    if args.provisioning_type == "static":    
+    if args.provisioning_type == "static":
         test_class = StaticPerfScaleTest(args)
     else:
         raise NotImplemented(args.provisioning_type)
-    
+
     test_class.run()
 
 
