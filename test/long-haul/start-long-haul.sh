@@ -41,4 +41,7 @@ print_logs_case "Executing fault test"
 print_logs_case "Executing update test"
 ./update-test.sh
 
+print_logs_case "Executing perf/scale test"
+./perf-scale-test.sh
+
 print_logs_case "Test suites executed successfully"
