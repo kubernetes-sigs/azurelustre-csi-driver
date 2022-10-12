@@ -20,8 +20,7 @@ set -o nounset
 
 source ./utils.sh
 
-trap print_debug_on_ERR ERR
-trap reset_all_on_EXIT EXIT
+trap print_debug ERR
 
 function print_versions () {
 	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
@@ -33,7 +32,7 @@ function print_versions () {
 	controlPlaneUpgrades=$(az aks get-upgrades --resource-group $ResourceGroup --name $ClusterName)
 	currentControlPlaneK8sVersion=$(echo $controlPlaneUpgrades | jq -r '.controlPlaneProfile.kubernetesVersion')
 
-	podName=$(kubectl get pods -n kube-system --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp | grep csi-azurelustre-node | awk '{print $1}' | head -n 1)
+	podName=$(kubectl get pods -n kube-system -o wide --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp | grep csi-azurelustre-node | grep $PoolName | awk '{print $1}' | head -n 1)
 	kernelVersion=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "uname -r")
 	module=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "dpkg-query -f '\${Package}|\${Version}' -W lustre-client-modules-*")
 	modulePkgName=${module%|*}
@@ -50,23 +49,35 @@ function print_versions () {
 print_logs_title "Print versions before"
 print_versions
 
-print_logs_info "Upgrading node image"
-az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only
+kubernetesUpgrades=$(az aks get-upgrades --resource-group $ResourceGroup --name $ClusterName | jq -r .controlPlaneProfile.upgrades)
 
-print_logs_info "Upgrading node kubernetes"
+if [[ "$kubernetesUpgrades" != "null" ]]; then
+	latestKubernetesVersion=$(echo "$kubernetesUpgrades" | jq -r .[].kubernetesVersion | tail -n 1)
+
+	print_logs_info "Upgrading Kubernetes control-plane"
+	az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
+else
+	echo "Kubernetes control-plane version is the latest"
+fi
+
+print_logs_info "Upgrading node pool"
 az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName
-
-print_logs_info "Upgrading control-plane Kubernetes"
-az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes
 
 print_logs_title "Print versions after"
 print_versions
+
+samplePod=$(get_pod "azurelustre-longhaulsample-deployment")
+
+if [[ ! -z "$samplePod" ]]
+then
+	podName=$(echo "$samplePod" | awk '{print $2}')
+	podStatus=$(echo "$samplePod" | awk '{print $4}')
+	print_logs_error "find pod $samplePod in $podStatus state, expect no running sample pod"
+fi
 
 print_logs_title "Start and verify sample workload"
 sleep 60
 
 start_sample_workload
 
-sleep 10
-
-verify_sample_workload workloadPodName workloadNodeName
+verify_sample_workload_by_pod_status workloadPodName workloadNodeName
