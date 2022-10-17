@@ -14,4 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+echo "Installing go and ginkgo"
+wget https://go.dev/dl/go1.19.2.linux-amd64.tar.gz
+tar -zxf go1.19.2.linux-amd64.tar.gz -C ${REPO_ROOT_PATH}/
+export GOBIN=${REPO_ROOT_PATH}/go/bin
+export PATH=${GOBIN}:${PATH}
+go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
 ${REPO_ROOT_PATH}/test/external-e2e/run.sh
