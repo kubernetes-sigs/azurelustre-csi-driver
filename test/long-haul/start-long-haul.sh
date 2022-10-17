@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright 2020 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,8 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-#!/bin/bash
 
 set -o errexit
 set -o pipefail
@@ -43,5 +43,8 @@ print_logs_case "Executing update test"
 
 print_logs_case "Executing perf/scale test"
 ./perf-scale-test.sh
+
+print_logs_case "Executing external e2e test"
+./external_e2e.sh
 
 print_logs_case "Test suites executed successfully"
