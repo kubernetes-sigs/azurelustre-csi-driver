@@ -171,9 +171,9 @@ verify_sample_workload_logs () {
 
     if [[ $delta -lt $threshold ]]; 
     then
-        print_logs_info "last output of workload pod is $delta secs before, which is within threshold=$threshold"
+        print_logs_info "currentDateTime=$dateOfNow, lastOutput=$lastOutput, lastOutputInSec=$dateOfLastOutput. delta=$delta is within threshold=$threshold"
     else
-        print_logs_error "last output of workload pod is $delta secs before, which is greater than threshold=$threshold"
+        print_logs_error "currentDateTime=$dateOfNow, lastOutput=$lastOutput, lastOutputInSec=$dateOfLastOutput. delta=$delta is greater than threshold=$threshold"
         fast_exit
     fi
 }
