@@ -56,15 +56,18 @@ print_versions
 kubernetesUpgrades=$(az aks get-upgrades --resource-group $ResourceGroup --name $ClusterName | jq -r .controlPlaneProfile.upgrades)
 
 if [[ "$kubernetesUpgrades" != "null" ]]; then
-	latestKubernetesVersion=$(echo "$kubernetesUpgrades" | jq -r .[].kubernetesVersion | tail -n 1)
+	# Skip preview AKS version and get the latest one
+	latestKubernetesVersion=$(echo "$kubernetesUpgrades" | jq -r '.[] | select (.isPreview == null) | .kubernetesVersion' | tail -n 1)
 
-	print_logs_info "Upgrading Kubernetes control-plane"
-	az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
+	if [[ ! -z "$kubernetesUpgrades" ]]; then
+		print_logs_info "Upgrading Kubernetes control-plane to version $latestKubernetesVersion"
+		az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
+	fi
 else
 	echo "Kubernetes control-plane version is the latest"
 fi
 
-print_logs_info "Upgrading node pool"
+print_logs_info "Upgrading node pool to latest image"
 az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName
 
 print_logs_title "Print versions after"

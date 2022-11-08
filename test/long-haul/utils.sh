@@ -51,6 +51,8 @@ reset_csi_driver () {
     kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml
 
     kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
+
+    sleep 15
 }
 
 get_worker_node_num () {
@@ -148,6 +150,7 @@ start_sample_workload () {
     stop_sample_workload
     kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=60s
     kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=60s
+    sleep 15
 }
 
 stop_sample_workload () {
@@ -171,9 +174,9 @@ verify_sample_workload_logs () {
 
     if [[ $delta -lt $threshold ]]; 
     then
-        print_logs_info "last output of workload pod is $delta secs before, which is within threshold=$threshold"
+        print_logs_info "currentDateTime=$dateOfNow, lastOutput=$lastOutput, lastOutputInSec=$dateOfLastOutput. delta=$delta is within threshold=$threshold"
     else
-        print_logs_error "last output of workload pod is $delta secs before, which is greater than threshold=$threshold"
+        print_logs_error "currentDateTime=$dateOfNow, lastOutput=$lastOutput, lastOutputInSec=$dateOfLastOutput. delta=$delta is greater than threshold=$threshold"
         fast_exit
     fi
 }
