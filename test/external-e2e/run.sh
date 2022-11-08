@@ -14,42 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-mkdir ~/.kube
-echo $kube_config | base64 -d > ~/.kube/config
-
-set -o xtrace
 set -o errexit
 set -o pipefail
 set -o nounset
+set -o xtrace
 
-# need to run in a container in github action to have root permission
-apt update -y
-apt install -y golang-ginkgo-dev
-apt install -y --no-install-recommends curl ca-certificates
-update-ca-certificates
-
-PROJECT_ROOT=$(pwd)
-KUBECONFIG=~/.kube/config
-
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
-chmod +x kubectl
-cp ./kubectl /usr/bin/
+REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
 
 curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
-sc_file="${PROJECT_ROOT}/test/external-e2e/e2etest_storageclass.yaml"
-claim_file="${PROJECT_ROOT}/test/external-e2e/test_claim.yaml"
+sc_file="${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml"
+claim_file="${REPO_ROOT_PATH}/test/external-e2e/test_claim.yaml"
 
-print_logs() {
+clean_up_and_print_logs() {
     echo "clean up"
     kubectl delete -f ${claim_file} --ignore-not-found
     kubectl delete -f ${sc_file} --ignore-not-found
     echo "print out driver logs ..."
-    bash ./utils/azurelustre_log.sh
+    bash ${REPO_ROOT_PATH}/utils/azurelustre_log.sh
 }
 
-trap print_logs EXIT
+trap clean_up_and_print_logs EXIT
 
 mkdir -p /tmp/csi
 
