@@ -17,7 +17,20 @@ jobs:
         id: go
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2
+      - name: Install CA and curl
+        run: |
+          apt update -y
+          apt install -y --no-install-recommends curl ca-certificates
+          update-ca-certificates
+      - name: Install ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+      - name: Set up kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/\
+            release/stable.txt)/bin/linux/amd64/kubectl" -o kubectl
+          chmod +x kubectl
+          cp ./kubectl /usr/bin/
+          mkdir ~/.kube
+          echo ${{ secrets.KUBE_CONFIG }} | base64 > ~/.kube/config
       - name: Run External E2E Test
         run: test/external-e2e/run.sh
-        env:
-          kube_config: ${{ secrets.KUBE_CONFIG }}
