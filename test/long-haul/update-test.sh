@@ -59,7 +59,7 @@ if [[ "$kubernetesUpgrades" != "null" ]]; then
 	# Skip preview AKS version and get the latest one
 	latestKubernetesVersion=$(echo "$kubernetesUpgrades" | jq -r '.[] | select (.isPreview == null) | .kubernetesVersion' | tail -n 1)
 
-	if [[ ! -z "$kubernetesUpgrades" ]]; then
+	if [[ ! -z "$latestKubernetesVersion" ]]; then
 		print_logs_info "Upgrading Kubernetes control-plane to version $latestKubernetesVersion"
 		az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
 	fi
