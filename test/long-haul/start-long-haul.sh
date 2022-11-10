@@ -45,6 +45,6 @@ print_logs_case "Executing perf/scale test"
 ./perf-scale-test.sh
 
 print_logs_case "Executing external e2e test"
-./external_e2e.sh
+./external-e2e.sh
 
 print_logs_case "Test suites executed successfully"
