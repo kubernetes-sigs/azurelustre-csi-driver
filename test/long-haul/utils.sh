@@ -4,6 +4,7 @@ set -o nounset
 
 REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
 
+export REPO_ROOT_PATH=$REPO_ROOT_PATH
 export NodePodNameKeyword="csi-azurelustre-node"
 export SampleWorkloadKeyword="azurelustre-longhaulsample-deployment"
 
