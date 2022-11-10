@@ -20,6 +20,11 @@ set -o nounset
 set -o xtrace
 
 REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
+KUBECONFIG=${KUBECONFIG:-$(echo "$HOME/.kube/config")}
+echo "GO path $(which go)"
+echo "kubectl path $(which kubectl)"
+echo "REPO_ROOT_PATH ${REPO_ROOT_PATH}"
+echo "KUBECONFIG path ${KUBECONFIG}"
 
 curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.22.0/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
@@ -61,9 +66,9 @@ echo "delete test storageclass"
 kubectl delete -f ${sc_file}
 
 echo "begin to run azurelustre tests ...."
-cp $PROJECT_ROOT/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
+cp ${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
 ginkgo -p --progress --v -focus="External.Storage.*.azurelustre.csi.azure.com" \
     -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down" \
     kubernetes/test/bin/e2e.test  -- \
-    -storage.testdriver=$PROJECT_ROOT/test/external-e2e/testdriver-azurelustre.yaml \
-    --kubeconfig=$KUBECONFIG
+    -storage.testdriver=${REPO_ROOT_PATH}/test/external-e2e/testdriver-azurelustre.yaml \
+    --kubeconfig=${KUBECONFIG}
