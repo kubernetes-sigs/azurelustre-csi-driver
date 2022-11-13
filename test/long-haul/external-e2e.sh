@@ -14,12 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -o errexit
+set -o pipefail
+set -o nounset
+
 echo "Installing go and ginkgo"
 curl -Lo ${REPO_ROOT_PATH}/go1.19.2.linux-amd64.tar.gz https://go.dev/dl/go1.19.2.linux-amd64.tar.gz
 tar -zxf go1.19.2.linux-amd64.tar.gz -C ${REPO_ROOT_PATH}/
 export GOBIN=${REPO_ROOT_PATH}/go/bin
 export PATH=${GOBIN}:${PATH}
-go install github.com/onsi/ginkgo/v2/ginkgo@1.2.0
+go install github.com/onsi/ginkgo/ginkgo@v1.16.5
 
 echo "Downloading latest kubectl"
 curl -Lo ${REPO_ROOT_PATH}/kubectl "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
