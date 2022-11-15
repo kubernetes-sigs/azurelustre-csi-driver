@@ -27,11 +27,16 @@ echo "kubectl path $(which kubectl)"
 echo "REPO_ROOT_PATH ${REPO_ROOT_PATH}"
 echo "KUBECONFIG path ${KUBECONFIG}"
 
-curl -sL https://storage.googleapis.com/kubernetes-release/release/v1.24.6/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
+curl -sL https://storage.googleapis.com/kubernetes-release/release/${kubernetesVersion}/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
 
 sc_file="${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml"
 claim_file="${REPO_ROOT_PATH}/test/external-e2e/test_claim.yaml"
+
+echo "Generating test storageclass"
+sed "s/{lustre_fs_name}/${LUSTRE_FS_NAME}/g;s/{lustre_mgs_ip}/${LUSTRE_MGS_IP}/g" ${sc_file}.template > ${sc_file}
+echo "Generated storageclass"
+cat ${sc_file}
 
 clean_up_and_print_logs() {
     echo "clean up"
@@ -64,8 +69,8 @@ kubectl wait --for=delete -f ${claim_file} --timeout=300s
 echo "wait for pv ${bounded_pv} to be deleted"
 kubectl wait --for=delete pv/${bounded_pv} --timeout=300s
 
-# echo "delete test storageclass"
-# kubectl delete -f ${sc_file}
+echo "delete test storageclass"
+kubectl delete -f ${sc_file}
 
 echo "begin to run azurelustre tests ...."
 cp ${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
