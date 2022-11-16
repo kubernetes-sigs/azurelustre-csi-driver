@@ -1,0 +1,12 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: testazurelustre.csi.azure.com
+provisioner: azurelustre.csi.azure.com
+parameters:
+  mgs-ip-address: "{lustre_mgs_ip}"
+  fs-name: "{lustre_fs_name}"
+mountOptions:
+  - noatime
+  - flock
