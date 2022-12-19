@@ -67,7 +67,10 @@ else
 	echo "Kubernetes control-plane version is the latest"
 fi
 
-print_logs_info "Upgrading node pool to latest image"
+print_logs_info "Upgrading node pool to the latest node image"
+az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only
+
+print_logs_info "Upgrading node pool to the latest"
 az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName
 
 print_logs_title "Print versions after"
