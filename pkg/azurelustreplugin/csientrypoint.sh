@@ -92,7 +92,7 @@ fi
 
 echo "$(date -u) Entering Lustre CSI driver"
 
-echo Executing: azurelustreplugin ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}
-./azurelustreplugin ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}
+echo Executing: azurelustreplugin ${1-} ${2-} ${3-} ${4-}
+./azurelustreplugin ${1-} ${2-} ${3-} ${4-}
 
 echo "$(date -u) Exiting Lustre CSI driver"

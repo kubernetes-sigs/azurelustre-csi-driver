@@ -23,5 +23,5 @@ echo "Changing root to /host"
 
 chroot /host /bin/bash << EOF
 cd /usr/local/azurelustrecsi
-./csientrypoint.sh
+./csientrypoint.sh ${1-} ${2-} ${3-} ${4-}
 EOF

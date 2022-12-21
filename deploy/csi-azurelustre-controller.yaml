@@ -65,8 +65,8 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.3
-          imagePullPolicy: IfNotPresent
+          image: chyincr.azurecr.io/azurelustre-csi:v0.1.0
+          imagePullPolicy: Always
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -92,11 +92,11 @@ spec:
               value: "no"
           securityContext:
             privileged: true
-          volumeMounts:
-            - mountPath: /csi
+          volumeMounts:            
+            - mountPath: /host
+              name: host-root
+            - mountPath: /host/csi
               name: socket-dir
-            - mountPath: /etc/kubernetes/
-              name: azure-cred
           resources:
             limits:
               cpu: 1
@@ -107,7 +107,7 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
-        - name: azure-cred
+        - name: host-root
           hostPath:
-            path: /etc/kubernetes/
-            type: DirectoryOrCreate
+            path: /
+            type: Directory
