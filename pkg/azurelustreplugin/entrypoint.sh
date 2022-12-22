@@ -27,14 +27,34 @@ set -o nounset
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
-requiredLustreVersion=${LUSTRE_VERSION:-"2.14"}
+requiredLustreVersion=${LUSTRE_VERSION:-"2.15.1"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
+
+if [[ ! -z $(grep -R 'bionic' /etc/host-os-release) ]]; then
+  osReleaseCodeName="bionic"
+elif [[ ! -z $(grep -R 'jammy' /etc/host-os-release) ]]; then
+  cat << EOF | tee /etc/apt/sources.list.d/jammy.list
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy main restricted
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates main restricted
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy universe
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates universe
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy multiverse
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates multiverse
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security main restricted
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
+deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
+EOF
+  
+  osReleaseCodeName="jammy"
+else
+  echo "Unsupported Linux distro"
+  exit 1
+fi
 
 echo "$(date -u) Command line arguments: $@"
 
 if [[ "${installClientPackages}" == "yes" ]]; then
-
-  osReleaseCodeName=$(lsb_release -cs)
   kernelVersion=$(uname -r)
   
   echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
@@ -57,20 +77,6 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
   DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
     lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion
-
-  # Install Lustre Client Util package only for Lustre 2.14
-  lustreClientUtilsPackageVersion=$(apt list -a lustre-client-utils | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1 || true)
-
-  if [[ -z $lustreClientUtilsPackageVersion && "$requiredLustreVersion" == "2.14" ]]; then
-    echo "can't find package lustre-client-utils for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
-    exit 1
-  fi
-
-  if [[ ! -z $lustreClientUtilsPackageVersion ]]; then
-    echo "$(date -u) Installing Lustre client utils: lustre-client-utils=$lustreClientUtilsPackageVersion"
-    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
-      lustre-client-utils=$lustreClientUtilsPackageVersion
-  fi
 
   echo "$(date -u) Installed Lustre client packages."
 
