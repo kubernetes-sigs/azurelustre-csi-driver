@@ -219,7 +219,7 @@ class PerfScaleTest:
     def setup(self, current_scale):
         logger.info("reinstalling CSI driver")
         self.run_command(f"{ROOT_PATH}/deploy/uninstall-driver.sh")
-        self.run_command(f"{ROOT_PATH}/deploy/install-driver.sh")
+        self.run_command(f"{ROOT_PATH}/deploy/install-driver.sh main local")
         os.mkdir(self._csi_log_path)
 
         self._perf_result = PerfResultCollector()
