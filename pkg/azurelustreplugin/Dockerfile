@@ -21,23 +21,20 @@ RUN chmod +x "/app/entrypoint.sh"
 
 RUN apt-get update
 
-# Fix vulnerability CVE-2018-7169
-RUN apt-get upgrade -y login passwd
 
 # Install all Lustre packages dependencies
-RUN apt-get install -y --no-install-recommends libreadline7 libkeyutils1 wget   \
-    dmsetup gettext-base grub-common grub-gfxpayload-lists grub-pc grub-pc-bin  \
-    grub2-common kmod libc-dev-bin libc6-dev libdevmapper1.02.1 libfreetype6    \
-    libfuse2 libgdbm-compat4 libgdbm5 libkmod2 libpci-dev libpci3 libperl5.26   \
-    libpng16-16 libsensors4 libsensors4-dev libsnmp-base libsnmp-dev libsnmp30  \
-    libssl-dev libudev-dev libwrap0 libwrap0-dev libyaml-0-2 linux-base         \
-    linux-image-unsigned-5.3.0-1045-gke linux-libc-dev                          \
-    linux-modules-5.3.0-1045-gke manpages manpages-dev netbase os-prober perl   \
-    perl-modules-5.26 ucf zlib1g-dev lsb-release ca-certificates gpg curl
+RUN apt-get install -y --no-install-recommends ca-certificates curl distro-info-data gpg gpgconf kmod libasn1-8-heimdal           \
+  libassuan0 libcurl4 libexpat1 libgssapi-krb5-2 libgssapi3-heimdal libhcrypto4-heimdal libheimbase1-heimdal                      \
+  libheimntlm0-heimdal libhx509-5-heimdal libk5crypto3 libkeyutils1 libkmod2 libkrb5-26-heimdal libkrb5-3 libkrb5support0         \
+  libldap-2.4-2 libldap-common libmpdec2 libnghttp2-14 libpsl5 libpython3-stdlib libpython3.6-minimal libpython3.6-stdlib         \
+  libreadline7 libroken18-heimdal librtmp1 libsasl2-2 libsasl2-modules-db libsqlite3-0 libssl1.1 libwind0-heimdal                 \
+  libyaml-0-2 linux-base linux-base-sgx mime-support openssl python3 python3-minimal python3.6 python3.6-minimal readline-common  
+
+RUN apt-get clean all
 
 WORKDIR "/app"
 
-LABEL maintainers="fuxiuyin;joe-atzinger;Justin-Jin"
+LABEL maintainers="vinli-cn;fuxiuyin;joe-atzinger;Justin-Jin"
 LABEL description="Azure Lustre CSI driver"
 
 ENTRYPOINT ["/app/entrypoint.sh", "/app/azurelustreplugin"]
