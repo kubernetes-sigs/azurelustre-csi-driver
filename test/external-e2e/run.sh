@@ -21,11 +21,13 @@ set -o xtrace
 
 REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
 KUBECONFIG=${KUBECONFIG:-$(echo "$HOME/.kube/config")}
+kubernetesVersion=${kubernetesVersion:-$(kubectl version -ojson | jq -r ".serverVersion.gitVersion")}
 echo "GO path $(which go)"
 echo "ginkgo path $(which ginkgo) and version $(ginkgo version)"
 echo "kubectl path $(which kubectl)"
 echo "REPO_ROOT_PATH ${REPO_ROOT_PATH}"
 echo "KUBECONFIG path ${KUBECONFIG}"
+echo "kubernetesVersion ${kubernetesVersion}"
 
 curl -sL https://storage.googleapis.com/kubernetes-release/release/${kubernetesVersion}/kubernetes-test-linux-amd64.tar.gz --output e2e-tests.tar.gz
 tar -xvf e2e-tests.tar.gz && rm e2e-tests.tar.gz
