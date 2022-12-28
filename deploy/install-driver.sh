@@ -26,7 +26,7 @@ repo="https://raw.githubusercontent.com/kubernetes-sigs/azurelustre-csi-driver/$
 if [[ "$#" -gt 1 ]]; then
   if [[ "$2" == *"local"* ]]; then
     echo "use local deploy"
-    repo="./deploy"
+    repo="$(git rev-parse --show-toplevel)/deploy"
   fi
 fi
 
