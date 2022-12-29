@@ -27,16 +27,6 @@ curl -Lo ${REPO_ROOT_PATH}/kubectl "https://dl.k8s.io/release/${kubernetesVersio
 chmod a+x ${REPO_ROOT_PATH}/kubectl
 export PATH=$(pwd):${PATH}
 
-goVersion=$(kubectl version --client=false -ojson | jq -r ".serverVersion.goVersion")
-echo "Kubernetes go version is ${goVersion}"
-
-echo "Installing go and ginkgo"
-curl -Lo ${REPO_ROOT_PATH}/${goVersion}.linux-amd64.tar.gz https://go.dev/dl/${goVersion}.linux-amd64.tar.gz
-tar -zxf ${REPO_ROOT_PATH}/${goVersion}.linux-amd64.tar.gz -C ${REPO_ROOT_PATH}/
-export GOBIN=${REPO_ROOT_PATH}/go/bin
-export PATH=${GOBIN}:${PATH}
-go install github.com/onsi/ginkgo/ginkgo@v1.16.5
-
 export LUSTRE_FS_NAME=${LustreFSName}
 export LUSTRE_MGS_IP=${LustreFSIP}
 
