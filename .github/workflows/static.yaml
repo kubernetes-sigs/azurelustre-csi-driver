@@ -24,3 +24,4 @@ jobs:
               uses: golangci/golangci-lint-action@v3
               with:
                   working-directory: pkg
+                  args: -E=gofmt --timeout=30m0s
