@@ -31,6 +31,7 @@ export LustreFSName="${lustre_fs_name}"
 export LustreFSIP="${lustre_fs_ip}"
 
 sed -i "s/{longhaul_agentpool}/$PoolName/g;s/{lustre_fs_name}/$LustreFSName/g;s/{lustre_fs_ip}/$LustreFSIP/g" ./sample-workload/deployment_write_print_file.yaml
+sed -i "s/{longhaul_agentpool}/$PoolName/g;s/{lustre_fs_name}/$LustreFSName/g;s/{lustre_fs_ip}/$LustreFSIP/g" ./cleanup/cleanupjob.yaml
 
 print_logs_info "Connecting to AKS Cluster=$ClusterName, ResourceGroup=$ResourceGroup, AKS pool=$PoolName"
 az configure --defaults group=$ResourceGroup
@@ -47,5 +48,10 @@ print_logs_case "Executing perf/scale test"
 
 print_logs_case "Executing external e2e test"
 ./external-e2e.sh
+
+print_logs_case "Executing cleanup"
+kubectl apply -f ./cleanup/cleanupjob.yaml
+kubectl wait --for=condition=complete job/cleanup
+kubectl delete -f ./cleanup/cleanupjob.yaml
 
 print_logs_case "Test suites executed successfully"
