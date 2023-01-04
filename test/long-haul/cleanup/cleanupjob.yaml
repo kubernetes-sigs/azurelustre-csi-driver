@@ -1,0 +1,51 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: azurelustre-longhaulcleanup-sc
+provisioner: azurelustre.csi.azure.com
+parameters:
+  mgs-ip-address: "{lustre_fs_ip}"
+  fs-name: "{lustre_fs_name}"
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: azurelustre-longhaulcleanup-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: azurelustre-longhaulcleanup-sc
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cleanup
+spec:
+  template:
+    spec:
+      nodeSelector:
+        "kubernetes.io/os": linux
+        "agentpool": {longhaul_agentpool}
+      containers:
+        - name: azurelustre-longhaulcleanup-container
+          image: busybox
+          command:
+            - "/bin/sh"
+            - "-c"
+            - rm -rf /mnt/azurelustre_longhaulcleanup/*
+          volumeMounts:
+            - name: azurelustre-longhaulcleanup-volume
+              mountPath: "/mnt/azurelustre_longhaulcleanup"
+              readOnly: false
+      volumes:
+        - name: azurelustre-longhaulcleanup-volume
+          persistentVolumeClaim:
+            claimName: azurelustre-longhaulcleanup-pvc
+      restartPolicy: Never
+  backoffLimit: 4
