@@ -88,8 +88,8 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.4
-          imagePullPolicy: IfNotPresent
+          image: chyincr.azurecr.io/azurelustre-csi:v0.1.0
+          imagePullPolicy: Always
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -121,29 +121,10 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
-            - mountPath: /csi
+            - mountPath: /host
+              name: host-root
+            - mountPath: /host/csi
               name: socket-dir
-            - mountPath: /var/lib/kubelet/
-              mountPropagation: Bidirectional
-              name: mountpoint-dir
-            - mountPath: /etc/kubernetes/
-              name: azure-cred
-            - mountPath: /mnt
-              name: azurelustre-cache
-            - mountPath: /dev
-              name: host-dev
-            - mountPath: /host/var/log
-              name: host-var-log
-            # - mountPath: /usr
-            #   name: host-usr
-            # - mountPath: /etc
-            #   name: host-etc
-            # - mountPath: /lib
-            #   name: host-lib
-            - mountPath: /sbin
-              name: host-sbin
-            - mountPath: /etc/host-os-release
-              name: host-os-release
           resources:
             limits:
               cpu: 1
@@ -157,46 +138,10 @@ spec:
             type: DirectoryOrCreate
           name: socket-dir
         - hostPath:
-            path: /var/lib/kubelet/
-            type: DirectoryOrCreate
-          name: mountpoint-dir
+            path: /
+            type: Directory
+          name: host-root
         - hostPath:
             path: /var/lib/kubelet/plugins_registry/
             type: DirectoryOrCreate
           name: registration-dir
-        - hostPath:
-            path: /etc/kubernetes/
-            type: DirectoryOrCreate
-          name: azure-cred
-        - hostPath:
-            path: /mnt
-            type: DirectoryOrCreate
-          name: azurelustre-cache
-        - hostPath:
-            path: /dev
-            type: Directory
-          name: host-dev
-        - hostPath:
-            path: /var/log
-            type: Directory
-          name: host-var-log
-        - hostPath:
-            path: /usr
-            type: Directory
-          name: host-usr
-        - hostPath:
-            path: /etc
-            type: Directory
-          name: host-etc
-        - hostPath:
-            path: /lib
-            type: Directory
-          name: host-lib
-        - hostPath:
-            path: /sbin
-            type: Directory
-          name: host-sbin
-        - hostPath:
-            path: /etc/os-release
-            type: File
-          name: host-os-release
