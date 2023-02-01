@@ -30,6 +30,12 @@ echo "installClientPackages: ${installClientPackages}"
 requiredLustreVersion=${LUSTRE_VERSION:-"2.15.1"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
+pkgVersion="${requiredLustreVersion}-24-gbaa21ca"
+echo "pkgVersion: ${pkgVersion}"
+
+pkgName="amlfs-lustre-client-${pkgVersion}"
+echo "pkgName: ${pkgName}"
+
 if [[ ! -z $(grep -R 'bionic' /etc/host-os-release) ]]; then
   osReleaseCodeName="bionic"
 elif [[ ! -z $(grep -R 'jammy' /etc/host-os-release) ]]; then
@@ -45,7 +51,7 @@ deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security main restricted
 deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
 deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
 EOF
-  
+
   osReleaseCodeName="jammy"
 else
   echo "Unsupported Linux distro"
@@ -56,27 +62,19 @@ echo "$(date -u) Command line arguments: $@"
 
 if [[ "${installClientPackages}" == "yes" ]]; then
   kernelVersion=$(uname -r)
-  
+
   echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
 
   curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
-  echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
+  echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
   apt-get update
 
-  # Install Lustre client module
-  lustreClientModulePackageVersion=$(apt list -a lustre-client-modules-${kernelVersion} | awk '{print $2}' | grep ^${requiredLustreVersion} | sort -u -V | tail -n 1  || true)
-
-  if [[ -z $lustreClientModulePackageVersion ]]; then
-    echo "can't find package lustre-client-modules-${kernelVersion} for Lustre version $requiredLustreVersion in Microsoft Linux Repo, exiting"
-    exit 1
-  fi
-
-  echo "$(date -u) Installing Lustre client modules: lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion"
+  echo "$(date -u) Installing Lustre client modules: ${pkgName}=${kernelVersion}"
 
   # grub issue
   # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
   DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
-    lustre-client-modules-${kernelVersion}=$lustreClientModulePackageVersion
+    ${pkgName}=${kernelVersion}
 
   echo "$(date -u) Installed Lustre client packages."
 
