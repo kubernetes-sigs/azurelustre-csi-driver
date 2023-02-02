@@ -1,7 +1,7 @@
 set -o errexit
 set -o pipefail
 set -o nounset
-
+#DUMMY
 REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
 
 export REPO_ROOT_PATH=$REPO_ROOT_PATH
