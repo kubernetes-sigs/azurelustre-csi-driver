@@ -24,7 +24,7 @@ trap print_debug ERR
 
 function print_versions () {
 	# Give extra one minute for daemonset pod to install client modules
-	sleep 60
+	sleep 90
 	
 	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
 	currentNodeImageVersion=$(echo $nodepool | jq -r '.nodeImageVersion')
@@ -38,7 +38,7 @@ function print_versions () {
 	podName=$(kubectl get pods -n kube-system -o wide --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp | grep csi-azurelustre-node | grep $PoolName | awk '{print $1}' | head -n 1)
 	echo "Get kernel version and Lustre module version from pod $podName"
 	kernelVersion=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "uname -r")
-	module=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "dpkg-query -f '\${Package}|\${Version}' -W lustre-client-modules-*")
+	module=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "dpkg-query -f '\${Package}|\${Version}' -W kmod-lustre-client-*")
 	modulePkgName=${module%|*}
 	modulePkgVersion=${module#*|}
 
