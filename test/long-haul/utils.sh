@@ -53,7 +53,7 @@ reset_csi_driver () {
 
     kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 
-    sleep 15
+    sleep 60
 }
 
 get_worker_node_num () {
