@@ -74,10 +74,10 @@ spec:
             - containerPort: 29762
               name: healthz
               protocol: TCP
-            # Reserved port for metrics
-            # - containerPort: 29764
-            #   name: metrics
-            #   protocol: TCP
+          # Reserved port for metrics
+          # - containerPort: 29764
+          #   name: metrics
+          #   protocol: TCP
           livenessProbe:
             failureThreshold: 5
             httpGet:
