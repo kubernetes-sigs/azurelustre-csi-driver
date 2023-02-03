@@ -53,7 +53,7 @@ spec:
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=120s
-            - --health-port=29632
+            - --health-port=29762
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -71,12 +71,13 @@ spec:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
           ports:
-            - containerPort: 29632
+            - containerPort: 29762
               name: healthz
               protocol: TCP
-            - containerPort: 29634
-              name: metrics
-              protocol: TCP
+          # Reserved port for metrics
+          # - containerPort: 29764
+          #   name: metrics
+          #   protocol: TCP
           livenessProbe:
             failureThreshold: 5
             httpGet:
