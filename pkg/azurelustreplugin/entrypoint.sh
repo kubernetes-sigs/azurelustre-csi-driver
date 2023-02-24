@@ -109,14 +109,14 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     lnetctl net add --net tcp --if "${default_interface}"
 
     echo "$(date -u) Adding the udev script."
-    test /etc/lustre || mkdir /etc/lustre
+    test -e /etc/lustre || mkdir /etc/lustre
     touch /etc/lustre/.lock
-    test /etc/lustre/fix-lnet.sh && rm -f /etc/lustre/fix-lnet.sh
+    test -e /etc/lustre/fix-lnet.sh && rm -f /etc/lustre/fix-lnet.sh
     sed -i "s/{default_interface}/${default_interface}/g;" ./fix-lnet.sh
     cp ./fix-lnet.sh /etc/lustre
 
-    test /etc/udev/rules.d/73-netadd.rules && rm -f /etc/udev/rules.d/73-netadd.rules
-    test /etc/udev/rules.d/74-netremove.rules && rm -f /etc/udev/rules.d/74-netremove.rules
+    test -e /etc/udev/rules.d/73-netadd.rules && rm -f /etc/udev/rules.d/73-netadd.rules
+    test -e /etc/udev/rules.d/74-netremove.rules && rm -f /etc/udev/rules.d/74-netremove.rules
     echo 'SUBSYSTEM=="net", ACTION=="add", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/73-netadd.rules
     echo 'SUBSYSTEM=="net", ACTION=="remove", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/74-netremove.rules
 
