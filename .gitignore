@@ -21,6 +21,7 @@
 /_output*/
 /_output
 azurelustreplugin
+!pkg/azurelustreplugin
 
 # Emacs save files
 *~

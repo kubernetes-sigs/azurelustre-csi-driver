@@ -127,27 +127,28 @@ spec:
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
-            - mountPath: /var/lib/kubelet/
-              mountPropagation: Bidirectional
-              name: mountpoint-dir
-            - mountPath: /etc/kubernetes/
-              name: azure-cred
             - mountPath: /mnt
               name: azurelustre-cache
             - mountPath: /dev
               name: host-dev
-            - mountPath: /host/var/log
-              name: host-var-log
-            # - mountPath: /usr
-            #   name: host-usr
-            # - mountPath: /etc
-            #   name: host-etc
-            # - mountPath: /lib
-            #   name: host-lib
+            - mountPath: /var
+              mountPropagation: Bidirectional
+              name: host-var
+            - mountPath: /usr
+              name: host-usr
+            - mountPath: /etc
+              name: host-etc
+            # udevadm needs this
+            - mountPath: /run/udev
+              name: host-run-udev
+            - mountPath: /lib
+              name: host-lib
+            - mountPath: /lib64
+              name: host-lib64
             - mountPath: /sbin
               name: host-sbin
-            - mountPath: /etc/host-os-release
-              name: host-os-release
+            - mountPath: /bin
+              name: host-bin
           resources:
             limits:
               cpu: 1
@@ -160,10 +161,6 @@ spec:
             path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
             type: DirectoryOrCreate
           name: socket-dir
-        - hostPath:
-            path: /var/lib/kubelet/
-            type: DirectoryOrCreate
-          name: mountpoint-dir
         - hostPath:
             path: /var/lib/kubelet/plugins_registry/
             type: DirectoryOrCreate
@@ -181,9 +178,9 @@ spec:
             type: Directory
           name: host-dev
         - hostPath:
-            path: /var/log
+            path: /var
             type: Directory
-          name: host-var-log
+          name: host-var
         - hostPath:
             path: /usr
             type: Directory
@@ -193,14 +190,22 @@ spec:
             type: Directory
           name: host-etc
         - hostPath:
+            path: /run/udev
+            type: Directory
+          name: host-run-udev
+        - hostPath:
             path: /lib
             type: Directory
           name: host-lib
+        - hostPath:
+            path: /lib64
+            type: Directory
+          name: host-lib64
         - hostPath:
             path: /sbin
             type: Directory
           name: host-sbin
         - hostPath:
-            path: /etc/os-release
-            type: File
-          name: host-os-release
+            path: /bin
+            type: Directory
+          name: host-bin
