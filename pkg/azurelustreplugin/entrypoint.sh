@@ -36,22 +36,22 @@ echo "pkgVersion: ${pkgVersion}"
 pkgName="amlfs-lustre-client-${pkgVersion}"
 echo "pkgName: ${pkgName}"
 
-if [[ ! -z $(grep -R 'bionic' /etc/host-os-release) ]]; then
+if [[ ! -z $(grep -R 'bionic' /etc/os-release) ]]; then
   osReleaseCodeName="bionic"
-elif [[ ! -z $(grep -R 'jammy' /etc/host-os-release) ]]; then
-  cat << EOF | tee /etc/apt/sources.list.d/jammy.list
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy main restricted
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates main restricted
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy universe
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates universe
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy multiverse
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates multiverse
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security main restricted
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
-deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
-EOF
-
+elif [[ ! -z $(grep -R 'jammy' /etc/os-release) ]]; then
+#   cat << EOF | tee /etc/apt/sources.list.d/jammy.list
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy main restricted
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates main restricted
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy universe
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates universe
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy multiverse
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates multiverse
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security main restricted
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
+# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
+# EOF
+# 
   osReleaseCodeName="jammy"
 else
   echo "Unsupported Linux distro"
@@ -65,10 +65,12 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
 
-  curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
-  echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
-  apt-get update
-
+  if [ ! -f /etc/apt/sources.list.d/amlfs.list ]; then
+    curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
+    echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
+    apt-get update
+  fi
+  
   echo "$(date -u) Installing Lustre client modules: ${pkgName}=${kernelVersion}"
 
   # grub issue
@@ -78,17 +80,54 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   echo "$(date -u) Installed Lustre client packages."
 
-  echo "$(date -u) Enabling Lustre client kernel modules."
+  init_lnet="true"
+  
+  if lsmod | grep "^lnet"; then
+    if lnetctl net show --net tcp | grep interfaces; then
+      echo "$(date -u) LNet is loaded skip the load."
+      init_lnet="false"
+    fi    
+  fi
 
-  modprobe -v ksocklnd
-  modprobe -v lnet
+  if [[ "${init_lnet}" == "true" ]]; then
+    echo "$(date -u) Loading the LNet."
+    modprobe -v lnet
+    lnetctl lnet configure
+
+    echo "$(date -u) Determaing the default network interface."
+    # perl will be installed as dependency by luster client
+    echo "$(date -u) Route table is:"
+    ip route list
+    default_interface=$(ip route list | perl -n -e'/default via [0-9.]+ dev ([0-9a-zA-Z]+) / && print $1')
+    echo "$(date -u) Default network interface is ${default_interface}"
+
+    if [[ "${default_interface}" == "" ]]; then
+      echo "$(date -u) Cannot determain the default network interface"
+      exit 1
+    fi
+
+    lnetctl net add --net tcp --if "${default_interface}"
+
+    echo "$(date -u) Adding the udev script."
+    test /etc/lustre || mkdir /etc/lustre
+    touch /etc/lustre/.lock
+    test /etc/lustre/fix-lnet.sh && rm -f /etc/lustre/fix-lnet.sh
+    sed -i "s/{default_interface}/${default_interface}/g;" ./fix-lnet.sh
+    cp ./fix-lnet.sh /etc/lustre
+
+    test /etc/udev/rules.d/73-netadd.rules && rm -f /etc/udev/rules.d/73-netadd.rules
+    test /etc/udev/rules.d/74-netremove.rules && rm -f /etc/udev/rules.d/74-netremove.rules
+    echo 'SUBSYSTEM=="net", ACTION=="add", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/73-netadd.rules
+    echo 'SUBSYSTEM=="net", ACTION=="remove", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/74-netremove.rules
+
+    echo "$(date -u) Reloading udevadm"
+    udevadm control --reload
+    echo "$(date -u) Done"
+  fi
+
+  echo "$(date -u) Enabling Lustre client kernel modules."
   modprobe -v mgc
   modprobe -v lustre
-
-  # For some reason, this is a false positive before we restart the container
-  # The volume mount succeeds later even this returns a failure
-  # We need to revisit this after moving the script to run on AKS node
-  lctl network up || true
 
   echo "$(date -u) Enabled Lustre client kernel modules."
 
