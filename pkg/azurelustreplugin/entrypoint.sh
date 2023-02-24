@@ -94,7 +94,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     modprobe -v lnet
     lnetctl lnet configure
 
-    echo "$(date -u) Determaing the default network interface."
+    echo "$(date -u) Determining the default network interface."
     # perl will be installed as dependency by luster client
     echo "$(date -u) Route table is:"
     ip route list
@@ -102,7 +102,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     echo "$(date -u) Default network interface is ${default_interface}"
 
     if [[ "${default_interface}" == "" ]]; then
-      echo "$(date -u) Cannot determain the default network interface"
+      echo "$(date -u) Cannot determine the default network interface"
       exit 1
     fi
 
