@@ -88,8 +88,8 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: chyincr.azurecr.io/azurelustre-csi:v0.1.7
-          imagePullPolicy: Always
+          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.5
+          imagePullPolicy: IfNotPresent
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
