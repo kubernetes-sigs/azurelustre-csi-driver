@@ -29,7 +29,7 @@ spec:
       name: deployment-azurelustre
     spec:
       nodeSelector:
-        "kubernetes.io/hostname": "aks-agentpool-19707367-vmss000001"
+        "kubernetes.io/os": linux
       containers:
         - name: deployment-azurelustre
           image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
