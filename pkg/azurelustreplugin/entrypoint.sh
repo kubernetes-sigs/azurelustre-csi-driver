@@ -106,6 +106,12 @@ if [[ "${installClientPackages}" == "yes" ]]; then
       exit 1
     fi
 
+    if lnetctl net show | grep "net type: tcp"; then
+    # There may be a default configuration with no interface.
+    # This is configured by an old version CSI.
+      lnetctl net del --net tcp
+    fi
+
     lnetctl net add --net tcp --if "${default_interface}"
 
     echo "$(date -u) Adding the udev script."
