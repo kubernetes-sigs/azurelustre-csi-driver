@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# export this for golangci-lint
+export "GOROOT=$(go env GOROOT)"
+
 PKG_ROOT=$(git rev-parse --show-toplevel)
 
 ${PKG_ROOT}/hack/verify-gofmt.sh
