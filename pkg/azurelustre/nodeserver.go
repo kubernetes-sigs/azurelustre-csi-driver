@@ -18,7 +18,6 @@ package azurelustre
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
@@ -337,7 +336,7 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 
 	if !notMnt {
 		// testing original mount point, make sure the mount link is valid
-		_, err := ioutil.ReadDir(target)
+		_, err := os.ReadDir(target)
 		if err == nil {
 			klog.V(2).Infof("already mounted to target %s", target)
 			return !notMnt, nil
