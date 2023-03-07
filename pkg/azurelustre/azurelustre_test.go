@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -90,7 +89,7 @@ func TestIsRetriableError(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := ioutil.TempDir(os.TempDir(), "azurelustre-csi-mount-test")
+	existingMountPath, err := os.MkdirTemp(os.TempDir(), "azurelustre-csi-mount-test")
 	if err != nil {
 		t.Fatalf("failed to create tmp dir: %v", err)
 	}
