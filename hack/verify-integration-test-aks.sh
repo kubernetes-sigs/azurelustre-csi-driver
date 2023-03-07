@@ -29,7 +29,7 @@ curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stabl
 chmod +x kubectl
 export KUBECONFIG=$(pwd)/kubeconfig
 
-./kubectl delete -f ./test/integration_aks/integration_test_aks.yaml || true
+./kubectl delete -f ./test/integration_aks/integration_test_aks.yaml --ignore-not-found
 ./kubectl apply -f ./test/integration_aks/integration_test_aks.yaml
 
 function catlog {
