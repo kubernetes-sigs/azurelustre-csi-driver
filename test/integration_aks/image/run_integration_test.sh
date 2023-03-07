@@ -71,8 +71,7 @@ mkdir /csi
 echo "$(date -u) Exiting Lustre CSI driver"
 nohup 2>&1 ./azurelustreplugin --v=5 \
               --endpoint=$endpoint \
-              --nodeid=integrationtestnode \
-              --metrics-address=0.0.0.0:29635 >csi.log &
+              --nodeid=integrationtestnode >csi.log &
 
 sleep 5
 
