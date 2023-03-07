@@ -25,7 +25,9 @@ readonly endpoint="unix:///csi/csi.sock"
 readonly target_path="/tmp/target_path"
 readonly lustre_fs_name=$1
 readonly lustre_fs_ip=$2
-readonly lustre_client_version="2.14.0"
+readonly lustre_client_version="2.15.1"
+readonly pkgVersion="${lustre_client_version}-24-gbaa21ca"
+readonly pkgName="amlfs-lustre-client-${pkgVersion}"
 
 mkdir -p $target_path
 
@@ -41,9 +43,10 @@ echo "$(date -u) OS release code name is ${osReleaseCodeName}, kernel version is
 echo "$(date -u) Installing Lustre client packages."
 
 curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
-echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
+echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
 apt-get update
-apt install -y --no-install-recommends lustre-client-modules-${kernelVersion} lustre-client-utils
+
+DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" ${pkgName}=${kernelVersion}
 
 echo "$(date -u) Installed Lustre client packages."
 
