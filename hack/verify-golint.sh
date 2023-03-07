@@ -16,12 +16,9 @@
 
 set -euo pipefail
 
-export "GOROOT=$(go env GOROOT)"
-echo "GOROOT: $GOROOT"
-
 if [[ -z "$(command -v golangci-lint)" ]]; then
   echo "Cannot find golangci-lint. Installing golangci-lint..."
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.45.2
+  go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.45.0
   export PATH=$PATH:$(go env GOPATH)/bin
 fi
 
