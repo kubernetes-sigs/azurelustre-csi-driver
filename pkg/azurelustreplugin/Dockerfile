@@ -21,7 +21,8 @@ COPY "./pkg/azurelustreplugin/fix-lnet.sh" "/app/fix-lnet.sh"
 RUN chmod +x "/app/entrypoint.sh"
 RUN chmod +x "/app/fix-lnet.sh"
 
-# RUN apt-get update
+RUN apt-get update && apt --only-upgrade install tar
+RUN apt-get clean all
 
 # Install all Lustre packages dependencies
 # RUN apt-get install -y --no-install-recommends ca-certificates curl distro-info-data gpg gpgconf kmod libasn1-8-heimdal           \
@@ -30,8 +31,6 @@ RUN chmod +x "/app/fix-lnet.sh"
 #   libldap-2.4-2 libldap-common libmpdec2 libnghttp2-14 libpsl5 libpython3-stdlib libpython3.6-minimal libpython3.6-stdlib         \
 #   libreadline7 libroken18-heimdal librtmp1 libsasl2-2 libsasl2-modules-db libsqlite3-0 libssl1.1 libwind0-heimdal                 \
 #   libyaml-0-2 linux-base linux-base-sgx mime-support openssl python3 python3-minimal python3.6 python3.6-minimal readline-common  
-
-# RUN apt-get clean all
 
 WORKDIR "/app"
 
