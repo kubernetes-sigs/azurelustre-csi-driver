@@ -16,7 +16,8 @@ PKG = sigs.k8s.io/azurelustre-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= azurelustre.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
-IMAGE_NAME ?= azurelustre-csi
+TARGET ?= csi
+IMAGE_NAME ?= azurelustre-$(TARGET)
 IMAGE_VERSION ?= v0.1.0
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
@@ -50,8 +51,19 @@ OUTPUT_TYPE ?= registry
 ALL_ARCH.linux = amd64 #arm64
 ALL_OS_ARCH = $(foreach arch, ${ALL_ARCH.linux}, linux-$(arch))
 
+ifeq ($(TARGET), csi)
+build_lustre_source_code = azurelustre
+dockerfile = ./pkg/azurelustreplugin/Dockerfile
+else
+build_lustre_source_code = $()
+dockerfile = ./pkg/driverinstaller/Dockerfile_$(TARGET)
+endif
+
 all: azurelustre
 
+#
+# Tests
+#
 .PHONY: verify
 verify: unit-test
 	hack/verify-all.sh
@@ -98,6 +110,9 @@ install-helm:
 e2e-teardown:
 	helm delete azurelustre-csi-driver --namespace kube-system
 
+#
+# Azure Lustre: Code build
+#
 .PHONY: azurelustre
 azurelustre:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
@@ -110,15 +125,17 @@ azurelustre-windows:
 azurelustre-darwin:
 	CGO_ENABLED=0 GOOS=darwin go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
 
+#
+# Azure Lustre: Docker build
+#
 .PHONY: container
-container: azurelustre
-	docker build -t $(IMAGE_TAG) --output=type=docker -f ./pkg/azurelustreplugin/Dockerfile .
-	# docker build -t $(IMAGE_TAG) -f ./pkg/azurelustreplugin/Dockerfile .
+container: $(build_lustre_source_code)
+	docker build -t $(IMAGE_TAG) --output=type=docker -f $(dockerfile) .
 
 .PHONY: container-linux
 container-linux:
 	docker buildx build --pull --output=type=$(OUTPUT_TYPE) --platform="linux/$(ARCH)" \
-		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f ./pkg/azurelustreplugin/Dockerfile .
+		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f $(dockerfile) .
 
 .PHONY: azurelustre-container
 azurelustre-container:
@@ -132,11 +149,9 @@ azurelustre-container:
 		ARCH=$${arch} $(MAKE) container-linux; \
 	done
 
-.PHONY: ior
-ior:
-	docker build -t $(REGISTRY)/ior:latest --output=type=docker -f ./test/ior/Dockerfile .
-	# docker build -t $(REGISTRY)/ior:latest -f ./test/ior/Dockerfile .
-
+#
+# Azure Lustre: Docker push
+#
 .PHONY: push
 push:
 ifdef CI
@@ -146,10 +161,6 @@ ifdef CI
 else
 	docker push $(IMAGE_TAG)
 endif
-
-.PHONY: push-ior
-push-ior:
-	docker push $(REGISTRY)/ior:latest
 
 .PHONY: push-latest
 push-latest:
@@ -162,9 +173,21 @@ else
 endif
 
 .PHONY: build-push
-build-push: azurelustre-container
+build-push: $(build_lustre_source_code)
 	docker tag $(IMAGE_TAG) $(IMAGE_TAG_LATEST)
 	docker push $(IMAGE_TAG_LATEST)
+
+#
+# IOR: docker build & publish
+#
+.PHONY: ior
+ior:
+	docker build -t $(REGISTRY)/ior:latest --output=type=docker -f ./test/ior/Dockerfile .
+	# docker build -t $(REGISTRY)/ior:latest -f ./test/ior/Dockerfile .
+
+.PHONY: push-ior
+push-ior:
+	docker push $(REGISTRY)/ior:latest
 
 .PHONY: clean
 clean:
