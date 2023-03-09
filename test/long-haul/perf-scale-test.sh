@@ -15,7 +15,8 @@
 # limitations under the License.
 
 python $(pwd)/../scale/run_test.py --provisioning-type static \
-                                   --scales 4 8 16 32 64 128 256 \
+                                   # disable scales 32 64 128 256 for Lnet fix \
+                                   --scales 4 8 16 \ 
                                    --csi-name azurelustre.csi.azure.com \
                                    --mgs-ip-address ${LustreFSIP:-"172.18.32.5"} \
                                    --fs-name lustrefs
