@@ -121,10 +121,16 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     sed -i "s/{default_interface}/${default_interface}/g;" ./fix-lnet.sh
     cp ./fix-lnet.sh /etc/lustre
 
+    # legacy rules 73 & 74
     test -e /etc/udev/rules.d/73-netadd.rules && rm -f /etc/udev/rules.d/73-netadd.rules
     test -e /etc/udev/rules.d/74-netremove.rules && rm -f /etc/udev/rules.d/74-netremove.rules
-    echo 'SUBSYSTEM=="net", ACTION=="add", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/73-netadd.rules
-    echo 'SUBSYSTEM=="net", ACTION=="remove", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/74-netremove.rules
+
+    # current rules 98 & 99
+    test -e /etc/udev/rules.d/98-netadd.rules && rm -f /etc/udev/rules.d/98-netadd.rules
+    test -e /etc/udev/rules.d/99-netremove.rules && rm -f /etc/udev/rules.d/99-netremove.rules
+
+    echo 'SUBSYSTEM=="net", ACTION=="add", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/98-netadd.rules
+    echo 'SUBSYSTEM=="net", ACTION=="remove", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/99-netremove.rules
 
     echo "$(date -u) Reloading udevadm"
     udevadm control --reload
