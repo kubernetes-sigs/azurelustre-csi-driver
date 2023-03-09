@@ -21,7 +21,7 @@ COPY "./pkg/azurelustreplugin/fix-lnet.sh" "/app/fix-lnet.sh"
 RUN chmod +x "/app/entrypoint.sh"
 RUN chmod +x "/app/fix-lnet.sh"
 
-RUN apt-get update && apt --only-upgrade install tar
+RUN apt-get update && apt --only-upgrade -y install tar libudev1 libsystemd0
 RUN apt-get clean all
 
 # Install all Lustre packages dependencies
