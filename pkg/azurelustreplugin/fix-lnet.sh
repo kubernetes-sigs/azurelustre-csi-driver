@@ -1,12 +1,29 @@
 #!/bin/bash
 
-for run_id in 0 2 4; do
-  sleep $run_id
-  (
-    flock -w 60 -e ${FD}    
-    if sudo lnetctl net show --net tcp | grep "status: down"; then
-      /usr/sbin/lnetctl net del --net tcp
-      /usr/sbin/lnetctl net add --net tcp --if {default_interface}
-    fi
-  ) {FD}< /etc/lustre/.lock
+/usr/bin/logger "PID $$: Start fix-lnet"
+count=1;
+
+# try fix lnet 5 times maximum
+for sleep_in_secs in 0 0.5 0.5 0.5 0.5; do
+  sleep $sleep_in_secs
+
+  break_flag=$(
+    (
+      break_flag_inner=false
+      flock -w 60 -e ${FD}
+      if sudo lnetctl net show --net tcp | grep "status: down"; then
+        /usr/sbin/lnetctl net del --net tcp
+        /usr/sbin/lnetctl net add --net tcp --if {default_interface}
+        break_flag_inner=true
+      fi
+      echo $break_flag_inner
+    ) {FD}< /etc/lustre/.lock
+  )
+
+  if [[ $break_flag == true ]]; then
+    break
+  else
+    /usr/bin/logger "PID $$: Skipped fix-lnet, count=$count"
+    count=$((count+1))
+  fi
 done
