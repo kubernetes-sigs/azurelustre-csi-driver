@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Issue #115 Remove workaround for LNET fix
+# Delete this bash script
+
 /usr/bin/logger "PID $$: Start fix-lnet"
 count=1;
 

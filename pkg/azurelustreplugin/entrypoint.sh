@@ -80,6 +80,9 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   echo "$(date -u) Installed Lustre client packages."
 
+  # Issue #115 Remove workaround for LNET fix
+  # Revert below LNET fix, please don't remove the lines to cleanup rule files
+
   init_lnet="true"
   
   if lsmod | grep "^lnet"; then
