@@ -30,9 +30,9 @@ if [[ "$#" -gt 1 ]]; then
   fi
 fi
 
-if [ $ver != "main" ]; then
-  repo="$repo/$ver"
-fi
+# if [ $ver != "main" ]; then
+#   repo="$repo/$ver"
+# fi
 
 echo "Installing Azure Lustre CSI driver, version: $ver, repo: $repo ..."
 kubectl apply -f $repo/rbac-csi-azurelustre-controller.yaml
