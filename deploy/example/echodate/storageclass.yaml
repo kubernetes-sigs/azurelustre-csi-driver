@@ -5,7 +5,7 @@ metadata:
   name: sc.azurelustre.csi.azure.com
 provisioner: azurelustre.csi.azure.com
 parameters:
-  mgs-ip-address: "172.18.16.5"      # dev1
+  mgs-ip-address: "172.18.16.9"      # dev1
   fs-name: "lustrefs"
 mountOptions:
   - noatime
