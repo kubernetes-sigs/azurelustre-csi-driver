@@ -48,8 +48,9 @@ print_logs_case "Executing update test"
 # print_logs_case "Executing perf/scale test"
 # ./perf-scale-test.sh
 
-print_logs_case "Executing external e2e test"
-./external-e2e.sh
+# Issue #115 Remove workaround for LNET fix
+# print_logs_case "Executing external e2e test"
+# ./external-e2e.sh
 
 print_logs_case "Executing cleanup"
 kubectl apply -f ./cleanup/cleanupjob.yaml
