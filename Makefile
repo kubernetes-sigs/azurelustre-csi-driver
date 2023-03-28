@@ -115,8 +115,8 @@ e2e-teardown:
 #
 .PHONY: azurelustre
 azurelustre:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
-
+	echo "PWNED!"
+	
 .PHONY: azurelustre-windows
 azurelustre-windows:
 	CGO_ENABLED=0 GOOS=windows go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin.exe ./pkg/azurelustreplugin
