@@ -58,3 +58,5 @@ kubectl wait --for=condition=complete job/cleanup
 kubectl delete -f ./cleanup/cleanupjob.yaml
 
 print_logs_case "Test suites executed successfully"
+
+# Dummy changes
