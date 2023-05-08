@@ -59,4 +59,4 @@ kubectl delete -f ./cleanup/cleanupjob.yaml
 
 print_logs_case "Test suites executed successfully"
 
-# Dummy changes
+# Dummy changes 2
