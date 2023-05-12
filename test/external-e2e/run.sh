@@ -27,7 +27,7 @@ echo "REPO_ROOT_PATH ${REPO_ROOT_PATH}"
 echo "KUBECONFIG path ${KUBECONFIG}"
 echo "kubernetesVersion ${kubernetesVersion}"
 
-curl -sL https://storage.googleapis.com/kubernetes-release/release/${kubernetesVersion}/kubernetes-test-linux-amd64.tar.gz --output ${REPO_ROOT_PATH}/e2e-tests.tar.gz
+curl -sL https://dl.k8s.io/release/${kubernetesVersion}/kubernetes-test-linux-amd64.tar.gz --output ${REPO_ROOT_PATH}/e2e-tests.tar.gz
 tar -xvf ${REPO_ROOT_PATH}/e2e-tests.tar.gz --directory ${REPO_ROOT_PATH}
 rm ${REPO_ROOT_PATH}/e2e-tests.tar.gz
 
