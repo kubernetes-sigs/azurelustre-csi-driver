@@ -24,13 +24,51 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+function add_net_interfaces() {
+  echo "$(date -u) Determining ethernet interfaces."
+  echo "$(date -u) Route table is:"
+  ip route list
+  interface_list=$(ip route show | sed -n 's/.*\s\+dev\s\+\([^ ]\+\).*/\1/p' | sort -u)
+  ethernet_interfaces=()
+  for interface in $interface_list; do
+    interface_info=$(ip link show "${interface}")
+    if [[ "$interface_info" =~ 'SLAVE' ]]; then
+      echo "$(date -u) Not adding slave interface: ${interface}"
+      continue
+    elif [[ "$interface_info" =~ 'link-netns' ]]; then
+      echo "$(date -u) Not adding namespaced interface: ${interface}"
+      continue
+    elif [[ "$interface_info" =~ 'link/ether' ]]; then
+      echo "$(date -u) Including ethernet interface: ${interface}"
+      ethernet_interfaces+=("$interface")
+    else
+      echo "$(date -u) Skipping non-ethernet interface: ${interface}"
+    fi
+  done
+  echo "$(date -u) List of found ethernet interfaces is: ${ethernet_interfaces[*]}"
+
+  if [[ "${#ethernet_interfaces[@]}" -eq 0 ]]; then
+    echo "$(date -u) Cannot find any ethernet network interface"
+    exit 1
+  fi
+
+  for interface in "${ethernet_interfaces[@]}"; do
+    if lnetctl net show --net tcp | grep -q "\b${interface}\b"; then
+      echo "$(date -u) Interface already added, skipping: ${interface}"
+    else
+      echo "$(date -u) Adding interface: ${interface}"
+      lnetctl net add --net tcp --if "${interface}"
+    fi
+  done
+}
+
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
 requiredLustreVersion=${LUSTRE_VERSION:-"2.15.1"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
-pkgVersion="${requiredLustreVersion}-24-gbaa21ca"
+pkgVersion="${requiredLustreVersion}-29-gbae0abe"
 echo "pkgVersion: ${pkgVersion}"
 
 pkgName="amlfs-lustre-client-${pkgVersion}"
@@ -80,16 +118,19 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   echo "$(date -u) Installed Lustre client packages."
 
-  # Issue #115 Remove workaround for LNET fix
-  # Revert below LNET fix, please don't remove the lines to cleanup rule files
-
   init_lnet="true"
-  
+
   if lsmod | grep "^lnet"; then
     if lnetctl net show --net tcp | grep interfaces; then
-      echo "$(date -u) LNet is loaded skip the load."
+      echo "$(date -u) LNet is loaded skip the load"
+      echo "$(date -u) Adding missing interfaces"
+      add_net_interfaces
       init_lnet="false"
-    fi    
+    elif lnetctl net show | grep "net type: tcp"; then
+    # There may be a default configuration with no interface.
+    # This is configured by an old version CSI.
+      lnetctl net del --net tcp
+    fi
   fi
 
   if [[ "${init_lnet}" == "true" ]]; then
@@ -97,46 +138,22 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     modprobe -v lnet
     lnetctl lnet configure
 
-    echo "$(date -u) Determining the default network interface."
-    # perl will be installed as dependency by luster client
-    echo "$(date -u) Route table is:"
-    ip route list
-    default_interface=$(ip route list | perl -n -e'/default via [0-9.]+ dev ([0-9a-zA-Z]+) / && print $1')
-    echo "$(date -u) Default network interface is ${default_interface}"
+    add_net_interfaces
 
-    if [[ "${default_interface}" == "" ]]; then
-      echo "$(date -u) Cannot determine the default network interface"
-      exit 1
+    # Remove old udev rules
+    should_reload_udev="false"
+    for rule_file in /etc/udev/rules.d/{73-netadd,74-netremove,98-netadd,99-netremove}.rules; do
+      if [[ -e ${rule_file} ]]; then
+        echo "Deleting unnecessary udev rule: ${rule_file}"
+        rm -f "${rule_file}"
+        should_reload_udev="true"
+      fi
+    done
+    if [[ "${should_reload_udev}" == "true" ]]; then
+      echo "$(date -u) Reloading udevadm"
+      udevadm control --reload
     fi
 
-    if lnetctl net show | grep "net type: tcp"; then
-    # There may be a default configuration with no interface.
-    # This is configured by an old version CSI.
-      lnetctl net del --net tcp
-    fi
-
-    lnetctl net add --net tcp --if "${default_interface}"
-
-    echo "$(date -u) Adding the udev script."
-    test -e /etc/lustre || mkdir /etc/lustre
-    touch /etc/lustre/.lock
-    test -e /etc/lustre/fix-lnet.sh && rm -f /etc/lustre/fix-lnet.sh
-    sed -i "s/{default_interface}/${default_interface}/g;" ./fix-lnet.sh
-    cp ./fix-lnet.sh /etc/lustre
-
-    # legacy rules 73 & 74
-    test -e /etc/udev/rules.d/73-netadd.rules && rm -f /etc/udev/rules.d/73-netadd.rules
-    test -e /etc/udev/rules.d/74-netremove.rules && rm -f /etc/udev/rules.d/74-netremove.rules
-
-    # current rules 98 & 99
-    test -e /etc/udev/rules.d/98-netadd.rules && rm -f /etc/udev/rules.d/98-netadd.rules
-    test -e /etc/udev/rules.d/99-netremove.rules && rm -f /etc/udev/rules.d/99-netremove.rules
-
-    echo 'SUBSYSTEM=="net", ACTION=="add", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/98-netadd.rules
-    echo 'SUBSYSTEM=="net", ACTION=="remove", RUN+="/etc/lustre/fix-lnet.sh"' | tee /etc/udev/rules.d/99-netremove.rules
-
-    echo "$(date -u) Reloading udevadm"
-    udevadm control --reload
     echo "$(date -u) Done"
   fi
 
