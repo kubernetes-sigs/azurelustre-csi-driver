@@ -26,7 +26,7 @@ readonly target_path="/tmp/target_path"
 readonly lustre_fs_name=$1
 readonly lustre_fs_ip=$2
 readonly lustre_client_version="2.15.1"
-readonly pkgVersion="${lustre_client_version}-24-gbaa21ca"
+readonly pkgVersion="${lustre_client_version}-29-gbae0abe"
 readonly pkgName="amlfs-lustre-client-${pkgVersion}"
 
 mkdir -p $target_path

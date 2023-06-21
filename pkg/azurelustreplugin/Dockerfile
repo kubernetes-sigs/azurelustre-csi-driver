@@ -16,10 +16,8 @@ FROM ubuntu:18.04
 
 COPY "./_output/azurelustreplugin" "/app/azurelustreplugin"
 COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
-COPY "./pkg/azurelustreplugin/fix-lnet.sh" "/app/fix-lnet.sh"
 
 RUN chmod +x "/app/entrypoint.sh"
-RUN chmod +x "/app/fix-lnet.sh"
 
 RUN apt-get update && apt --only-upgrade -y install tar libudev1 libsystemd0
 RUN apt-get clean all
