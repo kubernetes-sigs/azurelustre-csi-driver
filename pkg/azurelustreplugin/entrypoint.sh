@@ -136,6 +136,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   if [[ "${init_lnet}" == "true" ]]; then
     echo "$(date -u) Loading the LNet."
     modprobe -v lnet
+    modprobe -v ksocklnd skip_mr_route_setup=1
     lnetctl lnet configure
 
     add_net_interfaces
