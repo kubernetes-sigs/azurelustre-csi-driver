@@ -73,10 +73,11 @@ kubectl wait --for=delete pv/${bounded_pv} --timeout=300s
 echo "delete test storageclass"
 kubectl delete -f ${sc_file}
 
+# Skip of "SELinuxMountReadWriteOncePod" can be removed when we begin testing against Kubernetes version 1.27+
 echo "begin to run azurelustre tests ...."
 cp ${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
 ${REPO_ROOT_PATH}/kubernetes/test/bin/ginkgo -p -v -focus="External.Storage.*.azurelustre.csi.azure.com" \
-    -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down|should support two pods which have the same volume definition|should access to two volumes with the same volume mode and retain data across pod recreation on different node" \
+    -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which share the same volume|should be able to unmount after the subpath directory is deleted|should support two pods which share the same volume|Should test that pv written before kubelet restart is readable after restart|should unmount if pod is force deleted while kubelet is down|should unmount if pod is gracefully deleted while kubelet is down|should support two pods which have the same volume definition|should access to two volumes with the same volume mode and retain data across pod recreation on different node|SELinuxMountReadWriteOncePod" \
     ${REPO_ROOT_PATH}/kubernetes/test/bin/e2e.test  -- \
     -storage.testdriver=${REPO_ROOT_PATH}/test/external-e2e/testdriver-azurelustre.yaml \
     --kubeconfig=${KUBECONFIG}
