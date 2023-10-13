@@ -17,7 +17,7 @@ limitations under the License.
 package volume
 
 import (
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -48,11 +48,7 @@ func (n *noopExpandableVolumePluginInstance) CanSupport(spec *Spec) bool {
 	return true
 }
 
-func (n *noopExpandableVolumePluginInstance) IsMigratedToCSI() bool {
-	return false
-}
-
-func (n *noopExpandableVolumePluginInstance) RequiresRemount() bool {
+func (n *noopExpandableVolumePluginInstance) RequiresRemount(spec *Spec) bool {
 	return false
 }
 
@@ -64,8 +60,8 @@ func (n *noopExpandableVolumePluginInstance) NewUnmounter(name string, podUID ty
 	return nil, nil
 }
 
-func (n *noopExpandableVolumePluginInstance) ConstructVolumeSpec(volumeName, mountPath string) (*Spec, error) {
-	return n.spec, nil
+func (n *noopExpandableVolumePluginInstance) ConstructVolumeSpec(volumeName, mountPath string) (ReconstructedVolume, error) {
+	return ReconstructedVolume{Spec: n.spec}, nil
 }
 
 func (n *noopExpandableVolumePluginInstance) SupportsMountOption() bool {
@@ -78,4 +74,8 @@ func (n *noopExpandableVolumePluginInstance) SupportsBulkVolumeVerification() bo
 
 func (n *noopExpandableVolumePluginInstance) RequiresFSResize() bool {
 	return true
+}
+
+func (n *noopExpandableVolumePluginInstance) SupportsSELinuxContextMount(spec *Spec) (bool, error) {
+	return false, nil
 }
