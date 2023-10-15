@@ -89,7 +89,7 @@ elif [[ ! -z $(grep -R 'jammy' /etc/os-release) ]]; then
 # deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
 # deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
 # EOF
-# 
+#
   osReleaseCodeName="jammy"
 else
   echo "Unsupported Linux distro"
@@ -101,6 +101,16 @@ echo "$(date -u) Command line arguments: $@"
 if [[ "${installClientPackages}" == "yes" ]]; then
   kernelVersion=$(uname -r)
 
+  echo "$(date -u) Installing dependencies"
+  apt -y --no-install-recommends install \
+    gpg curl ca-certificates iproute2 kmod libc-dev-bin libc6 libc-bin libc6-dev                     \
+    libcrypt-dev libgdbm-compat4 libgdbm6 libkmod2                                                   \
+    libmysqlclient21 libnetsnmptrapd40 libnl-3-200 libnl-genl-3-200 libnsl-dev libpci-dev libpci3    \
+    libperl5.34 libsensors-config libsensors-dev libsensors5 libsnmp-base libsnmp-dev libsnmp40      \
+    libssl-dev libtirpc-dev libudev-dev libwrap0 libwrap0-dev libyaml-0-2 linux-base linux-base-sgx  \
+    linux-libc-dev mysql-common pci.ids perl perl-modules-5.34 rpcsvc-proto zlib1g-dev
+
+
   echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
 
   if [ ! -f /etc/apt/sources.list.d/amlfs.list ]; then
@@ -108,7 +118,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
     apt-get update
   fi
-  
+
   echo "$(date -u) Installing Lustre client modules: ${pkgName}=${kernelVersion}"
 
   # grub issue
@@ -140,20 +150,6 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     lnetctl lnet configure
 
     add_net_interfaces
-
-    # Remove old udev rules
-    should_reload_udev="false"
-    for rule_file in /etc/udev/rules.d/{73-netadd,74-netremove,98-netadd,99-netremove}.rules; do
-      if [[ -e ${rule_file} ]]; then
-        echo "Deleting unnecessary udev rule: ${rule_file}"
-        rm -f "${rule_file}"
-        should_reload_udev="true"
-      fi
-    done
-    if [[ "${should_reload_udev}" == "true" ]]; then
-      echo "$(date -u) Reloading udevadm"
-      udevadm control --reload
-    fi
 
     echo "$(date -u) Done"
   fi

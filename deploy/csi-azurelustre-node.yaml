@@ -58,10 +58,6 @@ spec:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
             - --v=2
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/azurelustre.csi.azure.com-reg.sock /csi/csi.sock"]
           livenessProbe:
             exec:
               command:
@@ -90,6 +86,10 @@ spec:
         - name: azurelustre
           image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.11
           imagePullPolicy: IfNotPresent
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "lustre_rmmod"]
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -127,28 +127,13 @@ spec:
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
-            - mountPath: /mnt
-              name: azurelustre-cache
+            - mountPath: /var/lib/kubelet/pods
+              name: mountpoint-dir
+              mountPropagation: "Bidirectional"
             - mountPath: /dev
               name: host-dev
-            - mountPath: /var
-              mountPropagation: Bidirectional
-              name: host-var
-            - mountPath: /usr
-              name: host-usr
-            - mountPath: /etc
-              name: host-etc
-            # udevadm needs this
-            - mountPath: /run/udev
-              name: host-run-udev
-            - mountPath: /lib
-              name: host-lib
-            - mountPath: /lib64
-              name: host-lib64
-            - mountPath: /sbin
-              name: host-sbin
-            - mountPath: /bin
-              name: host-bin
+            - mountPath: /csi-lustre-data
+              name: csi-data-dir
           resources:
             limits:
               cpu: 1
@@ -158,54 +143,22 @@ spec:
               memory: 20Mi
       volumes:
         - hostPath:
+            path: /var/lib/csi-lustre-data/
+            type: DirectoryOrCreate
+          name: csi-data-dir
+        - hostPath:
             path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
             type: DirectoryOrCreate
           name: socket-dir
         - hostPath:
             path: /var/lib/kubelet/plugins_registry/
-            type: DirectoryOrCreate
+            type: Directory
           name: registration-dir
         - hostPath:
-            path: /etc/kubernetes/
-            type: DirectoryOrCreate
-          name: azure-cred
-        - hostPath:
-            path: /mnt
-            type: DirectoryOrCreate
-          name: azurelustre-cache
+            path: /var/lib/kubelet/pods/
+            type: Directory
+          name: mountpoint-dir
         - hostPath:
             path: /dev
             type: Directory
           name: host-dev
-        - hostPath:
-            path: /var
-            type: Directory
-          name: host-var
-        - hostPath:
-            path: /usr
-            type: Directory
-          name: host-usr
-        - hostPath:
-            path: /etc
-            type: Directory
-          name: host-etc
-        - hostPath:
-            path: /run/udev
-            type: Directory
-          name: host-run-udev
-        - hostPath:
-            path: /lib
-            type: Directory
-          name: host-lib
-        - hostPath:
-            path: /lib64
-            type: Directory
-          name: host-lib64
-        - hostPath:
-            path: /sbin
-            type: Directory
-          name: host-sbin
-        - hostPath:
-            path: /bin
-            type: Directory
-          name: host-bin
