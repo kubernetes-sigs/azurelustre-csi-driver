@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kubernetes-csi/csi-test/v4/pkg/sanity"
+	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
