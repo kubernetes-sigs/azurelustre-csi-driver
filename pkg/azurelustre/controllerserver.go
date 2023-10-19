@@ -38,23 +38,6 @@ const (
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
 
-var (
-	controllerServiceCapabilities = []csi.ControllerServiceCapability_RPC_Type{
-		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-		csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-	}
-
-	volumeCapabilities = []csi.VolumeCapability_AccessMode_Mode{
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
-	}
-)
-
 func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 	for _, capability := range capabilities {
 		if nil == capability.GetMount() {
@@ -300,17 +283,7 @@ func (d *Driver) ControllerGetCapabilities(
 	ctx context.Context,
 	req *csi.ControllerGetCapabilitiesRequest,
 ) (*csi.ControllerGetCapabilitiesResponse, error) {
-	var capabilities []*csi.ControllerServiceCapability
-	for _, capability := range controllerServiceCapabilities {
-		capabilities = append(capabilities, &csi.ControllerServiceCapability{
-			Type: &csi.ControllerServiceCapability_Rpc{
-				Rpc: &csi.ControllerServiceCapability_RPC{
-					Type: capability,
-				},
-			},
-		})
-	}
 	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: capabilities,
+		Capabilities: d.Cap,
 	}, nil
 }

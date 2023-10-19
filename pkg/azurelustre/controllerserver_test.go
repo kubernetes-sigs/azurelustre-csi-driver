@@ -33,27 +33,28 @@ import (
 
 func TestControllerGetCapabilities(t *testing.T) {
 	d := NewFakeDriver()
+	d.AddControllerServiceCapabilities(controllerServiceCapabilities)
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := d.ControllerGetCapabilities(context.Background(), &req)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
-	var capabilitiesGotted []csi.ControllerServiceCapability_RPC_Type
-	for _, capabilityGotted := range resp.GetCapabilities() {
-		capabilitiesGotted = append(
-			capabilitiesGotted,
-			capabilityGotted.GetRpc().Type,
+	var capabilitiesSupported []csi.ControllerServiceCapability_RPC_Type
+	for _, capabilitySupported := range resp.GetCapabilities() {
+		capabilitiesSupported = append(
+			capabilitiesSupported,
+			capabilitySupported.GetRpc().Type,
 		)
 	}
-	sort.Slice(capabilitiesGotted,
+	sort.Slice(capabilitiesSupported,
 		func(i, j int) bool {
-			return capabilitiesGotted[i] < capabilitiesGotted[j]
+			return capabilitiesSupported[i] < capabilitiesSupported[j]
 		})
 	capabilitiesWanted := controllerServiceCapabilities
 	sort.Slice(capabilitiesWanted,
 		func(i, j int) bool {
 			return capabilitiesWanted[i] < capabilitiesWanted[j]
 		})
-	assert.Equal(t, capabilitiesWanted, capabilitiesGotted)
+	assert.Equal(t, capabilitiesWanted, capabilitiesSupported)
 }
 
 func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
@@ -93,7 +94,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 	capacityInputs := []int64{
 		0, laaSOBlockSize - 1, laaSOBlockSize, laaSOBlockSize + 1,
 	}
-	exceptedOutputs := []int64{
+	expectedOutputs := []int64{
 		defaultSize, laaSOBlockSize, laaSOBlockSize, laaSOBlockSize * 2,
 	}
 
@@ -105,7 +106,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 		}
 		rep, err := d.CreateVolume(context.Background(), req)
 		assert.NoError(t, err)
-		assert.Equal(t, exceptedOutputs[idx], rep.Volume.GetCapacityBytes())
+		assert.Equal(t, expectedOutputs[idx], rep.Volume.GetCapacityBytes())
 	}
 }
 
@@ -299,8 +300,8 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 	if len(capabilitiesNotSupported) != 0 {
 		d := NewFakeDriver()
 		req := buildCreateVolumeRequest()
-		req.VolumeCapabilities = make([]*csi.VolumeCapability,
-			len(capabilitiesNotSupported))
+		req.VolumeCapabilities = []*csi.VolumeCapability{}
+		t.Logf("Unsupported access modes: %s", capabilitiesNotSupported)
 		for _, capabilityNotSupported := range capabilitiesNotSupported {
 			req.VolumeCapabilities = append(req.VolumeCapabilities,
 				&csi.VolumeCapability{
@@ -318,6 +319,7 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 		grpcStatus, ok := status.FromError(err)
 		assert.True(t, ok)
 		assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+		assert.ErrorContains(t, err, capabilitiesNotSupported[0].String())
 	} else {
 		t.Log("No unsupported AccessMode.")
 		assert.True(t, true)
