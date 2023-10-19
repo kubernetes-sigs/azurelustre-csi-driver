@@ -18,6 +18,7 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -74,7 +75,7 @@ func TestEnsureMountPoint(t *testing.T) {
 	errorTarget := "./error_is_likely_target"
 	alreadyExistTarget := "./false_is_likely_exist_target"
 	falseTarget := "./false_is_likely_target"
-	//azureFile := "./azure.go"
+	azureFile := "./azurelustre.go"
 
 	tests := []struct {
 		desc        string
@@ -91,11 +92,11 @@ func TestEnsureMountPoint(t *testing.T) {
 			target:      falseTarget,
 			expectedErr: &os.PathError{Op: "open", Path: "./false_is_likely_target", Err: syscall.ENOENT},
 		},
-		//{
-		//	desc:        "[Error] Not a directory",
-		//	target:      azureFile,
-		//	expectedErr: &os.PathError{Op: "mkdir", Path: "./azure.go", Err: syscall.ENOTDIR},
-		//},
+		{
+			desc:        "[Error] Not a directory",
+			target:      azureFile,
+			expectedErr: &os.PathError{Op: "mkdir", Path: "./azurelustre.go", Err: syscall.ENOTDIR},
+		},
 		{
 			desc:        "[Success] Successful run",
 			target:      targetTest,
@@ -134,8 +135,8 @@ func TestEnsureMountPoint(t *testing.T) {
 
 func TestNodePublishVolume(t *testing.T) {
 	volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
-	//createDirError := status.Errorf(codes.Internal,
-	//	"Could not mount target \"./azure.go\": mkdir ./azure.go: not a directory")
+	createDirError := status.Errorf(codes.Internal,
+		"Could not mount target \"./azurelustre.go\": mkdir ./azurelustre.go: not a directory")
 	tests := []struct {
 		desc        string
 		setup       func(*Driver)
@@ -206,15 +207,16 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:          true},
 			expectedErr: nil,
 		},
-		//{
-		//	desc: "Error creating directory",
-		//	req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-		//		VolumeId:          "vol_1",
-		//		TargetPath:        "./azure.go",
-		//		StagingTargetPath: sourceTest,
-		//		Readonly:          true},
-		//	expectedErr: createDirError,
-		//},
+		{
+			desc: "Error creating directory",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:          "vol_1",
+				TargetPath:        "./azurelustre.go",
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: createDirError,
+		},
 		{
 			desc: "Error mounting resource busy",
 			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
@@ -338,11 +340,11 @@ func TestMakeDir(t *testing.T) {
 	assert.NoError(t, err)
 
 	//Failed case
-	//err = makeDir("./azure.go")
-	//var e *os.PathError
-	//if !errors.As(err, &e) {
-	//	t.Errorf("Unexpected Error: %v", err)
-	//}
+	err = makeDir("./azurelustre.go")
+	var e *os.PathError
+	if !errors.As(err, &e) {
+		t.Errorf("Unexpected Error: %v", err)
+	}
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)
