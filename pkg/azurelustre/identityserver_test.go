@@ -22,6 +22,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestGetPluginInfo(t *testing.T) {
@@ -32,22 +34,34 @@ func TestGetPluginInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fakeDriverName, resp.Name)
 	assert.Equal(t, vendorVersion, resp.GetVendorVersion())
+}
 
+func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
 	//Check error when driver name is empty
-	d = NewFakeDriver()
+	d := NewFakeDriver()
 	d.Name = ""
-	req = csi.GetPluginInfoRequest{}
-	resp, err = d.GetPluginInfo(context.Background(), &req)
+	req := csi.GetPluginInfoRequest{}
+	resp, err := d.GetPluginInfo(context.Background(), &req)
 	assert.Error(t, err)
 	assert.Nil(t, resp)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Unavailable, grpcStatus.Code())
+	assert.ErrorContains(t, err, "Driver name")
+}
 
+func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
 	//Check error when version is empty
-	d = NewFakeDriver()
+	d := NewFakeDriver()
 	d.Version = ""
-	req = csi.GetPluginInfoRequest{}
-	resp, err = d.GetPluginInfo(context.Background(), &req)
+	req := csi.GetPluginInfoRequest{}
+	resp, err := d.GetPluginInfo(context.Background(), &req)
 	assert.Error(t, err)
 	assert.Nil(t, resp)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Unavailable, grpcStatus.Code())
+	assert.ErrorContains(t, err, "version")
 }
 
 func TestProbe(t *testing.T) {

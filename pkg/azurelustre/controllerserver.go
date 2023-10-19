@@ -89,7 +89,7 @@ func (d *Driver) CreateVolume(
 	if nil != req.GetVolumeContentSource() {
 		return nil, status.Error(
 			codes.InvalidArgument,
-			"CreateVolume doesn't support be created from an existing volume",
+			"CreateVolume doesn't support being created from an existing volume",
 		)
 	}
 	if nil != req.GetSecrets() {
