@@ -53,7 +53,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 		func(i, j int) bool {
 			return capabilitiesWanted[i] < capabilitiesWanted[j]
 		})
-	assert.Equal(t, capabilitiesGotted, capabilitiesWanted)
+	assert.Equal(t, capabilitiesWanted, capabilitiesGotted)
 }
 
 func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
@@ -117,7 +117,7 @@ func TestCreateVolume_Err_NoName(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_NoVolumeCapabilities(t *testing.T) {
@@ -128,7 +128,7 @@ func TestCreateVolume_Err_NoVolumeCapabilities(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_EmptyVolumeCapabilities(t *testing.T) {
@@ -139,7 +139,7 @@ func TestCreateVolume_Err_EmptyVolumeCapabilities(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_NoParameters(t *testing.T) {
@@ -150,7 +150,7 @@ func TestCreateVolume_Err_NoParameters(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_ParametersNoIP(t *testing.T) {
@@ -161,7 +161,7 @@ func TestCreateVolume_Err_ParametersNoIP(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_ParametersEmptyIP(t *testing.T) {
@@ -172,7 +172,7 @@ func TestCreateVolume_Err_ParametersEmptyIP(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
@@ -183,7 +183,7 @@ func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
@@ -194,7 +194,7 @@ func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
@@ -205,7 +205,7 @@ func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_HasSecrets(t *testing.T) {
@@ -216,7 +216,7 @@ func TestCreateVolume_Err_HasSecrets(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_HasSecretsValue(t *testing.T) {
@@ -227,7 +227,7 @@ func TestCreateVolume_Err_HasSecretsValue(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_HasAccessibilityRequirements(t *testing.T) {
@@ -238,7 +238,7 @@ func TestCreateVolume_Err_HasAccessibilityRequirements(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_BlockVolume(t *testing.T) {
@@ -258,7 +258,7 @@ func TestCreateVolume_Err_BlockVolume(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_BlockMountVolume(t *testing.T) {
@@ -277,7 +277,7 @@ func TestCreateVolume_Err_BlockMountVolume(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
@@ -317,7 +317,7 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 		assert.Error(t, err)
 		grpcStatus, ok := status.FromError(err)
 		assert.True(t, ok)
-		assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+		assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 	} else {
 		t.Log("No unsupported AccessMode.")
 		assert.True(t, true)
@@ -334,7 +334,7 @@ func TestCreateVolume_Err_OperationExists(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.Aborted)
+	assert.Equal(t, codes.Aborted, grpcStatus.Code())
 }
 
 func TestDeleteVolume_Success(t *testing.T) {
@@ -356,7 +356,7 @@ func TestDeleteVolume_Err_NoVolumeID(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
@@ -370,7 +370,7 @@ func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
@@ -386,7 +386,7 @@ func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestDeleteVolume_Err_OperationExists(t *testing.T) {
@@ -402,7 +402,7 @@ func TestDeleteVolume_Err_OperationExists(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.Aborted)
+	assert.Equal(t, codes.Aborted, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Success(t *testing.T) {
@@ -452,7 +452,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeID(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
@@ -467,7 +467,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
@@ -482,7 +482,7 @@ func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
@@ -510,7 +510,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
@@ -538,7 +538,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
 	assert.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, grpcStatus.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 }
 
 func TestValidateVolumeCapabilities_Success_BlockCapabilities(t *testing.T) {

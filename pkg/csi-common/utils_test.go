@@ -34,37 +34,37 @@ func TestParseEndpoint(t *testing.T) {
 	//Valid unix domain socket endpoint
 	sockType, addr, err := ParseEndpoint("unix://fake.sock")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "unix")
-	assert.Equal(t, addr, "fake.sock")
+	assert.Equal(t, "unix", sockType)
+	assert.Equal(t, "fake.sock", addr)
 
 	sockType, addr, err = ParseEndpoint("unix:///fakedir/fakedir/fake.sock")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "unix")
-	assert.Equal(t, addr, "/fakedir/fakedir/fake.sock")
+	assert.Equal(t, "unix", sockType)
+	assert.Equal(t, "/fakedir/fakedir/fake.sock", addr)
 
 	//Valid unix domain socket with uppercase
 	sockType, addr, err = ParseEndpoint("UNIX://fake.sock")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "UNIX")
-	assert.Equal(t, addr, "fake.sock")
+	assert.Equal(t, "UNIX", sockType)
+	assert.Equal(t, "fake.sock", addr)
 
 	//Valid TCP endpoint with ip
 	sockType, addr, err = ParseEndpoint("tcp://127.0.0.1:80")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "tcp")
-	assert.Equal(t, addr, "127.0.0.1:80")
+	assert.Equal(t, "tcp", sockType)
+	assert.Equal(t, "127.0.0.1:80", addr)
 
 	//Valid TCP endpoint with uppercase
 	sockType, addr, err = ParseEndpoint("TCP://127.0.0.1:80")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "TCP")
-	assert.Equal(t, addr, "127.0.0.1:80")
+	assert.Equal(t, "TCP", sockType)
+	assert.Equal(t, "127.0.0.1:80", addr)
 
 	//Valid TCP endpoint with hostname
 	sockType, addr, err = ParseEndpoint("tcp://fakehost:80")
 	assert.NoError(t, err)
-	assert.Equal(t, sockType, "tcp")
-	assert.Equal(t, addr, "fakehost:80")
+	assert.Equal(t, "tcp", sockType)
+	assert.Equal(t, "fakehost:80", addr)
 
 	_, _, err = ParseEndpoint("unix:/fake.sock/")
 	assert.NotNil(t, err)
@@ -170,7 +170,7 @@ func TestNewControllerServiceCapability(t *testing.T) {
 	for _, test := range tests {
 		resp := NewControllerServiceCapability(test.cap)
 		assert.NotNil(t, resp)
-		assert.Equal(t, resp.XXX_sizecache, int32(0))
+		assert.Equal(t, int32(0), resp.XXX_sizecache)
 	}
 }
 
@@ -194,7 +194,7 @@ func TestNewNodeServiceCapability(t *testing.T) {
 	for _, test := range tests {
 		resp := NewNodeServiceCapability(test.cap)
 		assert.NotNil(t, resp)
-		assert.Equal(t, resp.XXX_sizecache, int32(0))
+		assert.Equal(t, int32(0), resp.XXX_sizecache)
 	}
 }
 

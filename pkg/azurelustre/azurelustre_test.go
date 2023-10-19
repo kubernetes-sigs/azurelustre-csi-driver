@@ -63,7 +63,7 @@ func TestNewDriver(t *testing.T) {
 	fakedriver := NewFakeDriver()
 	fakedriver.Name = DefaultDriverName
 	fakedriver.Version = driverVersion
-	assert.Equal(t, driver, fakedriver)
+	assert.Equal(t, fakedriver, driver)
 }
 
 func TestIsRetriableError(t *testing.T) {
