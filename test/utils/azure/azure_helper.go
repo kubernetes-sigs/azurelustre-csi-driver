@@ -23,40 +23,32 @@ import (
 	"os"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
-	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/adal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/go-autorest/autorest/azure"
 )
 
 type Client struct {
 	environment    azure.Environment
 	subscriptionID string
-	groupsClient   resources.GroupsClient
+	groupsClient   *armresources.ResourceGroupsClient
 }
 
-func GetClient(cloud, subscriptionID, clientID, tenantID, clientSecret string) (*Client, error) {
+func GetClient(cloud string, subscriptionID string, clientID string, tenantID string, clientSecret string) (*Client, error) {
 	env, err := azure.EnvironmentFromName(cloud)
 	if err != nil {
 		return nil, err
 	}
-
-	oauthConfig, err := getOAuthConfig(env, subscriptionID, tenantID)
+	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
-
-	armSpt, err := adal.NewServicePrincipalToken(*oauthConfig, clientID, clientSecret, env.ServiceManagementEndpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	return getClient(env, subscriptionID, tenantID, armSpt), nil
+	return getClient(env, subscriptionID, credential), nil
 }
 
-func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (resourceGroup *resources.Group, err error) {
+func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (resourceGroup *armresources.ResourceGroup, err error) {
 	var tags map[string]*string
-	group, err := az.groupsClient.Get(ctx, name)
+	group, err := az.groupsClient.Get(ctx, name, nil)
 	if err == nil && group.Tags != nil {
 		tags = group.Tags
 	} else {
@@ -70,27 +62,27 @@ func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string
 	tags["jobName"] = stringPointer(os.Getenv("JOB_NAME"))
 	tags["creationTimestamp"] = stringPointer(time.Now().UTC().Format(time.RFC3339))
 
-	response, err := az.groupsClient.CreateOrUpdate(ctx, name, resources.Group{
+	response, err := az.groupsClient.CreateOrUpdate(ctx, name, armresources.ResourceGroup{
 		Name:      &name,
 		Location:  &location,
 		ManagedBy: managedBy,
 		Tags:      tags,
-	})
+	}, nil)
 	if err != nil {
-		return &response, err
+		return &response.ResourceGroup, err
 	}
 
-	return &response, nil
+	return &response.ResourceGroup, nil
 }
 
 func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) error {
-	_, err := az.groupsClient.Get(ctx, groupName)
+	_, err := az.groupsClient.Get(ctx, groupName, nil)
 	if err == nil {
-		future, err := az.groupsClient.Delete(ctx, groupName)
+		pollerResp, err := az.groupsClient.BeginDelete(ctx, groupName, nil)
 		if err != nil {
 			return fmt.Errorf("cannot delete resource group %v: %v", groupName, err)
 		}
-		err = future.WaitForCompletionRef(ctx, az.groupsClient.Client)
+		_, err = pollerResp.PollUntilDone(ctx, nil)
 		if err != nil {
 			// Skip the teardown errors because of https://github.com/Azure/go-autorest/issues/357
 			// TODO(feiskyer): fix the issue by upgrading go-autorest version >= v11.3.2.
@@ -100,24 +92,16 @@ func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) err
 	return nil
 }
 
-func getOAuthConfig(env azure.Environment, subscriptionID, tenantID string) (*adal.OAuthConfig, error) {
-	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, tenantID)
+func getClient(env azure.Environment, subscriptionID string, credential *azidentity.ClientSecretCredential) *Client {
+	groupsClientFactory, err := armresources.NewClientFactory(subscriptionID, credential, nil)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
-
-	return oauthConfig, nil
-}
-
-func getClient(env azure.Environment, subscriptionID, tenantID string, armSpt *adal.ServicePrincipalToken) *Client {
 	c := &Client{
 		environment:    env,
 		subscriptionID: subscriptionID,
-		groupsClient:   resources.NewGroupsClientWithBaseURI(env.ResourceManagerEndpoint, subscriptionID),
+		groupsClient:   groupsClientFactory.NewResourceGroupsClient(),
 	}
-
-	authorizer := autorest.NewBearerAuthorizer(armSpt)
-	c.groupsClient.Authorizer = authorizer
 
 	return c
 }
