@@ -28,7 +28,7 @@ type fakeMounter struct {
 }
 
 // Mount overrides mount.FakeMounter.Mount.
-func (f *fakeMounter) Mount(source string, target string, fstype string, options []string) error {
+func (f *fakeMounter) Mount(source string, target string, _ string, _ []string) error {
 	if strings.Contains(source, "ut-container") {
 		return fmt.Errorf("fake Mount: source error")
 	} else if strings.Contains(target, "error_mount") {
@@ -39,7 +39,7 @@ func (f *fakeMounter) Mount(source string, target string, fstype string, options
 }
 
 // MountSensitive overrides mount.FakeMounter.MountSensitive.
-func (f *fakeMounter) MountSensitive(source string, target string, fstype string, options []string, sensitiveOptions []string) error {
+func (f *fakeMounter) MountSensitive(source string, target string, _ string, _ []string, _ []string) error {
 	if strings.Contains(source, "ut-container-sens") {
 		return fmt.Errorf("fake MountSensitive: source error")
 	} else if strings.Contains(target, "error_mount_sens") {
@@ -50,7 +50,7 @@ func (f *fakeMounter) MountSensitive(source string, target string, fstype string
 }
 
 // MountSensitiveWithoutSystemdWithMountFlags overrides mount.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags.
-func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source string, target string, fstype string, options []string, sensitiveOptions []string, mountFlags []string) error {
+func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source string, target string, _ string, _ []string, _ []string, _ []string) error {
 	if strings.Contains(source, "ut-container-sens-mountflags") {
 		return fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
 	} else if strings.Contains(target, "error_mount_sens_mountflags") {

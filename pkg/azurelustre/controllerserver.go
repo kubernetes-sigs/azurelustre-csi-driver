@@ -63,7 +63,7 @@ func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 
 // CreateVolume provisions a volume
 func (d *Driver) CreateVolume(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.CreateVolumeRequest,
 ) (*csi.CreateVolumeResponse, error) {
 	mc := metrics.NewMetricContext(
@@ -199,7 +199,7 @@ func (d *Driver) CreateVolume(
 
 // DeleteVolume delete a volume
 func (d *Driver) DeleteVolume(
-	ctx context.Context, req *csi.DeleteVolumeRequest,
+	_ context.Context, req *csi.DeleteVolumeRequest,
 ) (*csi.DeleteVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"controller_delete_volume",
@@ -242,7 +242,7 @@ func (d *Driver) DeleteVolume(
 
 // ValidateVolumeCapabilities return the capabilities of the volume
 func (d *Driver) ValidateVolumeCapabilities(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.ValidateVolumeCapabilitiesRequest,
 ) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	if nil != req.GetSecrets() {
@@ -280,8 +280,8 @@ func (d *Driver) ValidateVolumeCapabilities(
 
 // ControllerGetCapabilities returns the capabilities of the Controller plugin
 func (d *Driver) ControllerGetCapabilities(
-	ctx context.Context,
-	req *csi.ControllerGetCapabilitiesRequest,
+	_ context.Context,
+	_ *csi.ControllerGetCapabilitiesRequest,
 ) (*csi.ControllerGetCapabilitiesResponse, error) {
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: d.Cap,

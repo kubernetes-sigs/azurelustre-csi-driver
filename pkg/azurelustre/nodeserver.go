@@ -37,7 +37,7 @@ import (
 
 // NodePublishVolume mount the volume from staging to target path
 func (d *Driver) NodePublishVolume(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.NodePublishVolumeRequest,
 ) (*csi.NodePublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
@@ -170,7 +170,7 @@ func (d *Driver) NodePublishVolume(
 
 // NodeUnpublishVolume unmount the volume from the target path
 func (d *Driver) NodeUnpublishVolume(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.NodeUnpublishVolumeRequest,
 ) (*csi.NodeUnpublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
@@ -219,7 +219,7 @@ func (d *Driver) NodeUnpublishVolume(
 
 // NodeGetCapabilities return the capabilities of the Node plugin
 func (d *Driver) NodeGetCapabilities(
-	ctx context.Context, req *csi.NodeGetCapabilitiesRequest,
+	_ context.Context, _ *csi.NodeGetCapabilitiesRequest,
 ) (*csi.NodeGetCapabilitiesResponse, error) {
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: d.NSCap,
@@ -228,8 +228,8 @@ func (d *Driver) NodeGetCapabilities(
 
 // NodeGetInfo return info of the node on which this plugin is running
 func (d *Driver) NodeGetInfo(
-	ctx context.Context,
-	req *csi.NodeGetInfoRequest,
+	_ context.Context,
+	_ *csi.NodeGetInfoRequest,
 ) (*csi.NodeGetInfoResponse, error) {
 	return &csi.NodeGetInfoResponse{
 		NodeId: d.NodeID,
@@ -238,7 +238,7 @@ func (d *Driver) NodeGetInfo(
 
 // NodeGetVolumeStats get volume stats
 func (d *Driver) NodeGetVolumeStats(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.NodeGetVolumeStatsRequest,
 ) (*csi.NodeGetVolumeStatsResponse, error) {
 	if len(req.VolumeId) == 0 {

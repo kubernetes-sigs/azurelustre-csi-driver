@@ -17,7 +17,7 @@ limitations under the License.
 package sanitylocal
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -26,7 +26,7 @@ import (
 )
 
 func TestSanity(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "csi_sanity_test")
+	testDir, err := os.MkdirTemp("", "csi_sanity_test")
 	if err != nil {
 		t.Fatalf("can't create tmp dir %s", err)
 	}
@@ -49,7 +49,7 @@ func TestSanity(t *testing.T) {
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	go func() {
-		driver.Run(socketEndpoint, "", true)
+		driver.Run(socketEndpoint, true)
 	}()
 	sanity.Test(t, config)
 }

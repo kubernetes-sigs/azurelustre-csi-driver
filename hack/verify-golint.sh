@@ -18,12 +18,13 @@ set -euo pipefail
 
 if [[ -z "$(command -v golangci-lint)" ]]; then
   echo "Cannot find golangci-lint. Installing golangci-lint..."
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.45.2
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.0
   export PATH=$PATH:$(go env GOPATH)/bin
 fi
 
 echo "Verifying golint"
 
-golangci-lint run --no-config --enable=golint --disable=typecheck --deadline=10m
+# The deprecated 'golint' linter has been replaced with 'revive'
+golangci-lint run --no-config --enable=revive --deadline=10m
 
 echo "Congratulations! Lint check completed for all Go source files."

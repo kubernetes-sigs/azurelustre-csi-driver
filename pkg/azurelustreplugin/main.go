@@ -64,5 +64,5 @@ func handle() {
 	if driver == nil {
 		klog.Fatalln("Failed to initialize Azure Lustre CSI driver")
 	}
-	driver.Run(*endpoint, "", false)
+	driver.Run(*endpoint, false)
 }
