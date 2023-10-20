@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	VolumeContextMDSIPAddress = "mgs-ip-address"
+	VolumeContextMGSIPAddress = "mgs-ip-address"
 	VolumeContextFSName       = "fs-name"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
@@ -134,8 +134,8 @@ func (d *Driver) CreateVolume(
 
 	// TODO_CHYIN: Need to more parameters later.
 	//             Now simply store the IP and name in the storageClass.
-	mdsIPAddress := parameters[VolumeContextMDSIPAddress]
-	if len(mdsIPAddress) == 0 {
+	mgsIPAddress := parameters[VolumeContextMGSIPAddress]
+	if len(mgsIPAddress) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter mgs-ip-address must be provided",
@@ -150,7 +150,7 @@ func (d *Driver) CreateVolume(
 	}
 	if len(parameters) > 2 {
 		delete(parameters, VolumeContextFSName)
-		delete(parameters, VolumeContextMDSIPAddress)
+		delete(parameters, VolumeContextMGSIPAddress)
 		var errorParameters []string
 		for k, v := range parameters {
 			errorParameters = append(
@@ -176,7 +176,7 @@ func (d *Driver) CreateVolume(
 	// volumeID must be the same when volumeName is the same to satisfy the
 	// idempotent requirement.
 	// volumeID MUST have enough information for troubleshout.
-	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mdsIPAddress)
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress)
 
 	klog.V(2).Infof(
 		"begin to create volumeID(%s)", volumeID,

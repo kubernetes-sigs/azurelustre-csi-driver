@@ -70,7 +70,7 @@ func (d *Driver) NodePublishVolume(
 			"Volume context must be provided")
 	}
 
-	mdsIPAddress, found := context[VolumeContextMDSIPAddress]
+	mgsIPAddress, found := context[VolumeContextMGSIPAddress]
 	if !found {
 		return nil, status.Error(codes.InvalidArgument,
 			"Context mgs-ip-address must be provided")
@@ -87,7 +87,7 @@ func (d *Driver) NodePublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
-	source := fmt.Sprintf("%s@tcp:/%s", mdsIPAddress, azureLustreName)
+	source := fmt.Sprintf("%s@tcp:/%s", mgsIPAddress, azureLustreName)
 
 	mountOptions := []string{}
 	if req.GetReadonly() {

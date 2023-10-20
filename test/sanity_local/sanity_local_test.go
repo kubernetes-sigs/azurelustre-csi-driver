@@ -39,7 +39,7 @@ func TestSanity(t *testing.T) {
 	config.TargetPath = targetPath
 	config.StagingPath = stagingPath
 	config.TestVolumeParameters = map[string]string{
-		azurelustre.VolumeContextMDSIPAddress: "127.0.0.1",
+		azurelustre.VolumeContextMGSIPAddress: "127.0.0.1",
 		azurelustre.VolumeContextFSName:       "test",
 	}
 	driverOptions := azurelustre.DriverOptions{
