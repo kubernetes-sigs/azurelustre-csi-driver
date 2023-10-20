@@ -24,7 +24,7 @@ import (
 	mount "k8s.io/mount-utils"
 )
 
-func TestMountSensitive(t *testing.T) {
+func TestMount(t *testing.T) {
 	tests := []struct {
 		desc        string
 		source      string
@@ -35,6 +35,46 @@ func TestMountSensitive(t *testing.T) {
 			desc:        "[Error] Mocked source error",
 			source:      "ut-container",
 			target:      targetTest,
+			expectedErr: fmt.Errorf("fake Mount: source error"),
+		},
+		{
+			desc:        "[Error] Mocked target error",
+			source:      "container",
+			target:      "error_mount",
+			expectedErr: fmt.Errorf("fake Mount: target error"),
+		},
+		{
+			desc:        "[Success] Successful run",
+			source:      "container",
+			target:      "valid_mount",
+			expectedErr: nil,
+		},
+	}
+
+	d := NewFakeDriver()
+	fakeMounter := &fakeMounter{}
+	d.mounter = &mount.SafeFormatAndMount{
+		Interface: fakeMounter,
+	}
+	for _, test := range tests {
+		err := d.mounter.Mount(test.source, test.target, "", nil)
+		if !reflect.DeepEqual(err, test.expectedErr) {
+			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		}
+	}
+}
+
+func TestMountSensitive(t *testing.T) {
+	tests := []struct {
+		desc        string
+		source      string
+		target      string
+		expectedErr error
+	}{
+		{
+			desc:        "[Error] Mocked source error",
+			source:      "ut-container-sens",
+			target:      targetTest,
 			expectedErr: fmt.Errorf("fake MountSensitive: source error"),
 		},
 		{
@@ -44,9 +84,9 @@ func TestMountSensitive(t *testing.T) {
 			expectedErr: fmt.Errorf("fake MountSensitive: target error"),
 		},
 		{
-			desc:        "[Error] Mocked target error",
+			desc:        "[Success] Successful run",
 			source:      "container",
-			target:      "error_mount",
+			target:      "valid_mount",
 			expectedErr: nil,
 		},
 	}
@@ -58,6 +98,46 @@ func TestMountSensitive(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.MountSensitive(test.source, test.target, "", nil, nil)
+		if !reflect.DeepEqual(err, test.expectedErr) {
+			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		}
+	}
+}
+
+func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
+	tests := []struct {
+		desc        string
+		source      string
+		target      string
+		expectedErr error
+	}{
+		{
+			desc:        "[Error] Mocked source error",
+			source:      "ut-container-sens-mountflags",
+			target:      targetTest,
+			expectedErr: fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: source error"),
+		},
+		{
+			desc:        "[Error] Mocked target error",
+			source:      "container",
+			target:      "error_mount_sens_mountflags",
+			expectedErr: fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
+		},
+		{
+			desc:        "[Success] Successful run",
+			source:      "container",
+			target:      "valid_mount",
+			expectedErr: nil,
+		},
+	}
+
+	d := NewFakeDriver()
+	fakeMounter := &fakeMounter{}
+	d.mounter = &mount.SafeFormatAndMount{
+		Interface: fakeMounter,
+	}
+	for _, test := range tests {
+		err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(test.source, test.target, "", nil, nil, nil)
 		if !reflect.DeepEqual(err, test.expectedErr) {
 			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
 		}

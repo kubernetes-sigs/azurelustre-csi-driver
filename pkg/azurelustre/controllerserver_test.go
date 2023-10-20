@@ -206,6 +206,19 @@ func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
 	assert.ErrorContains(t, err, "fs-name")
 }
 
+func TestCreateVolume_Err_UnknownParameters(t *testing.T) {
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	req.Parameters["NonexistentParameter"] = "Invalid"
+	req.Parameters["AnotherNonexistentParameter"] = "Invalid"
+	_, err := d.CreateVolume(context.Background(), req)
+	assert.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	assert.Regexp(t, "Invalid parameter.*NonexistentParameter.*AnotherNonexistentParameter", err.Error())
+}
+
 func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()

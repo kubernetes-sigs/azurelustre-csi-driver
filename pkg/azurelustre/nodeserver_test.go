@@ -135,6 +135,7 @@ func TestEnsureMountPoint(t *testing.T) {
 
 func TestNodePublishVolume(t *testing.T) {
 	volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
+	alreadyExistTarget := "./false_is_likely_exist_target"
 	createDirError := status.Errorf(codes.Internal,
 		"Could not mount target \"./azurelustre.go\": mkdir ./azurelustre.go: not a directory")
 	tests := []struct {
@@ -157,9 +158,32 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			desc: "Stage target path missing",
 			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:          "vol_1",
-				StagingTargetPath: sourceTest},
+				VolumeId: "vol_1"},
 			expectedErr: status.Error(codes.InvalidArgument, "Target path not provided"),
+		},
+		{
+			desc: "Volume context missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:   "vol_1",
+				TargetPath: targetTest,
+			},
+			expectedErr: status.Error(codes.InvalidArgument, "Volume context must be provided"),
+		},
+		{
+			desc: "MGS IP address missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:      "vol_1",
+				TargetPath:    targetTest,
+				VolumeContext: map[string]string{"fs-name": "lustrefs"}},
+			expectedErr: status.Error(codes.InvalidArgument, "Context mgs-ip-address must be provided"),
+		},
+		{
+			desc: "FS name missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:      "vol_1",
+				TargetPath:    targetTest,
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1"}},
+			expectedErr: status.Error(codes.InvalidArgument, "Context fs-name must be provided"),
 		},
 		{
 			desc: "Valid request read only",
@@ -218,20 +242,32 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedErr: createDirError,
 		},
 		{
-			desc: "Error mounting resource busy",
+			desc: "Success already mounted",
 			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
 				VolumeId:          "vol_1",
-				TargetPath:        targetTest,
+				TargetPath:        alreadyExistTarget,
 				StagingTargetPath: sourceTest,
 				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 				Readonly:          true},
 			expectedErr: nil,
+		},
+		{
+			desc: "Error could not mount",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:          "vol_1",
+				TargetPath:        "error_mount_sens_mountflags",
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: status.Error(codes.Internal,
+				"Could not mount \"1.1.1.1@tcp:/lustrefs\" at \"error_mount_sens_mountflags\": fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
 		},
 	}
 
 	// Setup
 	_ = makeDir(sourceTest)
 	_ = makeDir(targetTest)
+	_ = makeDir(alreadyExistTarget)
 	d := NewFakeDriver()
 	fakeMounter := &fakeMounter{}
 	fakeExec := &testingexec.FakeExec{ExactOrder: true}
@@ -257,6 +293,8 @@ func TestNodePublishVolume(t *testing.T) {
 	// Clean up
 	_ = d.mounter.Unmount(sourceTest)
 	err := d.mounter.Unmount(targetTest)
+	assert.NoError(t, err)
+	err = os.RemoveAll(alreadyExistTarget)
 	assert.NoError(t, err)
 	err = os.RemoveAll(sourceTest)
 	assert.NoError(t, err)
