@@ -34,17 +34,24 @@ const (
 	// DefaultDriverName holds the name of the csi-driver
 	DefaultDriverName        = "azurelustre.csi.azure.com"
 	azureLustreCSIDriverName = "azurelustre_csi_driver"
-	//separator          = "#"
-	volumeIDTemplate = "%s#%s#%s"
-	//ephemeralField     = "csi.storage.k8s.io/ephemeral"
-	//podNamespaceField  = "csi.storage.k8s.io/pod.namespace"
-	//mountOptionsField  = "mountoptions"
-	//falseValue         = "false"
-	//trueValue          = "true"
+	separator                = "#"
+	volumeIDTemplate         = "%s#%s#%s#%s#%t"
 
-	//pvcNameKey      = "csi.storage.k8s.io/pvc/name"
-	//pvcNamespaceKey = "csi.storage.k8s.io/pvc/namespace"
-	//pvNameKey       = "csi.storage.k8s.io/pv/name"
+	podNameKey            = "csi.storage.k8s.io/pod.name"
+	podNamespaceKey       = "csi.storage.k8s.io/pod.namespace"
+	podUIDKey             = "csi.storage.k8s.io/pod.uid"
+	serviceAccountNameKey = "csi.storage.k8s.io/serviceaccount.name"
+	pvcNameKey            = "csi.storage.k8s.io/pvc/name"
+	pvcNamespaceKey       = "csi.storage.k8s.io/pvc/namespace"
+	pvNameKey             = "csi.storage.k8s.io/pv/name"
+
+	podNameMetadata            = "${pod.metadata.name}"
+	podNamespaceMetadata       = "${pod.metadata.namespace}"
+	podUIDMetadata             = "${pod.metadata.uid}"
+	serviceAccountNameMetadata = "${serviceAccount.metadata.name}"
+	pvcNameMetadata            = "${pvc.metadata.name}"
+	pvcNamespaceMetadata       = "${pvc.metadata.namespace}"
+	pvNameMetadata             = "${pv.metadata.name}"
 )
 
 var (
@@ -69,15 +76,14 @@ var (
 	}
 )
 
-var (
-	retriableErrors = []string{}
-)
+var retriableErrors = []string{}
 
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
 	NodeID                     string
 	DriverName                 string
 	EnableAzureLustreMockMount bool
+	WorkingMountDir            string
 }
 
 // Driver implements all interfaces of CSI drivers
@@ -90,6 +96,8 @@ type Driver struct {
 	enableAzureLustreMockMount bool
 	mounter                    *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
 	volLockMap                 *util.LockMap
+	// Directory to temporarily mount to for subdirectory creation
+	workingMountDir string
 	// A map storing all volumes with ongoing operations so that additional operations
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks      *volumeLocks
@@ -103,6 +111,7 @@ func NewDriver(options *DriverOptions) *Driver {
 		volLockMap:                 util.NewLockMap(),
 		volumeLocks:                newVolumeLocks(),
 		enableAzureLustreMockMount: options.EnableAzureLustreMockMount,
+		workingMountDir:            options.WorkingMountDir,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -155,4 +164,15 @@ func isRetriableError(err error) bool {
 		}
 	}
 	return false
+}
+
+// replaceWithMap replace key with value for str
+func replaceWithMap(str string, m map[string]string) string {
+	for k, v := range m {
+		if k != "" {
+			str = strings.ReplaceAll(str, k, v)
+		}
+	}
+
+	return str
 }

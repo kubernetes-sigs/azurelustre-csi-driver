@@ -111,6 +111,7 @@ func TestUnlockEntryNotExists(t *testing.T) {
 	testLockMap.UnlockEntry("entry2")
 	testLockMap.UnlockEntry("entry1")
 }
+
 func TestBytesToGiB(t *testing.T) {
 	var sizeInBytes int64 = 5 * GiB
 
@@ -157,7 +158,7 @@ func TestGetMountOptions(t *testing.T) {
 }
 
 func TestMakeDir(t *testing.T) {
-	//Successfully create directory
+	// Successfully create directory
 	targetTest := "./target_test"
 	err := MakeDir(targetTest)
 	assert.NoError(t, err)

@@ -37,7 +37,7 @@ func TestGetPluginInfo(t *testing.T) {
 }
 
 func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
-	//Check error when driver name is empty
+	// Check error when driver name is empty
 	d := NewFakeDriver()
 	d.Name = ""
 	req := csi.GetPluginInfoRequest{}
@@ -51,7 +51,7 @@ func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
 }
 
 func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
-	//Check error when version is empty
+	// Check error when version is empty
 	d := NewFakeDriver()
 	d.Version = ""
 	req := csi.GetPluginInfoRequest{}

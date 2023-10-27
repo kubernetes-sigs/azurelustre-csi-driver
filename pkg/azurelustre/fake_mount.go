@@ -28,36 +28,36 @@ type fakeMounter struct {
 }
 
 // Mount overrides mount.FakeMounter.Mount.
-func (f *fakeMounter) Mount(source string, target string, _ string, _ []string) error {
+func (f *fakeMounter) Mount(source string, target string, fstype string, options []string) error {
 	if strings.Contains(source, "ut-container") {
 		return fmt.Errorf("fake Mount: source error")
 	} else if strings.Contains(target, "error_mount") {
 		return fmt.Errorf("fake Mount: target error")
 	}
 
-	return nil
+	return f.FakeMounter.Mount(source, target, fstype, options)
 }
 
 // MountSensitive overrides mount.FakeMounter.MountSensitive.
-func (f *fakeMounter) MountSensitive(source string, target string, _ string, _ []string, _ []string) error {
+func (f *fakeMounter) MountSensitive(source string, target string, fstype string, options []string, sensitiveOptions []string) error {
 	if strings.Contains(source, "ut-container-sens") {
 		return fmt.Errorf("fake MountSensitive: source error")
 	} else if strings.Contains(target, "error_mount_sens") {
 		return fmt.Errorf("fake MountSensitive: target error")
 	}
 
-	return nil
+	return f.FakeMounter.MountSensitive(source, target, fstype, options, sensitiveOptions)
 }
 
 // MountSensitiveWithoutSystemdWithMountFlags overrides mount.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags.
-func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source string, target string, _ string, _ []string, _ []string, _ []string) error {
+func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source string, target string, fstype string, options []string, sensitiveOptions []string, mountFlags []string) error {
 	if strings.Contains(source, "ut-container-sens-mountflags") {
 		return fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
 	} else if strings.Contains(target, "error_mount_sens_mountflags") {
 		return fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: target error")
 	}
 
-	return nil
+	return f.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags(source, target, fstype, options, sensitiveOptions, mountFlags)
 }
 
 func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {

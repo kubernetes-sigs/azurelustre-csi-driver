@@ -32,6 +32,7 @@ var (
 	version                    = flag.Bool("version", false, "Print the version and exit.")
 	driverName                 = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
 	enableAzureLustreMockMount = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
+	workingMountDir            = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 )
 
 func main() {
@@ -56,6 +57,7 @@ func handle() {
 		NodeID:                     *nodeID,
 		DriverName:                 *driverName,
 		EnableAzureLustreMockMount: *enableAzureLustreMockMount,
+		WorkingMountDir:            *workingMountDir,
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	if driver == nil {
