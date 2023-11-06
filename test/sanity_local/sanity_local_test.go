@@ -17,16 +17,16 @@ limitations under the License.
 package sanitylocal
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/kubernetes-csi/csi-test/v4/pkg/sanity"
+	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 func TestSanity(t *testing.T) {
-	testDir, err := ioutil.TempDir("", "csi_sanity_test")
+	testDir, err := os.MkdirTemp("", "csi_sanity_test")
 	if err != nil {
 		t.Fatalf("can't create tmp dir %s", err)
 	}
@@ -39,7 +39,7 @@ func TestSanity(t *testing.T) {
 	config.TargetPath = targetPath
 	config.StagingPath = stagingPath
 	config.TestVolumeParameters = map[string]string{
-		azurelustre.VolumeContextMDSIPAddress: "127.0.0.1",
+		azurelustre.VolumeContextMGSIPAddress: "127.0.0.1",
 		azurelustre.VolumeContextFSName:       "test",
 	}
 	driverOptions := azurelustre.DriverOptions{
@@ -49,7 +49,7 @@ func TestSanity(t *testing.T) {
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	go func() {
-		driver.Run(socketEndpoint, "", true)
+		driver.Run(socketEndpoint, true)
 	}()
 	sanity.Test(t, config)
 }

@@ -29,7 +29,7 @@ deployDirNum=`find ./deploy/ -maxdepth 1 -type f -name '*.yaml' ! -name 'kustomi
 #   exit 1
 # fi
 
-for path in "deploy/*.yaml" "deploy/example/*.yaml"  "deploy/example/metrics/*.yaml"
+for path in $(find docs deploy -name '*.yaml')
 do
     echo "checking yamllint under path: $path ..."
     yamllint -f parsable $path | grep -v "line too long" > $LOG

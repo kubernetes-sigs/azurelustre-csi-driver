@@ -36,7 +36,7 @@ func TestNodeGetInfo(t *testing.T) {
 	req := csi.NodeGetInfoRequest{}
 	resp, err := ns.NodeGetInfo(context.Background(), &req)
 	assert.NoError(t, err)
-	assert.Equal(t, resp.GetNodeId(), fakeNodeID)
+	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
 
 func TestNodeGetCapabilities(t *testing.T) {

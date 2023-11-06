@@ -18,6 +18,7 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -48,7 +49,7 @@ func TestNodeGetInfo(t *testing.T) {
 	req := csi.NodeGetInfoRequest{}
 	resp, err := d.NodeGetInfo(context.Background(), &req)
 	assert.NoError(t, err)
-	assert.Equal(t, resp.GetNodeId(), fakeNodeID)
+	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
 
 func TestNodeGetCapabilities(t *testing.T) {
@@ -66,7 +67,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 	req := csi.NodeGetCapabilitiesRequest{}
 	resp, err := d.NodeGetCapabilities(context.Background(), &req)
 	assert.NotNil(t, resp)
-	assert.Equal(t, resp.Capabilities[0].GetType(), capType)
+	assert.Equal(t, capType, resp.Capabilities[0].GetType())
 	assert.NoError(t, err)
 }
 
@@ -74,7 +75,7 @@ func TestEnsureMountPoint(t *testing.T) {
 	errorTarget := "./error_is_likely_target"
 	alreadyExistTarget := "./false_is_likely_exist_target"
 	falseTarget := "./false_is_likely_target"
-	//azureFile := "./azure.go"
+	azureFile := "./azurelustre.go"
 
 	tests := []struct {
 		desc        string
@@ -91,11 +92,11 @@ func TestEnsureMountPoint(t *testing.T) {
 			target:      falseTarget,
 			expectedErr: &os.PathError{Op: "open", Path: "./false_is_likely_target", Err: syscall.ENOENT},
 		},
-		//{
-		//	desc:        "[Error] Not a directory",
-		//	target:      azureFile,
-		//	expectedErr: &os.PathError{Op: "mkdir", Path: "./azure.go", Err: syscall.ENOTDIR},
-		//},
+		{
+			desc:        "[Error] Not a directory",
+			target:      azureFile,
+			expectedErr: &os.PathError{Op: "mkdir", Path: "./azurelustre.go", Err: syscall.ENOTDIR},
+		},
 		{
 			desc:        "[Success] Successful run",
 			target:      targetTest,
@@ -134,8 +135,9 @@ func TestEnsureMountPoint(t *testing.T) {
 
 func TestNodePublishVolume(t *testing.T) {
 	volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
-	//createDirError := status.Errorf(codes.Internal,
-	//	"Could not mount target \"./azure.go\": mkdir ./azure.go: not a directory")
+	alreadyExistTarget := "./false_is_likely_exist_target"
+	createDirError := status.Errorf(codes.Internal,
+		"Could not mount target \"./azurelustre.go\": mkdir ./azurelustre.go: not a directory")
 	tests := []struct {
 		desc        string
 		setup       func(*Driver)
@@ -156,9 +158,32 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			desc: "Stage target path missing",
 			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:          "vol_1",
-				StagingTargetPath: sourceTest},
+				VolumeId: "vol_1"},
 			expectedErr: status.Error(codes.InvalidArgument, "Target path not provided"),
+		},
+		{
+			desc: "Volume context missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:   "vol_1",
+				TargetPath: targetTest,
+			},
+			expectedErr: status.Error(codes.InvalidArgument, "Volume context must be provided"),
+		},
+		{
+			desc: "MGS IP address missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:      "vol_1",
+				TargetPath:    targetTest,
+				VolumeContext: map[string]string{"fs-name": "lustrefs"}},
+			expectedErr: status.Error(codes.InvalidArgument, "Context mgs-ip-address must be provided"),
+		},
+		{
+			desc: "FS name missing",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:      "vol_1",
+				TargetPath:    targetTest,
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1"}},
+			expectedErr: status.Error(codes.InvalidArgument, "Context fs-name must be provided"),
 		},
 		{
 			desc: "Valid request read only",
@@ -206,30 +231,43 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:          true},
 			expectedErr: nil,
 		},
-		//{
-		//	desc: "Error creating directory",
-		//	req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-		//		VolumeId:          "vol_1",
-		//		TargetPath:        "./azure.go",
-		//		StagingTargetPath: sourceTest,
-		//		Readonly:          true},
-		//	expectedErr: createDirError,
-		//},
 		{
-			desc: "Error mounting resource busy",
+			desc: "Error creating directory",
 			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
 				VolumeId:          "vol_1",
-				TargetPath:        targetTest,
+				TargetPath:        "./azurelustre.go",
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: createDirError,
+		},
+		{
+			desc: "Success already mounted",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:          "vol_1",
+				TargetPath:        alreadyExistTarget,
 				StagingTargetPath: sourceTest,
 				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 				Readonly:          true},
 			expectedErr: nil,
+		},
+		{
+			desc: "Error could not mount",
+			req: csi.NodePublishVolumeRequest{VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:          "vol_1",
+				TargetPath:        "error_mount_sens_mountflags",
+				StagingTargetPath: sourceTest,
+				VolumeContext:     map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:          true},
+			expectedErr: status.Error(codes.Internal,
+				"Could not mount \"1.1.1.1@tcp:/lustrefs\" at \"error_mount_sens_mountflags\": fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
 		},
 	}
 
 	// Setup
 	_ = makeDir(sourceTest)
 	_ = makeDir(targetTest)
+	_ = makeDir(alreadyExistTarget)
 	d := NewFakeDriver()
 	fakeMounter := &fakeMounter{}
 	fakeExec := &testingexec.FakeExec{ExactOrder: true}
@@ -255,6 +293,8 @@ func TestNodePublishVolume(t *testing.T) {
 	// Clean up
 	_ = d.mounter.Unmount(sourceTest)
 	err := d.mounter.Unmount(targetTest)
+	assert.NoError(t, err)
+	err = os.RemoveAll(alreadyExistTarget)
 	assert.NoError(t, err)
 	err = os.RemoveAll(sourceTest)
 	assert.NoError(t, err)
@@ -338,11 +378,11 @@ func TestMakeDir(t *testing.T) {
 	assert.NoError(t, err)
 
 	//Failed case
-	//err = makeDir("./azure.go")
-	//var e *os.PathError
-	//if !errors.As(err, &e) {
-	//	t.Errorf("Unexpected Error: %v", err)
-	//}
+	err = makeDir("./azurelustre.go")
+	var e *os.PathError
+	if !errors.As(err, &e) {
+		t.Errorf("Unexpected Error: %v", err)
+	}
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)

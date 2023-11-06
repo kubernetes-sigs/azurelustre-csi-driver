@@ -48,6 +48,28 @@ const (
 )
 
 var (
+	controllerServiceCapabilities = []csi.ControllerServiceCapability_RPC_Type{
+		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+	}
+
+	volumeCapabilities = []csi.VolumeCapability_AccessMode_Mode{
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
+	}
+
+	nodeServiceCapabilities = []csi.NodeServiceCapability_RPC_Type{
+		csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+		csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+	}
+)
+
+var (
 	retriableErrors = []string{}
 )
 
@@ -94,7 +116,7 @@ func NewDriver(options *DriverOptions) *Driver {
 }
 
 // Run driver initialization
-func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
+func (d *Driver) Run(endpoint string, testBool bool) {
 	versionMeta, err := GetVersionYAML(d.Name)
 	if err != nil {
 		klog.Fatalf("%v", err)
@@ -109,25 +131,9 @@ func (d *Driver) Run(endpoint string, kubeconfig string, testBool bool) {
 	// TODO_JUSJIN: revisit these caps
 	// Initialize default library driver
 	// TODO_CHYIN: move this to {service}.go
-	d.AddControllerServiceCapabilities(
-		[]csi.ControllerServiceCapability_RPC_Type{
-			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-			csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-		})
-	d.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
-	})
-
-	d.AddNodeServiceCapabilities([]csi.NodeServiceCapability_RPC_Type{
-		csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
-		csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-	})
+	d.AddControllerServiceCapabilities(controllerServiceCapabilities)
+	d.AddVolumeCapabilityAccessModes(volumeCapabilities)
+	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
 	s := csicommon.NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer

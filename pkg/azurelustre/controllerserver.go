@@ -32,27 +32,10 @@ import (
 )
 
 const (
-	VolumeContextMDSIPAddress = "mgs-ip-address"
+	VolumeContextMGSIPAddress = "mgs-ip-address"
 	VolumeContextFSName       = "fs-name"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
-)
-
-var (
-	controllerServiceCapabilities = []csi.ControllerServiceCapability_RPC_Type{
-		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-		csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-	}
-
-	volumeCapabilities = []csi.VolumeCapability_AccessMode_Mode{
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
-		csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
-	}
 )
 
 func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
@@ -80,7 +63,7 @@ func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 
 // CreateVolume provisions a volume
 func (d *Driver) CreateVolume(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.CreateVolumeRequest,
 ) (*csi.CreateVolumeResponse, error) {
 	mc := metrics.NewMetricContext(
@@ -106,7 +89,7 @@ func (d *Driver) CreateVolume(
 	if nil != req.GetVolumeContentSource() {
 		return nil, status.Error(
 			codes.InvalidArgument,
-			"CreateVolume doesn't support be created from an existing volume",
+			"CreateVolume doesn't support being created from an existing volume",
 		)
 	}
 	if nil != req.GetSecrets() {
@@ -151,8 +134,8 @@ func (d *Driver) CreateVolume(
 
 	// TODO_CHYIN: Need to more parameters later.
 	//             Now simply store the IP and name in the storageClass.
-	mdsIPAddress := parameters[VolumeContextMDSIPAddress]
-	if len(mdsIPAddress) == 0 {
+	mgsIPAddress := parameters[VolumeContextMGSIPAddress]
+	if len(mgsIPAddress) == 0 {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume Parameter mgs-ip-address must be provided",
@@ -167,7 +150,7 @@ func (d *Driver) CreateVolume(
 	}
 	if len(parameters) > 2 {
 		delete(parameters, VolumeContextFSName)
-		delete(parameters, VolumeContextMDSIPAddress)
+		delete(parameters, VolumeContextMGSIPAddress)
 		var errorParameters []string
 		for k, v := range parameters {
 			errorParameters = append(
@@ -193,7 +176,7 @@ func (d *Driver) CreateVolume(
 	// volumeID must be the same when volumeName is the same to satisfy the
 	// idempotent requirement.
 	// volumeID MUST have enough information for troubleshout.
-	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mdsIPAddress)
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress)
 
 	klog.V(2).Infof(
 		"begin to create volumeID(%s)", volumeID,
@@ -216,7 +199,7 @@ func (d *Driver) CreateVolume(
 
 // DeleteVolume delete a volume
 func (d *Driver) DeleteVolume(
-	ctx context.Context, req *csi.DeleteVolumeRequest,
+	_ context.Context, req *csi.DeleteVolumeRequest,
 ) (*csi.DeleteVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"controller_delete_volume",
@@ -259,7 +242,7 @@ func (d *Driver) DeleteVolume(
 
 // ValidateVolumeCapabilities return the capabilities of the volume
 func (d *Driver) ValidateVolumeCapabilities(
-	ctx context.Context,
+	_ context.Context,
 	req *csi.ValidateVolumeCapabilitiesRequest,
 ) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	if nil != req.GetSecrets() {
@@ -297,20 +280,10 @@ func (d *Driver) ValidateVolumeCapabilities(
 
 // ControllerGetCapabilities returns the capabilities of the Controller plugin
 func (d *Driver) ControllerGetCapabilities(
-	ctx context.Context,
-	req *csi.ControllerGetCapabilitiesRequest,
+	_ context.Context,
+	_ *csi.ControllerGetCapabilitiesRequest,
 ) (*csi.ControllerGetCapabilitiesResponse, error) {
-	var capabilities []*csi.ControllerServiceCapability
-	for _, capability := range controllerServiceCapabilities {
-		capabilities = append(capabilities, &csi.ControllerServiceCapability{
-			Type: &csi.ControllerServiceCapability_Rpc{
-				Rpc: &csi.ControllerServiceCapability_RPC{
-					Type: capability,
-				},
-			},
-		})
-	}
 	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: capabilities,
+		Capabilities: d.Cap,
 	}, nil
 }
