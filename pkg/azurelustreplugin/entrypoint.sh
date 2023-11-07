@@ -103,7 +103,7 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
   echo "$(date -u) Installing Lustre client packages for OS=${osReleaseCodeName}, kernel=${kernelVersion} "
 
-  if [ ! -f /etc/apt/sources.list.d/amlfs.list ]; then
+  if [ ! -f /etc/apt/sources.list.d/amlfs.list ] ||  ! ls /var/lib/apt/lists  | grep "packages.microsoft.com_repos_amlfs" &> /dev/null; then
     curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
     apt-get update
