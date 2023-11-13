@@ -86,6 +86,7 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, c
 	}
 
 	opts := []grpc.ServerOption{
+		grpc.MaxConcurrentStreams(200),
 		grpc.UnaryInterceptor(logGRPC),
 	}
 	server := grpc.NewServer(opts...)
