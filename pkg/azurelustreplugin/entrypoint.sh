@@ -68,7 +68,7 @@ echo "installClientPackages: ${installClientPackages}"
 requiredLustreVersion=${LUSTRE_VERSION:-"2.15.1"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
-pkgVersion="${requiredLustreVersion}-29-gbae0abe"
+pkgVersion="${requiredLustreVersion}-33-g0168b83"
 echo "pkgVersion: ${pkgVersion}"
 
 pkgName="amlfs-lustre-client-${pkgVersion}"
