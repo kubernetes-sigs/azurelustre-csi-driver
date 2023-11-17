@@ -26,10 +26,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func init() {
-	_ = flag.Set("logtostderr", "true")
-}
-
 var (
 	endpoint                   = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
 	nodeID                     = flag.String("nodeid", "", "node id")
@@ -40,6 +36,7 @@ var (
 
 func main() {
 	klog.InitFlags(nil)
+	_ = flag.Set("logtostderr", "true")
 	flag.Parse()
 	if *version {
 		info, err := azurelustre.GetVersionYAML(*driverName)
