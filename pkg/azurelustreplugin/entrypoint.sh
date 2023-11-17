@@ -68,7 +68,10 @@ echo "installClientPackages: ${installClientPackages}"
 requiredLustreVersion=${LUSTRE_VERSION:-"2.15.1"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
-pkgVersion="${requiredLustreVersion}-33-g0168b83"
+requiredClientSha=${CLIENT_SHA_SUFFIX:-"33-g0168b83"}
+echo "requiredClientSha: ${requiredClientSha}"
+
+pkgVersion="${requiredLustreVersion}-${requiredClientSha}"
 echo "pkgVersion: ${pkgVersion}"
 
 pkgName="amlfs-lustre-client-${pkgVersion}"
@@ -89,7 +92,7 @@ elif [[ ! -z $(grep -R 'jammy' /etc/os-release) ]]; then
 # deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
 # deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
 # EOF
-# 
+#
   osReleaseCodeName="jammy"
 else
   echo "Unsupported Linux distro"
@@ -108,15 +111,36 @@ if [[ "${installClientPackages}" == "yes" ]]; then
     echo "deb [arch=amd64] https://packages.microsoft.com/repos/amlfs-${osReleaseCodeName}/ ${osReleaseCodeName} main" | tee /etc/apt/sources.list.d/amlfs.list
     apt-get update
   fi
-  
+
   echo "$(date -u) Installing Lustre client modules: ${pkgName}=${kernelVersion}"
 
-  # grub issue
-  # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
-  DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
-    ${pkgName}=${kernelVersion}
+  tries=3
+  install_success=false
+  while [[ tries -gt 0 ]]; do
+    # grub issue
+    # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
+    if ! DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
+      ${pkgName}=${kernelVersion}; then
+      echo "$(date -u) Error installing Lustre client modules. Will try removing existing versions"
+      if ! lustre_rmmod; then
+        echo "$(date -u) Error: Unable to unload running module. Are there still mounted Lustre filesystems on this node? Old Lustre client version may continue running."
+      fi
+      echo "$(date -u) Uninstalling existing Lustre client versions."
+      apt remove --purge -y '*lustre-client*' || true
+      tries=$((tries - 1))
+    else
+      install_success=true
+      break
+    fi
+  done
 
-  echo "$(date -u) Installed Lustre client packages."
+  echo "$(date -u) Install success: ${install_success}, Tries left: ${tries}"
+
+  if ! ${install_success}; then
+    echo "$(date -u) Error: Could not install necessary Lustre drivers!"
+  else
+    echo "$(date -u) Installed Lustre client packages."
+  fi
 
   init_lnet="true"
 
