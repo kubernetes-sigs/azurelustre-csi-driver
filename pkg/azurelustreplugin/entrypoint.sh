@@ -115,19 +115,27 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   echo "$(date -u) Installing Lustre client modules: ${pkgName}=${kernelVersion}"
 
   tries=3
+  sleep_before_retry=15
   install_success=false
   while [[ tries -gt 0 ]]; do
     # grub issue
     # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
-    if ! DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" \
       ${pkgName}=${kernelVersion}; then
       echo "$(date -u) Error installing Lustre client modules. Will try removing existing versions"
-      if ! lustre_rmmod; then
+      # Check if lustre_rmmod is available, attempt to unload the modules if so.
+      # If modules are already uninstalled, this will still pass
+      if type lustre_rmmod >/dev/null 2>&1 && ! lustre_rmmod; then
         echo "$(date -u) Error: Unable to unload running module. Are there still mounted Lustre filesystems on this node? Old Lustre client version may continue running."
       fi
+      if existing_versions=$(dpkg-query --showformat=' ${Package}=${Version}' --show '*lustre-client*'); then
+        echo  "$(date -u) The following existing versions of the Lustre client are installed and will be removed:${existing_versions}"
+      fi
       echo "$(date -u) Uninstalling existing Lustre client versions."
-      apt remove --purge -y '*lustre-client*' || true
+      apt-get remove --purge -y '*lustre-client*' || true
       tries=$((tries - 1))
+      sleep $sleep_before_retry
+      sleep_before_retry=$((sleep_before_retry * 2))
     else
       install_success=true
       break
@@ -137,9 +145,9 @@ if [[ "${installClientPackages}" == "yes" ]]; then
   echo "$(date -u) Install success: ${install_success}, Tries left: ${tries}"
 
   if ! ${install_success}; then
-    echo "$(date -u) Error: Could not install necessary Lustre drivers!"
+    echo "$(date -u) Error: Could not install necessary Lustre drivers for: ${pkgName}=${kernelVersion}"
   else
-    echo "$(date -u) Installed Lustre client packages."
+    echo "$(date -u) Installed Lustre client packages for: ${pkgName}=${kernelVersion}"
   fi
 
   init_lnet="true"
