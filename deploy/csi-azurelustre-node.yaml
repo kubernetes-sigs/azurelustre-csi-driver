@@ -58,10 +58,6 @@ spec:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
             - --v=2
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/azurelustre.csi.azure.com-reg.sock /csi/csi.sock"]
           livenessProbe:
             exec:
               command:
@@ -90,6 +86,10 @@ spec:
         - name: azurelustre
           image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.12
           imagePullPolicy: IfNotPresent
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "lustre_rmmod"]
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -117,6 +117,8 @@ spec:
               value: "yes"
             - name: LUSTRE_VERSION
               value: "2.15.1"
+            - name: CLIENT_SHA_SUFFIX
+              value: "33-g0168b83"
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
