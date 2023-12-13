@@ -144,13 +144,7 @@ func (d *Driver) NodePublishVolume(
 
 		interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
 
-		isSubpath, err := ensureStrictSubpath(source, interpolatedSubDir)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal,
-				"failed to determine if %q is a strict subpath of %q: %v", interpolatedSubDir, source, err)
-		}
-
-		if !isSubpath {
+		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(
 				codes.InvalidArgument,
 				"Context sub-dir must be strict subpath",
@@ -336,6 +330,7 @@ func (d *Driver) NodeUnpublishVolume(
 			cleanupSubDir = false
 		default:
 			subDirToClean = strings.TrimPrefix(sourceWithSubDir, sourceRoot)
+			subDirToClean = strings.Trim(subDirToClean, "/")
 		}
 	}
 
@@ -574,13 +569,7 @@ func getInternalMountPath(workingMountDir string, vol *lustreVolume) (string, er
 		return "", status.Error(codes.Internal, "cannot get internal mount path for nil or empty volume")
 	}
 
-	isSubpath, err := ensureStrictSubpath(workingMountDir, vol.id)
-	if err != nil {
-		return "", status.Errorf(codes.Internal,
-			"failed to determine if %q is a strict subpath of %q: %v", vol.id, workingMountDir, err)
-	}
-
-	if !isSubpath {
+	if isSubpath := ensureStrictSubpath(vol.id); !isSubpath {
 		return "", status.Errorf(
 			codes.InvalidArgument,
 			"volume name or id %q must be interpretable as a strict subpath",
@@ -597,13 +586,7 @@ func getInternalVolumePath(workingMountDir string, vol *lustreVolume, subDirPath
 		return "", err
 	}
 
-	isSubpath, err := ensureStrictSubpath(internalMountPath, subDirPath)
-	if err != nil {
-		return "", status.Errorf(codes.Internal,
-			"failed to determine if %q is a strict subpath of %q: %v", subDirPath, internalMountPath, err)
-	}
-
-	if !isSubpath {
+	if isSubpath := ensureStrictSubpath(subDirPath); !isSubpath {
 		return "", status.Errorf(
 			codes.InvalidArgument,
 			"sub-dir %q must be strict subpath",
@@ -697,26 +680,12 @@ func (d *Driver) internalUnmount(vol *lustreVolume) error {
 	return err
 }
 
-func ensureStrictSubpath(basePath, subPath string) (bool, error) {
-	absoluteBasePath, err := filepath.Abs(basePath)
-	if err != nil {
-		return false, status.Errorf(codes.Internal, "failed to find absolute path for base path directory: %v", err.Error())
-	}
-
-	absoluteSubPath, err := filepath.Abs(filepath.Join(absoluteBasePath, subPath))
-	if err != nil {
-		return false, status.Errorf(codes.Internal, "failed to find absolute path for sub path directory: %v", err.Error())
-	}
-
-	if !strings.HasPrefix(absoluteSubPath, absoluteBasePath) {
-		return false, nil
-	}
-
-	if absoluteSubPath == absoluteBasePath {
-		return false, nil
-	}
-
-	return true, nil
+// Ensures that the given subpath, when joined with any base path, will be a path
+// within the given base path, and not equal to it. This ensures that the this
+// subpath value can be safely created or deleted under the base path without
+// affecting other data in the base path.
+func ensureStrictSubpath(subPath string) bool {
+	return filepath.IsLocal(subPath) && filepath.Clean(subPath) != "."
 }
 
 type lustreVolume struct {

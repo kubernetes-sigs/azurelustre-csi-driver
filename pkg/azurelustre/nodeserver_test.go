@@ -925,62 +925,45 @@ func TestNodeGetVolumeStats(t *testing.T) {
 func TestEnsureStrictSubpath(t *testing.T) {
 	cases := []struct {
 		desc           string
-		basePath       string
 		subPath        string
-		expectedErr    error
 		expectedResult bool
 	}{
 		{
 			desc:           "valid subpath",
-			basePath:       "/basePath",
 			subPath:        "subPath",
-			expectedErr:    nil,
-			expectedResult: true,
-		},
-		{
-			desc:           "valid subpath with leading slash",
-			basePath:       "/basePath",
-			subPath:        "/subPath",
-			expectedErr:    nil,
 			expectedResult: true,
 		},
 		{
 			desc:           "valid subpath, does not actually get to parent",
-			basePath:       "/basePath",
 			subPath:        "subPath/../otherSubPath",
-			expectedErr:    nil,
 			expectedResult: true,
 		},
 		{
+			desc:           "invalid subpath, leading slash",
+			subPath:        "/subPath",
+			expectedResult: false,
+		},
+		{
 			desc:           "invalid subpath, attempts to go to parent",
-			basePath:       "/basePath",
 			subPath:        "../subPath",
-			expectedErr:    nil,
 			expectedResult: false,
 		},
 		{
 			desc:           "invalid subpath, same as parent",
-			basePath:       "/basePath",
 			subPath:        "./",
-			expectedErr:    nil,
 			expectedResult: false,
 		},
 		{
 			desc:           "invalid subpath, empty",
-			basePath:       "/basePath",
 			subPath:        "",
-			expectedErr:    nil,
 			expectedResult: false,
 		},
 	}
 	for _, test := range cases {
 		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
-			actualResult, err := ensureStrictSubpath(test.basePath, test.subPath)
+			actualResult := ensureStrictSubpath(test.subPath)
 
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
 			assert.Equal(t, test.expectedResult, actualResult, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, actualResult, test.expectedResult)
 		})
 	}
