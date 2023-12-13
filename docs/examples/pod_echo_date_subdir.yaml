@@ -1,4 +1,7 @@
 ---
+# The subdirectory functionality is not yet released; these files are
+# provided as examples for the next version of this driver. This message
+# will be removed at release time when we make this new release the default
 kind: Pod
 apiVersion: v1
 metadata:

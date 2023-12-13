@@ -369,6 +369,68 @@ func (d *Driver) NodeUnpublishVolume(
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
+// Staging and Unstaging is not able to be supported with how Lustre is mounted
+//
+// This was discovered during a proof of concept implementation and the issue
+// is as follows:
+//
+// When the kubelet process attempts to unstage / unmount a Lustre mount that
+// has been staged to a global mount point, it performs extra checks to ensure
+// that the same device is not mounted anywhere else in the filesystem. For
+// usual configurations, this would be a reasonable check to ensure that we
+// aren't trying to remove something that is still in use elsewhere in the
+// system. However, the way Lustre mounts are configured is not compatible
+// with the check it performs.
+//
+// The kubelet process does this by checking all of the mount points on the
+// node to see if any have the following:
+// 1) The same 'root' value of the mount that is being cleaned
+// 2) The same device number of the mount that is being cleaned
+// And that those mounts are in a different path tree.
+// If so, it returns this error: "the device mount path %q is still mounted
+// by other references %v", deviceMountPath, refs) and fails the unmount.
+// See pkg/volume/util/operationexecutor/operation_generator.go
+// calling GetDeviceMountRefs(deviceMountPath) around line 947.
+//
+// All Lustre mounts on a system, no matter where in the lustrefs they are
+// mounted to, all have '/' as the root and they all have the same major and
+// minor device numbers, so as far as this check is concerned, every lustre
+// mount is the same device, even though individual Lustre mount points can
+// be unmounted without affecting others and should not be a concern.
+//
+// With a single Lustre volume mount, this works fine. It stages to a
+// globalpath dir, pods can bind mount into that, and when the last pod is
+// done, unstage is called and the global mount point can be cleaned up,
+// because that is the only lustre mount so kubelet has no issue with
+// 'other mounts' on the same node.
+//
+// The problem occurs when two different volumes are trying to mount a
+// Lustre cluster. In that case, pods for the first volume can come up
+// as expected with their global mount path, then pods for the second
+// volume with their global mount path. The error occurs when the pods
+// for one of these volumes are deleted and an unstage action should occur,
+// because the other volume has its own Lustre mount, so it fails this
+// check. For example, it's trying to unmount
+// /var/...<firstvolume>.../globalpath, but there's another volume at
+// /var/...<secondvolume>.../globalpath with the same root '/' and major
+// and minor device numbers.
+//
+// It errors out, fails the unmount, and never calls unstage, even
+// though all of the pods using that volume have already been deleted.
+// This leaves the box with as many global mount directories still mounted
+// to the Lustre cluster as you've ever staged, but without any way to see
+// this other than looking at the mounts on the node or in the kubelet logs.
+func (d *Driver) NodeStageVolume(_ context.Context, _ *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
+// Staging and Unstaging is not able to be supported with how Lustre is mounted
+//
+// See NodeStageVolume for more details
+func (d *Driver) NodeUnstageVolume(_ context.Context, _ *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 // NodeGetCapabilities return the capabilities of the Node plugin
 func (d *Driver) NodeGetCapabilities(
 	_ context.Context, _ *csi.NodeGetCapabilitiesRequest,

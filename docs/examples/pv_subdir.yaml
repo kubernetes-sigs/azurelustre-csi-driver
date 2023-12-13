@@ -1,4 +1,7 @@
 ---
+# The subdirectory functionality is not yet released; these files are
+# provided as examples for the next version of this driver. This message
+# will be removed at release time when we make this new release the default
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -21,6 +24,7 @@ spec:
       # The subdirectory to create and mount per pod (cannot use pvc / pv metadata in static volumes)
       sub-dir: "${pod.metadata.namespace}_${pod.metadata.name}"
       # Whether the created subdirectory should be retained or deleted at pod exit
+      # This parameter is required if "sub-dir" is provided
       retain-sub-dir: "false"
     # Make sure this VolumeID is unique in the cluster
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
