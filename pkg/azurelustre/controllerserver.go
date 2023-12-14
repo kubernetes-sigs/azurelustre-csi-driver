@@ -34,6 +34,8 @@ import (
 const (
 	VolumeContextMGSIPAddress = "mgs-ip-address"
 	VolumeContextFSName       = "fs-name"
+	VolumeContextSubDir       = "sub-dir"
+	VolumeContextRetainSubDir = "retain-sub-dir"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
@@ -132,51 +134,15 @@ func (d *Driver) CreateVolume(
 			"CreateVolume Parameters must be provided")
 	}
 
-	// TODO_CHYIN: Need to more parameters later.
-	//             Now simply store the IP and name in the storageClass.
-	mgsIPAddress := parameters[VolumeContextMGSIPAddress]
-	if len(mgsIPAddress) == 0 {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume Parameter mgs-ip-address must be provided",
-		)
-	}
-	azureLustreName := parameters[VolumeContextFSName]
-	if len(azureLustreName) == 0 {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume Parameter fs-name must be provided",
-		)
-	}
-	if len(parameters) > 2 {
-		delete(parameters, VolumeContextFSName)
-		delete(parameters, VolumeContextMGSIPAddress)
-		var errorParameters []string
-		for k, v := range parameters {
-			errorParameters = append(
-				errorParameters,
-				fmt.Sprintf("%s = %s", k, v),
-			)
-		}
-		// simply use fmt.Sprintf("%v", parameters) will get map[key:value...]
-		// it might be strange to the end user and exposes some implementation
-		// details.
-		return nil, status.Error(
-			codes.InvalidArgument,
-			fmt.Sprintf("Invalid parameter(s) {%s} in storage class",
-				strings.Join(errorParameters, ", ")),
-		)
+	volumeID, err := createVolumeIDFromParams(volName, parameters)
+	if err != nil {
+		return nil, err
 	}
 
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
-
-	// volumeID must be the same when volumeName is the same to satisfy the
-	// idempotent requirement.
-	// volumeID MUST have enough information for troubleshout.
-	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress)
 
 	klog.V(2).Infof(
 		"begin to create volumeID(%s)", volumeID,
@@ -286,4 +252,95 @@ func (d *Driver) ControllerGetCapabilities(
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: d.Cap,
 	}, nil
+}
+
+// Convert VolumeCreate parameters to a volume id
+func createVolumeIDFromParams(volName string, params map[string]string) (string, error) {
+	var mgsIPAddress, azureLustreName, subDir string
+
+	var errorParameters []string
+
+	// Shouldn't attempt to delete anything unless sub-dir is actually specified
+	retainSubDir := true
+
+	// validate parameters (case-insensitive).
+	for k, v := range params {
+		switch strings.ToLower(k) {
+		case VolumeContextMGSIPAddress:
+			mgsIPAddress = v
+		case VolumeContextFSName:
+			azureLustreName = v
+		case VolumeContextSubDir:
+			subDir = v
+			subDir = strings.Trim(subDir, "/")
+
+			if len(subDir) == 0 {
+				return "", status.Error(
+					codes.InvalidArgument,
+					"CreateVolume Parameter sub-dir must not be empty if provided",
+				)
+			}
+
+			if _, ok := params[VolumeContextRetainSubDir]; !ok {
+				return "", status.Error(
+					codes.InvalidArgument,
+					"CreateVolume Parameter retain-sub-dir must be provided when sub-dir is provided",
+				)
+			}
+		case VolumeContextRetainSubDir:
+			retainSubDirString := strings.ToLower(v)
+			if retainSubDirString != "true" && retainSubDirString != "false" {
+				return "", status.Error(
+					codes.InvalidArgument,
+					"CreateVolume Parameter retain-sub-dir value must be either true or false",
+				)
+			}
+
+			retainSubDir = retainSubDirString == "true"
+
+			if _, ok := params[VolumeContextSubDir]; !ok {
+				return "", status.Error(
+					codes.InvalidArgument,
+					"CreateVolume Parameter sub-dir must be provided when retain-sub-dir is provided",
+				)
+			}
+		// These will be used by the node methods
+		case pvcNamespaceKey:
+		case pvcNameKey:
+		case pvNameKey:
+			continue
+		default:
+			errorParameters = append(
+				errorParameters,
+				fmt.Sprintf("%s = %s", k, v),
+			)
+		}
+	}
+
+	if len(mgsIPAddress) == 0 {
+		return "", status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Parameter mgs-ip-address must be provided",
+		)
+	}
+
+	azureLustreName = strings.Trim(azureLustreName, "/")
+	if len(azureLustreName) == 0 {
+		return "", status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Parameter fs-name must be provided",
+		)
+	}
+
+	if len(errorParameters) > 0 {
+		return "", status.Error(
+			codes.InvalidArgument,
+			fmt.Sprintf("Invalid parameter(s) {%s} in storage class",
+				strings.Join(errorParameters, ", ")),
+		)
+	}
+
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress, subDir, retainSubDir)
+
+	return volumeID, nil
 }

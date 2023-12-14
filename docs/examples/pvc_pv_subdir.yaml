@@ -1,0 +1,18 @@
+---
+# The subdirectory functionality is not yet released; these files are
+# provided as examples for the next version of this driver. This message
+# will be removed at release time when we make this new release the default
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # The name of the PVC
+  name: pvc-lustre-subdir
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Mi
+  # This field must be the same as PV name in PersistentVolume.
+  volumeName: pv-lustre-subdir
+  storageClassName: ""

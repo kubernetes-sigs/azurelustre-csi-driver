@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	mount "k8s.io/mount-utils"
 )
 
@@ -106,10 +107,11 @@ func TestMountSensitive(t *testing.T) {
 
 func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 	tests := []struct {
-		desc        string
-		source      string
-		target      string
-		expectedErr error
+		desc                string
+		source              string
+		target              string
+		expectedErr         error
+		expectedMountpoints []mount.MountPoint
 	}{
 		{
 			desc:        "[Error] Mocked source error",
@@ -124,10 +126,11 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 			expectedErr: fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
 		},
 		{
-			desc:        "[Success] Successful run",
-			source:      "container",
-			target:      "valid_mount",
-			expectedErr: nil,
+			desc:                "[Success] Successful run",
+			source:              "container",
+			target:              "valid_mount",
+			expectedErr:         nil,
+			expectedMountpoints: []mount.MountPoint{{Device: "container", Path: "valid_mount", Type: "", Opts: []string{}}},
 		},
 	}
 
@@ -141,6 +144,9 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 		if !reflect.DeepEqual(err, test.expectedErr) {
 			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
 		}
+
+		mountPoints, _ := d.mounter.List()
+		assert.Equal(t, test.expectedMountpoints, mountPoints)
 	}
 }
 
@@ -155,7 +161,8 @@ func TestIsLikelyNotMountPoint(t *testing.T) {
 			file:        "./error_is_likely_target",
 			expectedErr: fmt.Errorf("fake IsLikelyNotMountPoint: fake error"),
 		},
-		{desc: "[Success] Successful run",
+		{
+			desc:        "[Success] Successful run",
 			file:        targetTest,
 			expectedErr: nil,
 		},

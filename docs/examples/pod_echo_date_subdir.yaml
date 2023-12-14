@@ -1,0 +1,25 @@
+---
+# The subdirectory functionality is not yet released; these files are
+# provided as examples for the next version of this driver. This message
+# will be removed at release time when we make this new release the default
+kind: Pod
+apiVersion: v1
+metadata:
+  name: lustre-echo-date-subdir
+spec:
+  nodeSelector:
+    "kubernetes.io/os": linux
+  containers:
+    - image: busybox
+      name: lustre-echo-date
+      command:
+        - "/bin/sh"
+        - "-c"
+        - while true; do echo $(date) >> /mnt/lustre/outfile; sleep 1; done
+      volumeMounts:
+        - name: lustre-subdir
+          mountPath: "/mnt/lustre"
+  volumes:
+    - name: lustre-subdir
+      persistentVolumeClaim:
+        claimName: pvc-lustre-subdir

@@ -73,6 +73,8 @@ func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
 		Parameters: map[string]string{
 			"fs-name":        "tfs",
 			"mgs-ip-address": "127.0.0.1",
+			"sub-dir":        "testSubDir",
+			"retain-sub-dir": "false",
 		},
 	}
 	return req
@@ -87,7 +89,6 @@ func TestCreateVolume_Success(t *testing.T) {
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
 	assert.NotZero(t, rep.GetVolume().GetCapacityBytes())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeContext())
-
 }
 
 func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
@@ -204,6 +205,44 @@ func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 	assert.ErrorContains(t, err, "fs-name")
+}
+
+func TestCreateVolume_Err_ParametersEmptySubDir(t *testing.T) {
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	req.Parameters[VolumeContextSubDir] = ""
+	_, err := d.CreateVolume(context.Background(), req)
+	assert.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	assert.ErrorContains(t, err, "sub-dir")
+}
+
+func TestCreateVolume_Err_ParametersSubDirWithoutRetainSubDir(t *testing.T) {
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	delete(req.Parameters, VolumeContextRetainSubDir)
+	_, err := d.CreateVolume(context.Background(), req)
+	assert.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	assert.ErrorContains(t, err, " sub-dir ")
+	assert.ErrorContains(t, err, "retain-sub-dir")
+}
+
+func TestCreateVolume_Err_ParametersRetainSubDirWithoutSubDir(t *testing.T) {
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	delete(req.Parameters, VolumeContextSubDir)
+	_, err := d.CreateVolume(context.Background(), req)
+	assert.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	assert.ErrorContains(t, err, " sub-dir ")
+	assert.ErrorContains(t, err, "retain-sub-dir")
 }
 
 func TestCreateVolume_Err_UnknownParameters(t *testing.T) {
@@ -373,7 +412,7 @@ func TestDeleteVolume_Success(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"testVolume", "testFs", "127.0.0.1"),
+			"testVolume", "testFs", "127.0.0.1", "testSubDir", false),
 	}
 	_, err := d.DeleteVolume(context.Background(), req)
 	assert.NoError(t, err)
@@ -396,7 +435,7 @@ func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"testVolume", "testFs", "127.0.0.1"),
+			"testVolume", "testFs", "127.0.0.1", "testSubDir", false),
 		Secrets: map[string]string{},
 	}
 	_, err := d.DeleteVolume(context.Background(), req)
@@ -411,7 +450,7 @@ func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"testVolume", "testFs", "127.0.0.1"),
+			"testVolume", "testFs", "127.0.0.1", "testSubDir", false),
 		Secrets: map[string]string{
 			"test": "test",
 		},
@@ -428,7 +467,7 @@ func TestDeleteVolume_Err_OperationExists(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"testVolume", "testFs", "127.0.0.1"),
+			"testVolume", "testFs", "127.0.0.1", "testSubDir", false),
 	}
 	if acquired := d.volumeLocks.TryAcquire(req.GetVolumeId()); !acquired {
 		assert.Fail(t, "Can't acquire volume lock")
@@ -457,7 +496,7 @@ func TestValidateVolumeCapabilities_Success(t *testing.T) {
 	}
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: capabilities,
 	}
 
@@ -496,7 +535,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: nil,
 	}
 
@@ -512,7 +551,7 @@ func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
 	d := NewFakeDriver()
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: []*csi.VolumeCapability{},
 	}
 
@@ -540,7 +579,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
 	}
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: capabilities,
 		Secrets:            map[string]string{},
 	}
@@ -569,7 +608,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
 	}
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: capabilities,
 		Secrets:            map[string]string{"test": "test"},
 	}
@@ -600,7 +639,7 @@ func TestValidateVolumeCapabilities_Success_BlockCapabilities(t *testing.T) {
 	}
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test", "testFs", "127.0.0.1"),
+			"test", "testFs", "127.0.0.1", "testSubDir", false),
 		VolumeCapabilities: capabilities,
 	}
 
@@ -610,7 +649,8 @@ func TestValidateVolumeCapabilities_Success_BlockCapabilities(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
-	t *testing.T) {
+	t *testing.T,
+) {
 	capabilitiesNotSupported := []csi.VolumeCapability_AccessMode_Mode{}
 	for capability := range csi.VolumeCapability_AccessMode_Mode_name {
 		supported := false
@@ -644,7 +684,7 @@ func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
 		}
 		req := &csi.ValidateVolumeCapabilitiesRequest{
 			VolumeId: fmt.Sprintf(volumeIDTemplate,
-				"test", "testFs", "127.0.0.1"),
+				"test", "testFs", "127.0.0.1", "testSubDir", false),
 			VolumeCapabilities: capabilities,
 		}
 

@@ -30,8 +30,7 @@ import (
 )
 
 func TestParseEndpoint(t *testing.T) {
-
-	//Valid unix domain socket endpoint
+	// Valid unix domain socket endpoint
 	sockType, addr, err := ParseEndpoint("unix://fake.sock")
 	assert.NoError(t, err)
 	assert.Equal(t, "unix", sockType)
@@ -42,25 +41,25 @@ func TestParseEndpoint(t *testing.T) {
 	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "/fakedir/fakedir/fake.sock", addr)
 
-	//Valid unix domain socket with uppercase
+	// Valid unix domain socket with uppercase
 	sockType, addr, err = ParseEndpoint("UNIX://fake.sock")
 	assert.NoError(t, err)
 	assert.Equal(t, "UNIX", sockType)
 	assert.Equal(t, "fake.sock", addr)
 
-	//Valid TCP endpoint with ip
+	// Valid TCP endpoint with ip
 	sockType, addr, err = ParseEndpoint("tcp://127.0.0.1:80")
 	assert.NoError(t, err)
 	assert.Equal(t, "tcp", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
-	//Valid TCP endpoint with uppercase
+	// Valid TCP endpoint with uppercase
 	sockType, addr, err = ParseEndpoint("TCP://127.0.0.1:80")
 	assert.NoError(t, err)
 	assert.Equal(t, "TCP", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
-	//Valid TCP endpoint with hostname
+	// Valid TCP endpoint with hostname
 	sockType, addr, err = ParseEndpoint("tcp://fakehost:80")
 	assert.NoError(t, err)
 	assert.Equal(t, "tcp", sockType)

@@ -1,0 +1,25 @@
+---
+# The subdirectory functionality is not yet released; these files are
+# provided as examples for the next version of this driver. This message
+# will be removed at release time when we make this new release the default
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  # The name of the StorageClass.
+  name: subdir.azurelustre.csi.azure.com
+parameters:
+  # The file system name of the existing Lustre, "lustrefs" in common case
+  fs-name: ${EXISTING_LUSTRE_FS_NAME}
+  # The IP address of the existing Lustre
+  mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+  # The subdirectory to create and mount per pod
+  sub-dir: "${pvc.metadata.name}_${pod.metadata.name}"
+  # Whether the created subdirectory should be retained or deleted at pod exit
+  # This parameter is required if "sub-dir" is provided
+  retain-sub-dir: "false"
+provisioner: azurelustre.csi.azure.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+mountOptions:
+  - noatime
+  - flock

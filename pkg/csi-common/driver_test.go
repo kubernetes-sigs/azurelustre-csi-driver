@@ -30,9 +30,7 @@ const (
 	fakeNodeID     = "fakeNodeID"
 )
 
-var (
-	vendorVersion = "0.3.0"
-)
+var vendorVersion = "0.3.0"
 
 func TestNewCSIDriver(t *testing.T) {
 	name := ""
@@ -51,7 +49,6 @@ func TestNewCSIDriver(t *testing.T) {
 }
 
 func NewFakeDriver() *CSIDriver {
-
 	driver := NewCSIDriver(fakeDriverName, vendorVersion, fakeNodeID)
 
 	return driver
@@ -123,5 +120,4 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 	// Test controller service get capacity is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_GET_CAPACITY)
 	assert.NoError(t, err)
-
 }
