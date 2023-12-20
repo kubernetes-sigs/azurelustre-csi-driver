@@ -129,6 +129,7 @@ class PerfScaleTest:
             "mgs_ip_address": args.mgs_ip_address,
             "fs_name": args.fs_name,
             "scale": 0,
+            "pod.metadata.name": "${pod.metadata.name}",
         }
         self._scales = args.scales
         logger.info(f"test scales {self._scales}")
