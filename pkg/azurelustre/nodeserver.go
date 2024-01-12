@@ -102,12 +102,13 @@ func (d *Driver) NodePublishVolume(
 		}
 	}
 
-	if acquired := d.volumeLocks.TryAcquire(vol.id); !acquired {
+	lockKey := fmt.Sprintf("%s-%s", volumeID, target)
+	if acquired := d.volumeLocks.TryAcquire(lockKey); !acquired {
 		return nil, status.Errorf(codes.Aborted,
 			volumeOperationAlreadyExistsFmt,
-			vol.id)
+			volumeID)
 	}
-	defer d.volumeLocks.Release(vol.id)
+	defer d.volumeLocks.Release(lockKey)
 
 	isOperationSucceeded := false
 	defer func() {
@@ -159,7 +160,7 @@ func (d *Driver) NodePublishVolume(
 				interpolatedSubDir,
 			)
 
-			if err = d.createSubDir(vol, interpolatedSubDir, mountOptions); err != nil {
+			if err = d.createSubDir(vol, target, interpolatedSubDir, mountOptions); err != nil {
 				return nil, err
 			}
 		}
@@ -262,12 +263,13 @@ func (d *Driver) NodeUnpublishVolume(
 			"Target path missing in request")
 	}
 
-	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
+	lockKey := fmt.Sprintf("%s-%s", volumeID, targetPath)
+	if acquired := d.volumeLocks.TryAcquire(lockKey); !acquired {
 		return nil, status.Errorf(codes.Aborted,
 			volumeOperationAlreadyExistsFmt,
 			volumeID)
 	}
-	defer d.volumeLocks.Release(volumeID)
+	defer d.volumeLocks.Release(lockKey)
 
 	isOperationSucceeded := false
 	defer func() {
@@ -357,7 +359,7 @@ func (d *Driver) NodeUnpublishVolume(
 			sourceRoot,
 		)
 
-		if err = d.deleteSubDir(vol, subDirToClean, mountOptions); err != nil {
+		if err = d.deleteSubDir(vol, targetPath, subDirToClean, mountOptions); err != nil {
 			return nil, err
 		}
 	} else {
@@ -572,18 +574,18 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 	return !notMnt, nil
 }
 
-func (d *Driver) createSubDir(vol *lustreVolume, subDirPath string, mountOptions []string) error {
-	if err := d.internalMount(vol, mountOptions); err != nil {
+func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath string, mountOptions []string) error {
+	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
 		return err
 	}
 
 	defer func() {
-		if err := d.internalUnmount(vol); err != nil {
+		if err := d.internalUnmount(mountPath); err != nil {
 			klog.Warningf("failed to unmount lustre server: %v", err.Error())
 		}
 	}()
 
-	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, vol, subDirPath)
+	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, mountPath, subDirPath)
 	if err != nil {
 		return err
 	}
@@ -597,18 +599,18 @@ func (d *Driver) createSubDir(vol *lustreVolume, subDirPath string, mountOptions
 	return nil
 }
 
-func (d *Driver) deleteSubDir(vol *lustreVolume, subDirPath string, mountOptions []string) error {
-	if err := d.internalMount(vol, mountOptions); err != nil {
+func (d *Driver) deleteSubDir(vol *lustreVolume, mountPath string, subDirPath string, mountOptions []string) error {
+	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
 		return err
 	}
 
 	defer func() {
-		if err := d.internalUnmount(vol); err != nil {
+		if err := d.internalUnmount(mountPath); err != nil {
 			klog.Warningf("failed to unmount lustre server: %v", err.Error())
 		}
 	}()
 
-	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, vol, subDirPath)
+	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, mountPath, subDirPath)
 	if err != nil {
 		return err
 	}
@@ -626,24 +628,22 @@ func getSourceString(mgsIPAddress, azureLustreName string) string {
 	return fmt.Sprintf("%s@tcp:/%s", mgsIPAddress, azureLustreName)
 }
 
-func getInternalMountPath(workingMountDir string, vol *lustreVolume) (string, error) {
-	if vol == nil || len(vol.id) == 0 {
-		return "", status.Error(codes.Internal, "cannot get internal mount path for nil or empty volume")
-	}
+func getInternalMountPath(workingMountDir string, mountPath string) (string, error) {
+	mountPath = strings.Trim(mountPath, "/")
 
-	if isSubpath := ensureStrictSubpath(vol.id); !isSubpath {
+	if isSubpath := ensureStrictSubpath(mountPath); !isSubpath {
 		return "", status.Errorf(
-			codes.InvalidArgument,
-			"volume name or id %q must be interpretable as a strict subpath",
-			vol.id,
+			codes.Internal,
+			"invalid mount path %q",
+			mountPath,
 		)
 	}
 
-	return filepath.Join(workingMountDir, vol.id), nil
+	return filepath.Join(workingMountDir, mountPath), nil
 }
 
-func getInternalVolumePath(workingMountDir string, vol *lustreVolume, subDirPath string) (string, error) {
-	internalMountPath, err := getInternalMountPath(workingMountDir, vol)
+func getInternalVolumePath(workingMountDir string, mountPath string, subDirPath string) (string, error) {
+	internalMountPath, err := getInternalMountPath(workingMountDir, mountPath)
 	if err != nil {
 		return "", err
 	}
@@ -659,10 +659,10 @@ func getInternalVolumePath(workingMountDir string, vol *lustreVolume, subDirPath
 	return filepath.Join(internalMountPath, subDirPath), nil
 }
 
-func (d *Driver) internalMount(vol *lustreVolume, mountOptions []string) error {
+func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions []string) error {
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
-	target, err := getInternalMountPath(d.workingMountDir, vol)
+	target, err := getInternalMountPath(d.workingMountDir, mountPath)
 	if err != nil {
 		return err
 	}
@@ -684,7 +684,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountOptions []string) error {
 			target,
 		)
 
-		err = d.internalUnmount(vol)
+		err = d.internalUnmount(mountPath)
 		if err != nil {
 			return status.Errorf(codes.Internal,
 				"Could not unmount existing volume at %q: %v",
@@ -726,8 +726,8 @@ func (d *Driver) internalMount(vol *lustreVolume, mountOptions []string) error {
 	return nil
 }
 
-func (d *Driver) internalUnmount(vol *lustreVolume) error {
-	target, err := getInternalMountPath(d.workingMountDir, vol)
+func (d *Driver) internalUnmount(mountPath string) error {
+	target, err := getInternalMountPath(d.workingMountDir, mountPath)
 	if err != nil {
 		return err
 	}

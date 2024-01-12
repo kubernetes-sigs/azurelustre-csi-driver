@@ -13,7 +13,9 @@ spec:
     volumeAttributes:
       fs-name: ${fs_name}
       mgs-ip-address: ${mgs_ip_address}
-    volumeHandle: scale-pv-lustre-01
+      sub-dir: "longhaul/${pod.metadata.name}"
+      retain-sub-dir: "false"
+    volumeHandle: scale-pv-lustre#${fs_name}#${mgs_ip_address}#longhaul/${pod.metadata.name}#false
   persistentVolumeReclaimPolicy: Retain
 
 ---
