@@ -25,8 +25,8 @@ readonly endpoint="unix:///csi/csi.sock"
 readonly target_path="/tmp/target_path"
 readonly lustre_fs_name=$1
 readonly lustre_fs_ip=$2
-readonly lustre_client_version="2.15.1"
-readonly pkgVersion="${lustre_client_version}-33-g0168b83"
+readonly lustre_client_version="2.15.3"
+readonly pkgVersion="${lustre_client_version}-43-gd7e07df"
 readonly pkgName="amlfs-lustre-client-${pkgVersion}"
 
 mkdir -p $target_path
