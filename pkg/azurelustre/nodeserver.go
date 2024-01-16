@@ -73,12 +73,27 @@ func (d *Driver) NodePublishVolume(
 			"Volume context must be provided")
 	}
 
-	vol, err := newLustreVolume(volumeID, context)
+	volName := ""
+	skipCreateForInvalidVolumeID := false
+
+	volFromID, err := getLustreVolFromID(volumeID)
+	if err != nil {
+		klog.Warningf("error parsing volume ID '%v'", err)
+		// If we can't parse the volume ID for the information now, we won't be able to
+		// do so while unpublishing to know whether to delete it, so skip it
+		skipCreateForInvalidVolumeID = true
+	} else {
+		volName = volFromID.name
+	}
+
+	vol, err := newLustreVolume(volumeID, volName, context)
 	if err != nil {
 		return nil, err
 	}
 
-	vol.id = volumeID
+	if volFromID != nil && *volFromID != *vol {
+		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
+	}
 
 	subDirReplaceMap := map[string]string{}
 
@@ -136,11 +151,18 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		if readOnly && !vol.retainSubDir {
-			return nil, status.Error(
-				codes.InvalidArgument,
-				"Context retain-sub-dir must be true for a sub-dir on a read-only volume",
-			)
+		if !vol.retainSubDir {
+			if readOnly {
+				return nil, status.Error(
+					codes.InvalidArgument,
+					"Context retain-sub-dir must be true for a sub-dir on a read-only volume",
+				)
+			} else if skipCreateForInvalidVolumeID {
+				return nil, status.Error(
+					codes.InvalidArgument,
+					"Context retain-sub-dir must be true for volume with invalid ID",
+				)
+			}
 		}
 
 		interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
@@ -154,6 +176,8 @@ func (d *Driver) NodePublishVolume(
 
 		if readOnly {
 			klog.V(2).Info("NodePublishVolume: not attempting to create sub-dir on read-only volume, assuming existing path")
+		} else if skipCreateForInvalidVolumeID {
+			klog.V(2).Info("NodePublishVolume: not attempting to create sub-dir for invalid volume ID, assuming existing path")
 		} else {
 			klog.V(2).Infof(
 				"NodePublishVolume: sub-dir will be created at %q",
@@ -285,7 +309,7 @@ func (d *Driver) NodeUnpublishVolume(
 
 	vol, err := getLustreVolFromID(volumeID)
 	if err != nil {
-		klog.V(2).Infof("failed to parse volume id %q for sub-dir cleanup, skipping", volumeID)
+		klog.V(2).Infof("failed to parse volume ID %q for sub-dir cleanup, skipping", volumeID)
 	} else if len(vol.subDir) > 0 && !vol.retainSubDir {
 		cleanupSubDir = true
 		sourceRoot = getSourceString(vol.mgsIPAddress, vol.azureLustreName)
@@ -762,7 +786,7 @@ type lustreVolume struct {
 func getLustreVolFromID(id string) (*lustreVolume, error) {
 	segments := strings.Split(id, separator)
 	if len(segments) < 3 {
-		return nil, fmt.Errorf("could not split volume id %q into lustre name and ip address", id)
+		return nil, fmt.Errorf("could not split volume ID %q into lustre name and ip address", id)
 	}
 
 	name := segments[0]
@@ -793,11 +817,10 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 }
 
 // Convert context parameters to a lustreVolume
-func newLustreVolume(volumeID string, params map[string]string) (*lustreVolume, error) {
+func newLustreVolume(volumeID string, volumeName string, params map[string]string) (*lustreVolume, error) {
 	var mgsIPAddress, azureLustreName, subDir string
 	// Shouldn't attempt to delete anything unless sub-dir is actually specified
 	retainSubDir := true
-	subDirReplaceMap := map[string]string{}
 	// validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
@@ -839,20 +862,6 @@ func newLustreVolume(volumeID string, params map[string]string) (*lustreVolume, 
 					"Context sub-dir must be provided when retain-sub-dir is provided",
 				)
 			}
-		case podNameKey:
-			subDirReplaceMap[podNameMetadata] = v
-		case podNamespaceKey:
-			subDirReplaceMap[podNamespaceMetadata] = v
-		case podUIDKey:
-			subDirReplaceMap[podUIDMetadata] = v
-		case serviceAccountNameKey:
-			subDirReplaceMap[serviceAccountNameMetadata] = v
-		case pvcNamespaceKey:
-			subDirReplaceMap[pvcNamespaceMetadata] = v
-		case pvcNameKey:
-			subDirReplaceMap[pvcNameMetadata] = v
-		case pvNameKey:
-			subDirReplaceMap[pvNameMetadata] = v
 		}
 	}
 
@@ -871,32 +880,13 @@ func newLustreVolume(volumeID string, params map[string]string) (*lustreVolume, 
 		)
 	}
 
-	volName := ""
-
-	volFromID, err := getLustreVolFromID(volumeID)
-	if err != nil {
-		klog.Warningf("error parsing volume id '%v'", err)
-	} else {
-		volName = volFromID.name
-	}
-
 	vol := &lustreVolume{
-		name:            volName,
+		name:            volumeName,
 		mgsIPAddress:    mgsIPAddress,
 		azureLustreName: azureLustreName,
 		subDir:          subDir,
 		retainSubDir:    retainSubDir,
-		id: fmt.Sprintf(
-			volumeIDTemplate,
-			volName,
-			azureLustreName,
-			mgsIPAddress,
-			subDir,
-			retainSubDir),
-	}
-
-	if volFromID != nil && *volFromID != *vol {
-		klog.Warningf("volume context does not match values in volume id for volume %q", volumeID)
+		id:              volumeID,
 	}
 
 	return vol, nil

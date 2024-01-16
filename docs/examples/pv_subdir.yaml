@@ -27,6 +27,11 @@ spec:
       # This parameter is required if "sub-dir" is provided
       retain-sub-dir: "false"
     # Make sure this VolumeID is unique in the cluster
+    # volumeHandle format: {volume-name}#{fs-name}#{mgs-ip-address}#{sub-dir}#{retain-sub-dir}
+    # Example: vol_1#lustrefs#0.0.0.0#example_sub_dir#true
+    # If the value does not match this format, the driver will not attempt to create
+    #   the configured subdirectory. Further, if retain-sub-dir is 'false' in that
+    #   case, any attempt to mount this volume will fail.
     volumeHandle: ${UNIQUE_IDENTIFIER_VOLUME_ID}
   # "Delete" is not supported in static provisioning PV
   mountOptions:
