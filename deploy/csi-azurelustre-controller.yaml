@@ -37,7 +37,7 @@ spec:
             - "--csi-address=$(ADDRESS)"
             - "--leader-election"
             - "--timeout=60s"
-            - "--extra-create-metadata=false"
+            - "--extra-create-metadata=true"
           env:
             - name: ADDRESS
               value: /csi/csi.sock
