@@ -8,7 +8,6 @@ parameters:
   mgs-ip-address: "{lustre_fs_ip}"
   fs-name: "{lustre_fs_name}"
   #sub-dir: "longhaul"
-  #retain-sub-dir: "false"
 
 ---
 kind: PersistentVolumeClaim
