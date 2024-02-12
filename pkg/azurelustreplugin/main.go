@@ -25,12 +25,13 @@ import (
 )
 
 var (
-	endpoint                   = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	nodeID                     = flag.String("nodeid", "", "node id")
-	version                    = flag.Bool("version", false, "Print the version and exit.")
-	driverName                 = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
-	enableAzureLustreMockMount = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
-	workingMountDir            = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
+	endpoint                     = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
+	nodeID                       = flag.String("nodeid", "", "node id")
+	version                      = flag.Bool("version", false, "Print the version and exit.")
+	driverName                   = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
+	enableAzureLustreMockMount   = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
+	enableAzureLustreMockDynProv = flag.Bool("enable-azurelustre-mock-dyn-prov", true, "Whether enable mock dynamic provisioning(only for testing)")
+	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 )
 
 func main() {
@@ -55,10 +56,11 @@ func main() {
 
 func handle() {
 	driverOptions := azurelustre.DriverOptions{
-		NodeID:                     *nodeID,
-		DriverName:                 *driverName,
-		EnableAzureLustreMockMount: *enableAzureLustreMockMount,
-		WorkingMountDir:            *workingMountDir,
+		NodeID:                       *nodeID,
+		DriverName:                   *driverName,
+		EnableAzureLustreMockMount:   *enableAzureLustreMockMount,
+		EnableAzureLustreMockDynProv: *enableAzureLustreMockDynProv,
+		WorkingMountDir:              *workingMountDir,
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	if driver == nil {

@@ -21,6 +21,7 @@ RUN chmod +x "/app/entrypoint.sh"
 
 RUN apt-get update && \
   apt-get upgrade -y && \
+  apt-get install ca-certificates -y && \
   apt-get autoremove -y && \
   apt-get clean -y && \
   rm -rf \
@@ -29,7 +30,6 @@ RUN apt-get update && \
   /var/log/* \
   /tmp/* \
   /var/tmp/*
-
 
 WORKDIR "/app"
 

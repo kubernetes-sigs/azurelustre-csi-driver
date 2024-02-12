@@ -40,12 +40,12 @@ func TestSanity(t *testing.T) {
 	config.StagingPath = stagingPath
 	config.TestVolumeParameters = map[string]string{
 		azurelustre.VolumeContextMGSIPAddress: "127.0.0.1",
-		azurelustre.VolumeContextFSName:       "test",
 	}
 	driverOptions := azurelustre.DriverOptions{
-		NodeID:                     "fakeNodeID",
-		DriverName:                 "fake",
-		EnableAzureLustreMockMount: true,
+		NodeID:                       "fakeNodeID",
+		DriverName:                   "fake",
+		EnableAzureLustreMockMount:   true,
+		EnableAzureLustreMockDynProv: true,
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	go func() {

@@ -45,6 +45,9 @@ func (cs *DefaultControllerServer) ControllerUnpublishVolume(_ context.Context, 
 }
 
 func (cs *DefaultControllerServer) ValidateVolumeCapabilities(_ context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+	if cs.Driver.VC == nil {
+		return nil, status.Error(codes.InvalidArgument, "Driver volume capabilities are not set")
+	}
 	for _, c := range req.GetVolumeCapabilities() {
 		found := false
 		for _, c1 := range cs.Driver.VC {

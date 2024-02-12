@@ -41,8 +41,8 @@ func (d *Driver) NodePublishVolume(
 ) (*csi.NodePublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_publish_volume",
-		"",
-		"",
+		d.resourceGroup,
+		d.cloud.SubscriptionID,
 		d.Name)
 
 	volCap := req.GetVolumeCapability()
@@ -203,7 +203,7 @@ func interpolateSubDirVariables(context map[string]string, vol *lustreVolume) st
 		}
 	}
 
-	interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
+	interpolatedSubDir := volumehelper.ReplaceWithMap(vol.subDir, subDirReplaceMap)
 	return interpolatedSubDir
 }
 
@@ -243,7 +243,7 @@ func getVolume(volumeID string, context map[string]string) (*lustreVolume, error
 	}
 
 	if volFromID != nil && *volFromID != *vol {
-		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
+		klog.Warningf("volume context does not match values in volume ID for volumeID %v", volumeID)
 	}
 
 	return vol, nil
@@ -270,8 +270,8 @@ func (d *Driver) NodeUnpublishVolume(
 ) (*csi.NodeUnpublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_unpublish_volume",
-		"",
-		"",
+		d.resourceGroup,
+		d.cloud.SubscriptionID,
 		d.Name)
 
 	volumeID := req.GetVolumeId()
@@ -697,52 +697,23 @@ func (d *Driver) internalUnmount(mountPath string) error {
 }
 
 // Ensures that the given subpath, when joined with any base path, will be a path
-// within the given base path, and not equal to it. This ensures that the this
+// within the given base path, and not equal to it. This ensures that this
 // subpath value can be safely created or deleted under the base path without
 // affecting other data in the base path.
 func ensureStrictSubpath(subPath string) bool {
 	return filepath.IsLocal(subPath) && filepath.Clean(subPath) != "."
 }
 
-type lustreVolume struct {
-	name            string
-	id              string
-	mgsIPAddress    string
-	azureLustreName string
-	subDir          string
-}
-
-func getLustreVolFromID(id string) (*lustreVolume, error) {
-	segments := strings.Split(id, separator)
-	if len(segments) < 3 {
-		return nil, fmt.Errorf("could not split volume ID %q into lustre name and ip address", id)
-	}
-
-	name := segments[0]
-	vol := &lustreVolume{
-		name:            name,
-		id:              id,
-		azureLustreName: strings.Trim(segments[1], "/"),
-		mgsIPAddress:    segments[2],
-	}
-
-	if len(segments) >= 4 {
-		vol.subDir = strings.Trim(segments[3], "/")
-	}
-
-	return vol, nil
-}
-
 // Convert context parameters to a lustreVolume
 func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lustreVolume, error) {
-	var mgsIPAddress, azureLustreName, subDir string
+	var mgsIPAddress, subDir, resourceGroupName string
+	createdByDynamicProvisioning := false
+
 	// validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
 		case VolumeContextMGSIPAddress:
 			mgsIPAddress = v
-		case VolumeContextFSName:
-			azureLustreName = v
 		case VolumeContextSubDir:
 			subDir = v
 			subDir = strings.Trim(subDir, "/")
@@ -753,6 +724,15 @@ func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lu
 					"Context sub-dir must not be empty or root if provided",
 				)
 			}
+		case VolumeContextInternalDynamicallyCreated:
+			if v == "t" {
+				createdByDynamicProvisioning = true
+			}
+			if v != "" && v != "f" {
+				klog.Warningf("invalid value for %s, should be 't' or 'f': %s", VolumeContextInternalDynamicallyCreated, v)
+			}
+		case VolumeContextResourceGroupName:
+			resourceGroupName = v
 		}
 	}
 
@@ -763,20 +743,14 @@ func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lu
 		)
 	}
 
-	azureLustreName = strings.Trim(azureLustreName, "/")
-	if len(azureLustreName) == 0 {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"Context fs-name must be provided",
-		)
-	}
-
 	vol := &lustreVolume{
-		name:            volumeName,
-		mgsIPAddress:    mgsIPAddress,
-		azureLustreName: azureLustreName,
-		subDir:          subDir,
-		id:              volumeID,
+		name:                         volumeName,
+		mgsIPAddress:                 mgsIPAddress,
+		azureLustreName:              DefaultLustreFsName,
+		subDir:                       subDir,
+		id:                           volumeID,
+		createdByDynamicProvisioning: createdByDynamicProvisioning,
+		resourceGroupName:            resourceGroupName,
 	}
 
 	return vol, nil
