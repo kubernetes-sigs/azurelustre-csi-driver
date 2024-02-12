@@ -145,10 +145,10 @@ func TestNodePublishVolume(t *testing.T) {
 
 	volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
 	alreadyExistTarget := "./false_is_likely_exist_target"
-	metadataVolumeID := "vol_1#lustrefs#1.1.1.1#testNestedSubDir/${pod.metadata.name}/${pod.metadata.namespace}/${pod.metadata.uid}/${serviceAccount.metadata.name}/${pvc.metadata.name}/${pvc.metadata.namespace}/${pv.metadata.name}/testNestedSubDir#false"
+	metadataVolumeID := "vol_1#lustrefs#1.1.1.1#testNestedSubDir/${pod.metadata.name}/${pod.metadata.namespace}/${pod.metadata.uid}/${serviceAccount.metadata.name}/${pvc.metadata.name}/${pvc.metadata.namespace}/${pv.metadata.name}/testNestedSubDir"
 	createDirError := status.Errorf(codes.Internal,
 		"Could not mount target \"./azurelustre.go\": mkdir ./azurelustre.go: not a directory")
-	lockKey := fmt.Sprintf("%s-%s", "vol_1#lustrefs#1.1.1.1#testSubDir#false", targetTest)
+	lockKey := fmt.Sprintf("%s-%s", "vol_1#lustrefs#1.1.1.1#testSubDir", targetTest)
 	tests := []struct {
 		desc                 string
 		setup                func(*Driver)
@@ -219,18 +219,6 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMountActions: []mount.FakeAction{},
 		},
 		{
-			desc: "Invalid retain-sub-dir",
-			req: csi.NodePublishVolumeRequest{
-				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir#f",
-				TargetPath:       targetTest,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "f"},
-			},
-			expectedErr:          status.Error(codes.InvalidArgument, "Context retain-sub-dir value must be either true or false"),
-			expectedMountpoints:  nil,
-			expectedMountActions: []mount.FakeAction{},
-		},
-		{
 			desc: "Valid request with old ID",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
@@ -248,9 +236,9 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Empty sub-dir",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1##false",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
 				TargetPath:       targetTest,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": "", "retain-sub-dir": "false"},
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": ""},
 				Readonly:         false,
 			},
 			expectedErr:          status.Error(codes.InvalidArgument, "Context sub-dir must not be empty or root if provided"),
@@ -261,9 +249,9 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Invalid root sub-dir",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1#/#false",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#/",
 				TargetPath:       targetTest,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": "/", "retain-sub-dir": "false"},
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": "/"},
 				Readonly:         false,
 			},
 			expectedErr:          status.Error(codes.InvalidArgument, "Context sub-dir must not be empty or root if provided"),
@@ -274,27 +262,12 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Invalid sub-dir to parent",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1#../../parentAttemptSubDir#false",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#../../parentAttemptSubDir",
 				TargetPath:       targetTest,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": "../../parentAttemptSubDir", "retain-sub-dir": "false"},
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": "../../parentAttemptSubDir"},
 				Readonly:         false,
 			},
 			expectedErr:          status.Error(codes.InvalidArgument, "Context sub-dir must be strict subpath"),
-			expectedMountpoints:  nil,
-			expectedMountActions: []mount.FakeAction{},
-		},
-		{
-			desc: "Invalid attempt to delete sub-dir on read only mount",
-			req: csi.NodePublishVolumeRequest{
-				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
-					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
-				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
-				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
-				Readonly:      true,
-			},
-			expectedErr:          status.Error(codes.InvalidArgument, "Context retain-sub-dir must be true for a sub-dir on a read-only volume"),
 			expectedMountpoints:  nil,
 			expectedMountActions: []mount.FakeAction{},
 		},
@@ -304,9 +277,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#true",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      true,
 			},
 			expectedErr:          nil,
@@ -319,7 +292,7 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1##true",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#",
 				TargetPath:    targetTest,
 				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 				Readonly:      false,
@@ -329,14 +302,29 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMountActions: []mount.FakeAction{{Action: "mount", Target: "target_test", Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"}},
 		},
 		{
-			desc: "Valid mount options with sub-dir cleanup",
+			desc: "Valid mount options, no sub-dir",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+				Readonly:      false,
+			},
+			expectedErr:          nil,
+			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs", Path: "target_test", Type: "lustre", Opts: []string{"noatime", "flock"}}},
+			expectedMountActions: []mount.FakeAction{{Action: "mount", Target: "target_test", Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"}},
+		},
+		{
+			desc: "Valid mount options with sub-dir",
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
+				}},
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
+				TargetPath:    targetTest,
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      false,
 			},
 			expectedErr:         nil,
@@ -348,36 +336,23 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 		},
 		{
-			desc: "Unexpected volume ID skips sub-dir creation",
+			desc: "Unexpected volume ID doesn't skip sub-dir creation",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
 				VolumeId:      "vol_1",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      false,
 			},
 			expectedErr:         nil,
 			expectedMountpoints: []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"noatime", "flock"}}},
 			expectedMountActions: []mount.FakeAction{
+				{Action: "mount", Target: workingMountDir + "/target_test", Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"},
+				{Action: "unmount", Target: workingMountDir + "/target_test", Source: "", FSType: ""},
 				{Action: "mount", Target: "target_test", Source: "1.1.1.1@tcp:/lustrefs/testSubDir", FSType: "lustre"},
 			},
-		},
-		{
-			desc: "Unexpected volume ID fails if retain-sub-dir is not true",
-			req: csi.NodePublishVolumeRequest{
-				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
-					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
-				}},
-				VolumeId:      "vol_1",
-				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
-				Readonly:      false,
-			},
-			expectedErr:          status.Error(codes.InvalidArgument, "Context retain-sub-dir must be true for volume with invalid ID"),
-			expectedMountpoints:  nil,
-			expectedMountActions: []mount.FakeAction{},
 		},
 		{
 			desc: "Valid mount options with slashes in paths",
@@ -385,9 +360,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs/", "sub-dir": "/testSubDir/", "retain-sub-dir": "false"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs/", "sub-dir": "/testSubDir/"},
 				Readonly:      false,
 			},
 			expectedErr:         nil,
@@ -404,9 +379,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#true",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      true,
 			},
 			expectedErr:          nil,
@@ -425,7 +400,6 @@ func TestNodePublishVolume(t *testing.T) {
 					"mgs-ip-address":                         "1.1.1.1",
 					"fs-name":                                "lustrefs",
 					"sub-dir":                                "testNestedSubDir/${pod.metadata.name}/${pod.metadata.namespace}/${pod.metadata.uid}/${serviceAccount.metadata.name}/${pvc.metadata.name}/${pvc.metadata.namespace}/${pv.metadata.name}/testNestedSubDir",
-					"retain-sub-dir":                         "false",
 					"csi.storage.k8s.io/pod.name":            "testPodName",
 					"csi.storage.k8s.io/pod.namespace":       "testPodNamespace",
 					"csi.storage.k8s.io/pod.uid":             "testPodUid",
@@ -462,9 +436,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock", "ro"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#true",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      true,
 			},
 			expectedErr:          nil,
@@ -475,7 +449,7 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Error creating directory",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1##true",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
 				TargetPath:       "./azurelustre.go",
 				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 				Readonly:         true,
@@ -497,9 +471,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:      false,
 			},
 			expectedErr:         nil,
@@ -515,9 +489,9 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Success already mounted",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir#true",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:       alreadyExistTarget,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:         true,
 			},
 			expectedErr:          nil,
@@ -528,7 +502,7 @@ func TestNodePublishVolume(t *testing.T) {
 			desc: "Error could not mount",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1##true",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
 				TargetPath:       "error_mount_sens_mountflags",
 				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 				Readonly:         true,
@@ -545,12 +519,12 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
-				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
 				TargetPath:       targetTest,
-				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 				Readonly:         false,
 			},
-			expectedErr:          status.Error(codes.Aborted, fmt.Sprintf(volumeOperationAlreadyExistsFmt, "vol_1#lustrefs#1.1.1.1#testSubDir#false")),
+			expectedErr:          status.Error(codes.Aborted, fmt.Sprintf(volumeOperationAlreadyExistsFmt, "vol_1#lustrefs#1.1.1.1#testSubDir")),
 			expectedMountpoints:  nil,
 			expectedMountActions: []mount.FakeAction{},
 			cleanup: func(d *Driver) {
@@ -632,7 +606,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	}
 
 	workingMountDir := filepath.Join(workingDirectory, "workingMountDir")
-	lockKey := fmt.Sprintf("%s-%s", "vol_1#lustrefs#1.1.1.1#testSubDir#false", targetTest)
+	lockKey := fmt.Sprintf("%s-%s", "vol_1#lustrefs#1.1.1.1#testSubDir", targetTest)
 
 	tests := []struct {
 		desc                 string
@@ -662,43 +636,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 		},
 		{
 			desc:                 "Cannot find mount point",
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir#false"},
+			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
 			expectedErr:          nil,
 			expectExistingSubDir: false,
 			expectedMountpoints:  nil,
 			expectedMountActions: []mount.FakeAction{},
-		},
-		{
-			desc: "sub-dir is not subpath of source, ignores sub-dir cleanup",
-			setup: func(d *Driver) {
-				err = makeDir(targetTest)
-				assert.NoError(t, err)
-				err = d.mounter.Mount("/otherPath", targetTest, "lustre", []string{"noatime", "flock"})
-				assert.NoError(t, err)
-			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#.#false"},
-			expectedErr:          nil,
-			expectExistingSubDir: false,
-			expectedMountpoints:  []mount.MountPoint{},
-			expectedMountActions: []mount.FakeAction{
-				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
-			},
-		},
-		{
-			desc: "sub-dir is not strict subpath, ignores sub-dir cleanup",
-			setup: func(d *Driver) {
-				err = makeDir(targetTest)
-				assert.NoError(t, err)
-				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs", targetTest, "lustre", []string{"noatime", "flock"})
-				assert.NoError(t, err)
-			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#.#false"},
-			expectedErr:          nil,
-			expectExistingSubDir: false,
-			expectedMountpoints:  []mount.MountPoint{},
-			expectedMountActions: []mount.FakeAction{
-				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
-			},
 		},
 		{
 			desc: "Valid request with old ID",
@@ -729,8 +671,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			setup: func(d *Driver) {
 				d.volumeLocks.TryAcquire(lockKey)
 			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir#false"},
-			expectedErr:          status.Error(codes.Aborted, fmt.Sprintf(volumeOperationAlreadyExistsFmt, "vol_1#lustrefs#1.1.1.1#testSubDir#false")),
+			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
+			expectedErr:          status.Error(codes.Aborted, fmt.Sprintf(volumeOperationAlreadyExistsFmt, "vol_1#lustrefs#1.1.1.1#testSubDir")),
 			expectExistingSubDir: false,
 			expectedMountpoints:  nil,
 			expectedMountActions: []mount.FakeAction{},
@@ -739,73 +681,27 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			},
 		},
 		{
-			desc: "Attempt to clean sub-dir on read-only volume",
-			setup: func(d *Driver) {
-				internalMountDir := filepath.Join(d.workingMountDir, targetTest)
-				subDirPath := filepath.Join(internalMountDir, subDir)
-				err = makeDir(subDirPath)
-				assert.NoError(t, err)
-				err = makeDir(targetTest)
-				assert.NoError(t, err)
-				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs/testSubDir", targetTest, "lustre", []string{"ro", "noatime", "flock"})
-				assert.NoError(t, err)
-			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir#false"},
-			expectedErr:          nil,
-			expectExistingSubDir: true,
-			expectedMountpoints:  []mount.MountPoint{},
-			expectedMountActions: []mount.FakeAction{
-				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
-			},
-		},
-		{
-			desc: "Valid request without sub-dir cleanup",
+			desc: "Valid request with sub-dir",
 			setup: func(d *Driver) {
 				volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
 				req := csi.NodePublishVolumeRequest{
 					VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 						Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 					}},
-					VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#true",
+					VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 					TargetPath:    targetTest,
-					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "true"},
+					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 					Readonly:      false,
 				}
 				_, err := d.NodePublishVolume(context.Background(), &req)
 				assert.NoError(t, err)
 			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir#true"},
+			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
 			expectedErr:          nil,
 			expectExistingSubDir: true,
 			expectedMountpoints:  []mount.MountPoint{},
 			expectedMountActions: []mount.FakeAction{
 				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
-			},
-		},
-		{
-			desc: "Valid request with sub-dir cleanup",
-			setup: func(d *Driver) {
-				volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
-				req := csi.NodePublishVolumeRequest{
-					VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
-						Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
-					}},
-					VolumeId:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
-					TargetPath:    targetTest,
-					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir, "retain-sub-dir": "false"},
-					Readonly:      false,
-				}
-				_, err := d.NodePublishVolume(context.Background(), &req)
-				assert.NoError(t, err)
-			},
-			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir#false"},
-			expectedErr:          nil,
-			expectExistingSubDir: false,
-			expectedMountpoints:  []mount.MountPoint{},
-			expectedMountActions: []mount.FakeAction{
-				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
-				{Action: "mount", Target: workingMountDir + "/target_test", Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"},
-				{Action: "unmount", Target: workingMountDir + "/target_test", Source: "", FSType: ""},
 			},
 		},
 		{
@@ -860,10 +756,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			internalMountDir := filepath.Join(d.workingMountDir, targetTest)
 			if test.expectedErr == nil {
 				subDirPath := filepath.Join(internalMountDir, subDir)
+
 				if test.expectExistingSubDir {
-					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be retained", subDirPath)
+					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be created", subDirPath)
 				} else {
-					assert.NoDirExists(t, subDirPath, "Expected sub-dir %q to be deleted", subDirPath)
+					assert.NoDirExists(t, subDirPath, "Expected sub-dir %q not to exist", subDirPath)
 				}
 			}
 			err = d.mounter.Unmount(internalMountDir)
@@ -1030,50 +927,46 @@ func TestGetLustreVolFromID(t *testing.T) {
 	}{
 		{
 			desc:     "correct volume id",
-			volumeID: "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+			volumeID: "vol_1#lustrefs#1.1.1.1#testSubDir",
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				id:              "vol_1#lustrefs#1.1.1.1#testSubDir",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "testSubDir",
-				retainSubDir:    false,
 			},
 		},
 		{
 			desc:     "correct volume id with /",
-			volumeID: "vol_1#lustrefs/#1.1.1.1#/testSubDir/#true",
+			volumeID: "vol_1#lustrefs/#1.1.1.1#/testSubDir/",
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs/#1.1.1.1#/testSubDir/#true",
+				id:              "vol_1#lustrefs/#1.1.1.1#/testSubDir/",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "testSubDir",
-				retainSubDir:    true,
 			},
 		},
 		{
 			desc:     "correct volume id with empty sub-dir",
-			volumeID: "vol_1#lustrefs/#1.1.1.1##",
+			volumeID: "vol_1#lustrefs/#1.1.1.1#",
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs/#1.1.1.1##",
+				id:              "vol_1#lustrefs/#1.1.1.1#",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "",
-				retainSubDir:    true,
 			},
 		},
 		{
 			desc:     "correct volume id with multiple sub-dir levels",
-			volumeID: "vol_1#lustrefs#1.1.1.1#testSubDir/nestedSubDir#false",
+			volumeID: "vol_1#lustrefs#1.1.1.1#testSubDir/nestedSubDir",
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs#1.1.1.1#testSubDir/nestedSubDir#false",
+				id:              "vol_1#lustrefs#1.1.1.1#testSubDir/nestedSubDir",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "testSubDir/nestedSubDir",
-				retainSubDir:    false,
 			},
 		},
 		{
@@ -1081,11 +974,6 @@ func TestGetLustreVolFromID(t *testing.T) {
 			volumeID:             "vol_1",
 			expectedLustreVolume: nil,
 			expectedErr:          errors.New("could not split volume ID \"vol_1\" into lustre name and ip address"),
-		},
-		{
-			desc:        "incorrect retain-sub-dir",
-			volumeID:    "vol_1#lustrefs#1.1.1.1#testSubDir#f",
-			expectedErr: errors.New("could not parse retain-sub-dir value \"f\" into boolean"),
 		},
 	}
 	for _, test := range cases {
@@ -1210,43 +1098,40 @@ func TestNewLustreVolume(t *testing.T) {
 	}{
 		{
 			desc:    "valid context, no sub-dir",
-			id:      "vol_1#lustrefs#1.1.1.1##true",
+			id:      "vol_1#lustrefs#1.1.1.1#",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address": "1.1.1.1",
 				"fs-name":        "lustrefs",
 			},
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs#1.1.1.1##true",
+				id:              "vol_1#lustrefs#1.1.1.1#",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "",
-				retainSubDir:    true,
 			},
 		},
 		{
 			desc:    "valid context with sub-dir",
-			id:      "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+			id:      "vol_1#lustrefs#1.1.1.1#testSubDir",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address": "1.1.1.1",
 				"fs-name":        "lustrefs",
 				"sub-dir":        "testSubDir",
-				"retain-sub-dir": "false",
 			},
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs#1.1.1.1#testSubDir#false",
+				id:              "vol_1#lustrefs#1.1.1.1#testSubDir",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "testSubDir",
-				retainSubDir:    false,
 			},
 		},
 		{
 			desc:    "invalid parameter is ignored",
-			id:      "vol_1#lustrefs#1.1.1.1##true",
+			id:      "vol_1#lustrefs#1.1.1.1#",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address":    "1.1.1.1",
@@ -1254,80 +1139,53 @@ func TestNewLustreVolume(t *testing.T) {
 				"invalid-parameter": "value",
 			},
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#lustrefs#1.1.1.1##true",
+				id:              "vol_1#lustrefs#1.1.1.1#",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "",
-				retainSubDir:    true,
 			},
 			expectedErr: nil,
 		},
 		{
 			desc:    "incorrect volume id is ignored for context",
-			id:      "vol_1#otherfs#2.2.2.2#otherSubDir#false",
+			id:      "vol_1#otherfs#2.2.2.2#otherSubDir",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address": "1.1.1.1",
 				"fs-name":        "lustrefs",
 				"sub-dir":        "testSubDir",
-				"retain-sub-dir": "true",
 			},
 			expectedLustreVolume: &lustreVolume{
-				id:              "vol_1#otherfs#2.2.2.2#otherSubDir#false",
+				id:              "vol_1#otherfs#2.2.2.2#otherSubDir",
 				name:            "vol_1",
 				azureLustreName: "lustrefs",
 				mgsIPAddress:    "1.1.1.1",
 				subDir:          "testSubDir",
-				retainSubDir:    true,
 			},
 			expectedErr: nil,
 		},
 		{
 			desc:    "sub-dir cannot be empty",
-			id:      "vol_1#lustrefs#1.1.1.1##false",
+			id:      "vol_1#lustrefs#1.1.1.1#",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address": "1.1.1.1",
 				"fs-name":        "lustrefs",
 				"sub-dir":        "",
-				"retain-sub-dir": "false",
 			},
 			expectedErr: status.Error(codes.InvalidArgument, "Context sub-dir must not be empty or root if provided"),
 		},
 		{
 			desc:    "sub-dir cannot be root",
-			id:      "vol_1#lustrefs#1.1.1.1#/#false",
+			id:      "vol_1#lustrefs#1.1.1.1#/",
 			volName: "vol_1",
 			params: map[string]string{
 				"mgs-ip-address": "1.1.1.1",
 				"fs-name":        "lustrefs",
 				"sub-dir":        "/",
-				"retain-sub-dir": "false",
 			},
 			expectedErr: status.Error(codes.InvalidArgument, "Context sub-dir must not be empty or root if provided"),
-		},
-		{
-			desc:    "must have retain-sub-dir with sub-dir",
-			id:      "vol_1#lustrefs#1.1.1.1#testSubDir#",
-			volName: "vol_1",
-			params: map[string]string{
-				"mgs-ip-address": "1.1.1.1",
-				"fs-name":        "lustrefs",
-				"sub-dir":        "testSubDir",
-			},
-			expectedErr: status.Error(codes.InvalidArgument, "Context retain-sub-dir must be provided when sub-dir is provided"),
-		},
-		{
-			desc:    "sub-dir cannot be root",
-			id:      "vol_1#lustrefs#1.1.1.1##false",
-			volName: "vol_1",
-			params: map[string]string{
-				"mgs-ip-address": "1.1.1.1",
-				"fs-name":        "lustrefs",
-				"retain-sub-dir": "false",
-			},
-			expectedErr: status.Error(codes.InvalidArgument, "Context sub-dir must be provided when retain-sub-dir is provided"),
 		},
 	}
 

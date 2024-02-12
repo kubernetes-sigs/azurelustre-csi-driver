@@ -35,7 +35,6 @@ const (
 	VolumeContextMGSIPAddress = "mgs-ip-address"
 	VolumeContextFSName       = "fs-name"
 	VolumeContextSubDir       = "sub-dir"
-	VolumeContextRetainSubDir = "retain-sub-dir"
 	defaultSize               = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 	laaSOBlockSize            = 4 * 1024 * 1024 * 1024 * 1024 // 4TiB
 )
@@ -260,9 +259,6 @@ func createVolumeIDFromParams(volName string, params map[string]string) (string,
 
 	var errorParameters []string
 
-	// Shouldn't attempt to delete anything unless sub-dir is actually specified
-	retainSubDir := true
-
 	// validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
@@ -278,30 +274,6 @@ func createVolumeIDFromParams(volName string, params map[string]string) (string,
 				return "", status.Error(
 					codes.InvalidArgument,
 					"CreateVolume Parameter sub-dir must not be empty if provided",
-				)
-			}
-
-			if _, ok := params[VolumeContextRetainSubDir]; !ok {
-				return "", status.Error(
-					codes.InvalidArgument,
-					"CreateVolume Parameter retain-sub-dir must be provided when sub-dir is provided",
-				)
-			}
-		case VolumeContextRetainSubDir:
-			retainSubDirString := strings.ToLower(v)
-			if retainSubDirString != "true" && retainSubDirString != "false" {
-				return "", status.Error(
-					codes.InvalidArgument,
-					"CreateVolume Parameter retain-sub-dir value must be either true or false",
-				)
-			}
-
-			retainSubDir = retainSubDirString == "true"
-
-			if _, ok := params[VolumeContextSubDir]; !ok {
-				return "", status.Error(
-					codes.InvalidArgument,
-					"CreateVolume Parameter sub-dir must be provided when retain-sub-dir is provided",
 				)
 			}
 		// These will be used by the node methods
@@ -340,7 +312,7 @@ func createVolumeIDFromParams(volName string, params map[string]string) (string,
 		)
 	}
 
-	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress, subDir, retainSubDir)
+	volumeID := fmt.Sprintf(volumeIDTemplate, volName, azureLustreName, mgsIPAddress, subDir)
 
 	return volumeID, nil
 }

@@ -35,7 +35,7 @@ const (
 	DefaultDriverName        = "azurelustre.csi.azure.com"
 	azureLustreCSIDriverName = "azurelustre_csi_driver"
 	separator                = "#"
-	volumeIDTemplate         = "%s#%s#%s#%s#%t"
+	volumeIDTemplate         = "%s#%s#%s#%s"
 
 	podNameKey            = "csi.storage.k8s.io/pod.name"
 	podNamespaceKey       = "csi.storage.k8s.io/pod.namespace"

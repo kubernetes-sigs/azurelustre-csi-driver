@@ -7,8 +7,7 @@ provisioner: azurelustre.csi.azure.com
 parameters:
   mgs-ip-address: "{lustre_fs_ip}"
   fs-name: "{lustre_fs_name}"
-  #sub-dir: "longhaul/${pvc.metadata.name}"
-  #retain-sub-dir: "true"
+  #sub-dir: "longhaul"
 
 ---
 kind: PersistentVolumeClaim

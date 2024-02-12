@@ -14,9 +14,6 @@ parameters:
   mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
   # The subdirectory to create and mount per pod
   sub-dir: "${pvc.metadata.name}_${pod.metadata.name}"
-  # Whether the created subdirectory should be retained or deleted at pod exit
-  # This parameter is required if "sub-dir" is provided
-  retain-sub-dir: "false"
 provisioner: azurelustre.csi.azure.com
 reclaimPolicy: Delete
 volumeBindingMode: Immediate

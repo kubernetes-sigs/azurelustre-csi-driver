@@ -74,14 +74,10 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	volName := ""
-	skipCreateForInvalidVolumeID := false
 
 	volFromID, err := getLustreVolFromID(volumeID)
 	if err != nil {
 		klog.Warningf("error parsing volume ID '%v'", err)
-		// If we can't parse the volume ID for the information now, we won't be able to
-		// do so while unpublishing to know whether to delete it, so skip it
-		skipCreateForInvalidVolumeID = true
 	} else {
 		volName = volFromID.name
 	}
@@ -151,20 +147,6 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		if !vol.retainSubDir {
-			if readOnly {
-				return nil, status.Error(
-					codes.InvalidArgument,
-					"Context retain-sub-dir must be true for a sub-dir on a read-only volume",
-				)
-			} else if skipCreateForInvalidVolumeID {
-				return nil, status.Error(
-					codes.InvalidArgument,
-					"Context retain-sub-dir must be true for volume with invalid ID",
-				)
-			}
-		}
-
 		interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
@@ -176,8 +158,6 @@ func (d *Driver) NodePublishVolume(
 
 		if readOnly {
 			klog.V(2).Info("NodePublishVolume: not attempting to create sub-dir on read-only volume, assuming existing path")
-		} else if skipCreateForInvalidVolumeID {
-			klog.V(2).Info("NodePublishVolume: not attempting to create sub-dir for invalid volume ID, assuming existing path")
 		} else {
 			klog.V(2).Infof(
 				"NodePublishVolume: sub-dir will be created at %q",
@@ -300,70 +280,10 @@ func (d *Driver) NodeUnpublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
-	cleanupSubDir := false
-
-	sourceRoot := ""
-	subDirToClean := ""
-
-	var mountOptions []string
-
-	vol, err := getLustreVolFromID(volumeID)
-	if err != nil {
-		klog.V(2).Infof("failed to parse volume ID %q for sub-dir cleanup, skipping", volumeID)
-	} else if len(vol.subDir) > 0 && !vol.retainSubDir {
-		cleanupSubDir = true
-		sourceRoot = getSourceString(vol.mgsIPAddress, vol.azureLustreName)
-	}
-
-	if cleanupSubDir {
-		foundMountPoint := false
-		sourceWithSubDir := ""
-
-		mountPoints, _ := d.mounter.List()
-		for _, mountPoint := range mountPoints {
-			if mountPoint.Path == targetPath {
-				sourceWithSubDir = mountPoint.Device
-				foundMountPoint = true
-
-				mountOptions = mountPoint.Opts
-				for _, option := range mountOptions {
-					if option == "ro" {
-						klog.Warning("mounted volume is read only, not attempting to clean up sub-dir")
-
-						cleanupSubDir = false
-					}
-				}
-			}
-		}
-
-		switch {
-		case !foundMountPoint:
-			klog.Warningf("Warning: could not find source for mount point: %q. Skipping sub-dir delete", targetPath)
-
-			cleanupSubDir = false
-		case !strings.HasPrefix(sourceWithSubDir, sourceRoot):
-			klog.Warningf("Warning: mounted directory %q doesn't appear to be subdirectory of %q. Skipping sub-dir delete",
-				sourceWithSubDir,
-				sourceRoot,
-			)
-
-			cleanupSubDir = false
-		case len(strings.TrimPrefix(sourceWithSubDir, sourceRoot)) == 0:
-			klog.Warningf("Warning: mounted directory %q isn't a subdirectory of Lustre root. Skipping sub-dir delete",
-				sourceWithSubDir,
-			)
-
-			cleanupSubDir = false
-		default:
-			subDirToClean = strings.TrimPrefix(sourceWithSubDir, sourceRoot)
-			subDirToClean = strings.Trim(subDirToClean, "/")
-		}
-	}
-
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
 	d.kernelModuleLock.Lock()
-	err = mount.CleanupMountPoint(targetPath, d.mounter,
+	err := mount.CleanupMountPoint(targetPath, d.mounter,
 		true /*extensiveMountPointCheck*/)
 	d.kernelModuleLock.Unlock()
 	if err != nil {
@@ -375,20 +295,6 @@ func (d *Driver) NodeUnpublishVolume(
 		volumeID,
 		targetPath,
 	)
-
-	if cleanupSubDir {
-		klog.V(2).Infof(
-			"NodeUnpublishVolume: deleting subdirectory %q within %q",
-			subDirToClean,
-			sourceRoot,
-		)
-
-		if err = d.deleteSubDir(vol, targetPath, subDirToClean, mountOptions); err != nil {
-			return nil, err
-		}
-	} else {
-		klog.V(2).Info("Not attempting to clean sub-dir")
-	}
 
 	isOperationSucceeded = true
 
@@ -623,31 +529,6 @@ func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath st
 	return nil
 }
 
-func (d *Driver) deleteSubDir(vol *lustreVolume, mountPath string, subDirPath string, mountOptions []string) error {
-	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
-		return err
-	}
-
-	defer func() {
-		if err := d.internalUnmount(mountPath); err != nil {
-			klog.Warningf("failed to unmount lustre server: %v", err.Error())
-		}
-	}()
-
-	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, mountPath, subDirPath)
-	if err != nil {
-		return err
-	}
-
-	klog.V(2).Infof("Removing subdirectory at %q", internalVolumePath)
-
-	if err = os.RemoveAll(internalVolumePath); err != nil {
-		return status.Errorf(codes.Internal, "failed to delete subdirectory: %v", err.Error())
-	}
-
-	return nil
-}
-
 func getSourceString(mgsIPAddress, azureLustreName string) string {
 	return fmt.Sprintf("%s@tcp:/%s", mgsIPAddress, azureLustreName)
 }
@@ -780,7 +661,6 @@ type lustreVolume struct {
 	mgsIPAddress    string
 	azureLustreName string
 	subDir          string
-	retainSubDir    bool
 }
 
 func getLustreVolFromID(id string) (*lustreVolume, error) {
@@ -799,18 +679,6 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 
 	if len(segments) >= 4 {
 		vol.subDir = strings.Trim(segments[3], "/")
-
-		retainSubDirString := strings.ToLower(segments[4])
-		if len(retainSubDirString) == 0 {
-			vol.retainSubDir = true
-		} else {
-			if retainSubDirString != "true" && retainSubDirString != "false" {
-				return nil, fmt.Errorf("could not parse retain-sub-dir value %q into boolean", retainSubDirString)
-			}
-			vol.retainSubDir = retainSubDirString == "true"
-		}
-	} else {
-		vol.retainSubDir = true
 	}
 
 	return vol, nil
@@ -819,8 +687,6 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 // Convert context parameters to a lustreVolume
 func newLustreVolume(volumeID string, volumeName string, params map[string]string) (*lustreVolume, error) {
 	var mgsIPAddress, azureLustreName, subDir string
-	// Shouldn't attempt to delete anything unless sub-dir is actually specified
-	retainSubDir := true
 	// validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
@@ -836,30 +702,6 @@ func newLustreVolume(volumeID string, volumeName string, params map[string]strin
 				return nil, status.Error(
 					codes.InvalidArgument,
 					"Context sub-dir must not be empty or root if provided",
-				)
-			}
-
-			if _, ok := params[VolumeContextRetainSubDir]; !ok {
-				return nil, status.Error(
-					codes.InvalidArgument,
-					"Context retain-sub-dir must be provided when sub-dir is provided",
-				)
-			}
-		case VolumeContextRetainSubDir:
-			retainSubDirString := strings.ToLower(v)
-			if retainSubDirString != "true" && retainSubDirString != "false" {
-				return nil, status.Error(
-					codes.InvalidArgument,
-					"Context retain-sub-dir value must be either true or false",
-				)
-			}
-
-			retainSubDir = retainSubDirString == "true"
-
-			if _, ok := params[VolumeContextSubDir]; !ok {
-				return nil, status.Error(
-					codes.InvalidArgument,
-					"Context sub-dir must be provided when retain-sub-dir is provided",
 				)
 			}
 		}
@@ -885,7 +727,6 @@ func newLustreVolume(volumeID string, volumeName string, params map[string]strin
 		mgsIPAddress:    mgsIPAddress,
 		azureLustreName: azureLustreName,
 		subDir:          subDir,
-		retainSubDir:    retainSubDir,
 		id:              volumeID,
 	}
 
