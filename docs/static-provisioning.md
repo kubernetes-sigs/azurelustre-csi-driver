@@ -12,8 +12,7 @@ This document explains how to deploy your workload with an existing Azure Lustre
 [static provision storage class](./examples/storageclass_existing_lustre.yaml)
 and [PVC file](./examples/pvc_storageclass.yaml).
 
-* Edit the `EXISTING_LUSTRE_FS_NAME` and `EXISTING_LUSTRE_IP_ADDRESS` in
-storage class.
+* Edit the `EXISTING_LUSTRE_IP_ADDRESS` in the storage class.
 
 * Create storage class and `PVC`
 
@@ -29,8 +28,7 @@ kubectl create -f pvc_storageclass.yaml
 * Download [PV file](./examples/pv.yaml) and
 [PVC file](./examples/pvc_pv.yaml)
 
-* Edit the `EXISTING_LUSTRE_FS_NAME`, `EXISTING_LUSTRE_IP_ADDRESS` and
-`UNIQUE_IDENTIFIER_VOLUME_ID` in pv.
+* Edit the `EXISTING_LUSTRE_IP_ADDRESS` and `UNIQUE_IDENTIFIER_VOLUME_ID` in the pv.
 
 * Create PV and PVC.
 
