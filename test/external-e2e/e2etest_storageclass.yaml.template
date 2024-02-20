@@ -7,7 +7,7 @@ provisioner: azurelustre.csi.azure.com
 parameters:
   mgs-ip-address: "{lustre_mgs_ip}"
   fs-name: "{lustre_fs_name}"
-  #sub-dir: "longhaul"
+  sub-dir: "longhaul"
 mountOptions:
   - noatime
   - flock
