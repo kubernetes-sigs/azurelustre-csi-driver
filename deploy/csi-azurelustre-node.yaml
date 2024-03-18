@@ -84,7 +84,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.14
+          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.15
           imagePullPolicy: IfNotPresent
           lifecycle:
             preStop:
@@ -116,9 +116,9 @@ spec:
             - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
               value: "yes"
             - name: LUSTRE_VERSION
-              value: "2.15.3"
+              value: "2.15.4"
             - name: CLIENT_SHA_SUFFIX
-              value: "43-gd7e07df"
+              value: "42-gd6d405d"
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
