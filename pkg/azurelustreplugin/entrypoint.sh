@@ -65,10 +65,10 @@ function add_net_interfaces() {
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
-requiredLustreVersion=${LUSTRE_VERSION:-"2.15.3"}
+requiredLustreVersion=${LUSTRE_VERSION:-"2.15.4"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
-requiredClientSha=${CLIENT_SHA_SUFFIX:-"43-gd7e07df"}
+requiredClientSha=${CLIENT_SHA_SUFFIX:-"42-gd6d405d"}
 echo "requiredClientSha: ${requiredClientSha}"
 
 pkgVersion="${requiredLustreVersion}-${requiredClientSha}"
