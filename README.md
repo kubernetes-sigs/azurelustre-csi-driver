@@ -16,8 +16,10 @@ This driver allows Kubernetes to access Azure Lustre file system.
 
 | Driver version  | Image                                                         | Supported k8s version | Lustre client version |
 |-----------------|---------------------------------------------------------------|-----------------------|-----------------------|
-| main branch     | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:latest   | 1.21+                 | 2.15.1                |
+| main branch     | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:latest   | 1.21+                 | 2.15.4                |
 | v0.1.11         | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.11  | 1.21+                 | 2.15.1                |
+| v0.1.14         | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.14  | 1.21+                 | 2.15.3                |
+| v0.1.15         | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.15  | 1.21+                 | 2.15.4                |
 
 &nbsp;
 
