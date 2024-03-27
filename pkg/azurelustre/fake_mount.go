@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	mount "k8s.io/mount-utils"
 )
@@ -68,4 +69,8 @@ func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func (f *fakeMounter) UnmountWithForce(target string, _ time.Duration) error {
+	return f.Unmount(target)
 }
