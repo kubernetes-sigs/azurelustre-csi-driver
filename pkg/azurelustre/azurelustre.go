@@ -91,6 +91,7 @@ type Driver struct {
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
 	mounter                    *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
+	forceMounter               *mount.MounterForceUnmounter
 	volLockMap                 *util.LockMap
 	// Directory to temporarily mount to for subdirectory creation
 	workingMountDir string
@@ -131,6 +132,13 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 	d.mounter = &mount.SafeFormatAndMount{
 		Interface: mount.New(""),
 		Exec:      utilexec.New(),
+	}
+	forceUnmounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+	if ok {
+		klog.V(4).Infof("Using force unmounter interface")
+		d.forceMounter = &forceUnmounter
+	} else {
+		klog.Fatalf("Mounter does not support force unmount")
 	}
 
 	// TODO_JUSJIN: revisit these caps
