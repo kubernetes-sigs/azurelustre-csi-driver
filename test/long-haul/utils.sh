@@ -35,8 +35,8 @@ fast_exit () {
 
 reset_csi_driver () {
     echo "Reset CSI driver"
-    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml
-    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml
+    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml --ignore-not-found
+    kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml --ignore-not-found
     kubectl wait pod -n kube-system --for=delete --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
 
     echo "Reset node label"
@@ -149,8 +149,8 @@ verify_csi_driver () {
 
 start_sample_workload () {
     stop_sample_workload
-    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=60s
-    kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=60s
+    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=300s
+    kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=300s
     sleep 15
 }
 
@@ -160,8 +160,8 @@ stop_sample_workload () {
         kubectl patch pvc azurelustre-longhaulsample-pvc -p '{"metadata":{"finalizers":null}}'
     fi
 
-    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --timeout=60s --grace-period=0 --force --cascade
-    kubectl wait pod --for=delete --selector=app=azurelustre-longhaulsample-deployment --timeout=60s
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --timeout=300s --grace-period=0 --force --cascade
+    kubectl wait pod --for=delete --selector=app=azurelustre-longhaulsample-deployment --timeout=300s
 }
 
 verify_sample_workload_logs () {
