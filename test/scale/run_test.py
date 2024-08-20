@@ -203,15 +203,24 @@ class PerfScaleTest:
         logger.info("generated workload yaml:")
         self.run_command(f"cat {self._generated_workload_yaml}")
 
-    def run_command(self, command: str, need_stdout=False, raise_error=True):
+    def run_command(self, command: str, need_stdout=False, raise_error=True, retries=5):
         logger.info(f"run command {command}")
         stdout = None
         if need_stdout:
             stdout = subprocess.PIPE
-        process = subprocess.run(command, shell=True, text=True, stdout=stdout)
-        if process.returncode != 0 and raise_error:
-            raise RuntimeError(f"command {command} exit with error"
-                               f" code {process.returncode}")
+        total_retries = retries # used for calculating sleep later
+        while retries > 0:
+            process = subprocess.run(command, shell=True, text=True, stdout=stdout)
+            retries -=1
+            if process.returncode == 0:
+                break
+            elif process.returncode != 0 and raise_error and retries == 0:
+                raise RuntimeError(f"command {command} exit with error"
+                                f" code {process.returncode}")
+            logger.info(f"command {command} failed, retrying"
+                                f" attempt {retries}")
+            time.sleep(10 * (total_retries - retries)) # sleep between retries
+
         stdout = process.stdout
         if need_stdout:
             logger.info(stdout)
@@ -221,7 +230,10 @@ class PerfScaleTest:
         logger.info("reinstalling CSI driver")
         self.run_command(f"{ROOT_PATH}/deploy/uninstall-driver.sh")
         self.run_command(f"{ROOT_PATH}/deploy/install-driver.sh local")
-        os.mkdir(self._csi_log_path)
+        if os.path.exists(self._csi_log_path):
+            pass
+        else:
+            os.mkdir(self._csi_log_path)
 
         self._perf_result = PerfResultCollector()
         for target_func in self.TARGET_FUNCS:
@@ -256,7 +268,7 @@ class PerfScaleTest:
             f" -f {self._generated_workload_yaml}"
             f" --ignore-not-found"
             f" --wait=true"
-            f" --timeout=300s"
+            f" --timeout=600s"
         )
         logger.info("workload was deleted")
 
@@ -289,7 +301,8 @@ class PerfScaleTest:
             self.run_command(f"kubectl logs {pod}"
                              f" -nkube-system"
                              f" -cazurelustre"
-                             f" >{self._csi_log_path}/{pod}")
+                             f" >{self._csi_log_path}/{pod}",
+                             raise_error=False)
 
     def parse_result_from_log(self):
         logger.info("parsing log file for perf result")
