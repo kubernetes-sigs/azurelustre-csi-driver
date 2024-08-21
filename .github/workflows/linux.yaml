@@ -2,11 +2,8 @@ name: Linux Tests
 
 # Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    pull_request: {}
+    push: {}
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -16,16 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go 1.x
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
-        go-version: ^1.19
+        go-version: '1.23'
       id: go
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Run unit test
       run: |
+
         export PATH=$PATH:$HOME/.local/bin
         sudo apt-get update
         make verify
@@ -42,7 +40,7 @@ jobs:
 
     - name: Get code coverage
       env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         GO111MODULE=off go get github.com/mattn/goveralls
         $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github

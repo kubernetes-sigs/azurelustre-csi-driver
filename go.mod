@@ -1,6 +1,6 @@
 module sigs.k8s.io/azurelustre-csi-driver
 
-go 1.19
+go 1.23
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.1.1
