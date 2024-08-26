@@ -2,8 +2,8 @@ name: Linux Tests
 
 # Controls when the workflow will run
 on:
-    pull_request: {}
-    push: {}
+  pull_request: {}
+  push: {}
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -38,9 +38,10 @@ jobs:
         export PATH=$PATH:$HOME/.local/bin
         make container
 
+    - name: Install goveralls
+      run: go install github.com/mattn/goveralls@latest
+
     - name: Get code coverage
       env:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        GO111MODULE=off go get github.com/mattn/goveralls
-        $(go env GOPATH)/bin/goveralls -coverprofile=profile.cov -service=github
+      run: goveralls -coverprofile=profile.cov -service=github
