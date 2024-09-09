@@ -16,11 +16,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Install Go
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Build Test
         run: |
           make azurelustre-windows
