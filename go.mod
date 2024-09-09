@@ -11,7 +11,7 @@ require (
 	github.com/pborman/uuid v1.2.0
 	github.com/pelletier/go-toml v1.9.4
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/net v0.26.0
+	golang.org/x/net v0.29.0
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.33.0
 	k8s.io/apimachinery v0.30.4
@@ -38,9 +38,9 @@ require (
 
 require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.14.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.9.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest/date v0.3.0 // indirect
 	github.com/Azure/go-autorest/autorest/mocks v0.4.2 // indirect
@@ -82,11 +82,11 @@ require (
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/oauth2 v0.11.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/term v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/term v0.24.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/appengine v1.6.7 // indirect
