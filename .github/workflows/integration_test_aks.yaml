@@ -18,12 +18,12 @@
     #runs-on: ubuntu-latest
     #steps:
       #- name: Set up Go 1.x
-        #uses: actions/setup-go@v2
+        #uses: actions/setup-go@v5
         #with:
           #go-version-file: 'go.mod'
         #id: go
       #- name: Check out code
-        #uses: actions/checkout@v2
+        #uses: actions/checkout@v4
         #with:
           #ref: ${{ github.event.pull_request.head.sha }}
       #- name: Build Code
