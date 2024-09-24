@@ -15,13 +15,13 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v3
-        with:
-          go-version: '1.23'
-
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
       - name: Build an image from Dockerfile
         run: |
           export PUBLISH=true
