@@ -73,44 +73,9 @@ func (d *Driver) NodePublishVolume(
 			"Volume context must be provided")
 	}
 
-	volName := ""
-
-	volFromID, err := getLustreVolFromID(volumeID)
-	if err != nil {
-		klog.Warningf("error parsing volume ID '%v'", err)
-	} else {
-		volName = volFromID.name
-	}
-
-	vol, err := newLustreVolume(volumeID, volName, context)
+	vol, err := getVolume(volumeID, context)
 	if err != nil {
 		return nil, err
-	}
-
-	if volFromID != nil && *volFromID != *vol {
-		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
-	}
-
-	subDirReplaceMap := map[string]string{}
-
-	// get metadata values
-	for k, v := range context {
-		switch strings.ToLower(k) {
-		case podNameKey:
-			subDirReplaceMap[podNameMetadata] = v
-		case podNamespaceKey:
-			subDirReplaceMap[podNamespaceMetadata] = v
-		case podUIDKey:
-			subDirReplaceMap[podUIDMetadata] = v
-		case serviceAccountNameKey:
-			subDirReplaceMap[serviceAccountNameMetadata] = v
-		case pvcNamespaceKey:
-			subDirReplaceMap[pvcNamespaceMetadata] = v
-		case pvcNameKey:
-			subDirReplaceMap[pvcNameMetadata] = v
-		case pvNameKey:
-			subDirReplaceMap[pvNameMetadata] = v
-		}
 	}
 
 	lockKey := fmt.Sprintf("%s-%s", volumeID, target)
@@ -128,26 +93,10 @@ func (d *Driver) NodePublishVolume(
 
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
-	readOnly := false
-
-	mountOptions := []string{}
-	if req.GetReadonly() {
-		readOnly = true
-		mountOptions = append(mountOptions, "ro")
-	}
-	for _, userMountFlag := range userMountFlags {
-		if userMountFlag == "ro" {
-			readOnly = true
-
-			if req.GetReadonly() {
-				continue
-			}
-		}
-		mountOptions = append(mountOptions, userMountFlag)
-	}
+	mountOptions, readOnly := getMountOptions(req, userMountFlags)
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
+		interpolatedSubDir := interpolateSubDirVariables(context, vol)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(
@@ -233,6 +182,75 @@ func (d *Driver) NodePublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodePublishVolumeResponse{}, nil
+}
+
+func interpolateSubDirVariables(context map[string]string, vol *lustreVolume) string {
+	subDirReplaceMap := map[string]string{}
+
+	// get metadata values
+	for k, v := range context {
+		switch strings.ToLower(k) {
+		case podNameKey:
+			subDirReplaceMap[podNameMetadata] = v
+		case podNamespaceKey:
+			subDirReplaceMap[podNamespaceMetadata] = v
+		case podUIDKey:
+			subDirReplaceMap[podUIDMetadata] = v
+		case serviceAccountNameKey:
+			subDirReplaceMap[serviceAccountNameMetadata] = v
+		case pvcNamespaceKey:
+			subDirReplaceMap[pvcNamespaceMetadata] = v
+		case pvcNameKey:
+			subDirReplaceMap[pvcNameMetadata] = v
+		case pvNameKey:
+			subDirReplaceMap[pvNameMetadata] = v
+		}
+	}
+
+	interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
+	return interpolatedSubDir
+}
+
+func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string) ([]string, bool) {
+	readOnly := false
+	mountOptions := []string{}
+	if req.GetReadonly() {
+		readOnly = true
+		mountOptions = append(mountOptions, "ro")
+	}
+	for _, userMountFlag := range userMountFlags {
+		if userMountFlag == "ro" {
+			readOnly = true
+
+			if req.GetReadonly() {
+				continue
+			}
+		}
+		mountOptions = append(mountOptions, userMountFlag)
+	}
+	return mountOptions, readOnly
+}
+
+func getVolume(volumeID string, context map[string]string) (*lustreVolume, error) {
+	volName := ""
+
+	volFromID, err := getLustreVolFromID(volumeID)
+	if err != nil {
+		klog.Warningf("error parsing volume ID '%v'", err)
+	} else {
+		volName = volFromID.name
+	}
+
+	vol, err := newLustreVolume(volumeID, volName, context)
+	if err != nil {
+		return nil, err
+	}
+
+	if volFromID != nil && *volFromID != *vol {
+		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
+	}
+
+	return vol, nil
 }
 
 func mountVolumeAtPath(d *Driver, source string, target string, mountOptions []string) error {
