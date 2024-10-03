@@ -209,16 +209,7 @@ func (d *Driver) NodePublishVolume(
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	d.kernelModuleLock.Lock()
-	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
-		source,
-		target,
-		"lustre",
-		mountOptions,
-		nil,
-		[]string{"--no-mtab"},
-	)
-	d.kernelModuleLock.Unlock()
+	err = mountVolumeAtPath(d, source, target, mountOptions)
 
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
@@ -242,6 +233,20 @@ func (d *Driver) NodePublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodePublishVolumeResponse{}, nil
+}
+
+func mountVolumeAtPath(d *Driver, source string, target string, mountOptions []string) error {
+	d.kernelModuleLock.Lock()
+	defer d.kernelModuleLock.Unlock()
+	err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
+		source,
+		target,
+		"lustre",
+		mountOptions,
+		nil,
+		[]string{"--no-mtab"},
+	)
+	return err
 }
 
 // NodeUnpublishVolume unmount the volume from the target path
@@ -282,10 +287,7 @@ func (d *Driver) NodeUnpublishVolume(
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
-	d.kernelModuleLock.Lock()
-	err := mount.CleanupMountPoint(targetPath, d.mounter,
-		true /*extensiveMountPointCheck*/)
-	d.kernelModuleLock.Unlock()
+	err := unmountVolumeAtPath(d, targetPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)
@@ -299,6 +301,14 @@ func (d *Driver) NodeUnpublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
+}
+
+func unmountVolumeAtPath(d *Driver, targetPath string) error {
+	d.kernelModuleLock.Lock()
+	defer d.kernelModuleLock.Unlock()
+	err := mount.CleanupMountPoint(targetPath, d.mounter,
+		true /*extensiveMountPointCheck*/)
+	return err
 }
 
 // Staging and Unstaging is not able to be supported with how Lustre is mounted
@@ -603,16 +613,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 		vol.id, source, target, mountOptions,
 	)
 
-	d.kernelModuleLock.Lock()
-	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
-		source,
-		target,
-		"lustre",
-		mountOptions,
-		nil,
-		[]string{"--no-mtab"},
-	)
-	d.kernelModuleLock.Unlock()
+	err = mountVolumeAtPath(d, source, target, mountOptions)
 
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
