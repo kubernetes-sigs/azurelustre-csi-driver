@@ -66,28 +66,6 @@ func TestNewDriver(t *testing.T) {
 	assert.Equal(t, fakedriver, driver)
 }
 
-func TestIsRetriableError(t *testing.T) {
-	tests := []struct {
-		desc         string
-		rpcErr       error
-		expectedBool bool
-	}{
-		{
-			desc:         "non-retriable error",
-			rpcErr:       nil,
-			expectedBool: false,
-		},
-	}
-
-	for _, test := range tests {
-		result := isRetriableError(test.rpcErr)
-		if result != test.expectedBool {
-			t.Errorf("desc: (%s), input: rpcErr(%v), isRetriableError returned with bool(%v), not equal to expectedBool(%v)",
-				test.desc, test.rpcErr, result, test.expectedBool)
-		}
-	}
-}
-
 func TestIsCorruptedDir(t *testing.T) {
 	existingMountPath, err := os.MkdirTemp(os.TempDir(), "azurelustre-csi-mount-test")
 	if err != nil {
