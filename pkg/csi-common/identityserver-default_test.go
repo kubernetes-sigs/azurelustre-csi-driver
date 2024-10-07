@@ -22,6 +22,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetPluginInfo(t *testing.T) {
@@ -31,7 +32,7 @@ func TestGetPluginInfo(t *testing.T) {
 
 	req := csi.GetPluginInfoRequest{}
 	resp, err := ids.GetPluginInfo(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, fakeDriverName, resp.GetName())
 	assert.Equal(t, vendorVersion, resp.GetVendorVersion())
 }
@@ -41,7 +42,7 @@ func TestProbe(t *testing.T) {
 	ids := NewDefaultIdentityServer(d)
 	req := csi.ProbeRequest{}
 	resp, err := ids.Probe(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, int32(0), resp.XXX_sizecache)
 }
@@ -51,7 +52,7 @@ func TestGetPluginCapabilities(t *testing.T) {
 	ids := NewDefaultIdentityServer(d)
 	req := csi.GetPluginCapabilitiesRequest{}
 	resp, err := ids.GetPluginCapabilities(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, int32(0), resp.XXX_sizecache)
 }
