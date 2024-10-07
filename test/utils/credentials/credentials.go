@@ -122,7 +122,7 @@ func CreateAzureCredentialFile() (*Credentials, error) {
 		return parseAndExecuteTemplate(cloud, c.TenantID, c.SubscriptionID, c.ClientID, c.ClientSecret, resourceGroup, location)
 	}
 
-	return nil, fmt.Errorf("If you are running tests locally, you will need to set the following env vars: $%s, $%s, $%s, $%s, $%s, $%s",
+	return nil, fmt.Errorf("if you are running tests locally, you will need to set the following env vars: $%s, $%s, $%s, $%s, $%s, $%s",
 		tenantIDEnvVar, subscriptionIDEnvVar, aadClientIDEnvVar, aadClientSecretEnvVar, resourceGroupEnvVar, locationEnvVar)
 }
 
