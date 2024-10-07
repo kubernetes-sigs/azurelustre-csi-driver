@@ -34,7 +34,7 @@ type CSIDriver struct {
 
 // Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
-func NewCSIDriver(name string, v string, nodeID string) *CSIDriver {
+func NewCSIDriver(name, v, nodeID string) *CSIDriver {
 	if name == "" {
 		klog.Errorf("Driver name missing")
 		return nil
