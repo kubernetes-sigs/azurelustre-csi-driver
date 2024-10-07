@@ -34,7 +34,7 @@ type Client struct {
 	groupsClient   *armresources.ResourceGroupsClient
 }
 
-func GetClient(cloud string, subscriptionID string, clientID string, tenantID string, clientSecret string) (*Client, error) {
+func GetClient(cloud, subscriptionID, clientID, tenantID, clientSecret string) (*Client, error) {
 	env, err := azure.EnvironmentFromName(cloud)
 	if err != nil {
 		return nil, err
