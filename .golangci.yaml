@@ -4,5 +4,6 @@ linters:
     - gofmt
     - testifylint
     - stylecheck
+    - tenv
 run:
   timeout: 30m0s

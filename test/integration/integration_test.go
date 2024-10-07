@@ -40,7 +40,7 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, creds)
 
-	os.Setenv("AZURE_CREDENTIAL_FILE", credentials.TempAzureCredentialFilePath)
+	t.Setenv("AZURE_CREDENTIAL_FILE", credentials.TempAzureCredentialFilePath)
 
 	azureClient, err := azure.GetClient(creds.Cloud, creds.SubscriptionID, creds.AADClientID, creds.TenantID, creds.AADClientSecret)
 	require.NoError(t, err)
