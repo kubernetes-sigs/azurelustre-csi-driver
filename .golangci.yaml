@@ -6,5 +6,6 @@ linters:
     - stylecheck
     - predeclared
     - tenv
+    - copyloopvar
 run:
   timeout: 30m0s

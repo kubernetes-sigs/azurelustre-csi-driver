@@ -119,7 +119,6 @@ func TestEnsureMountPoint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test // pin
 		_ = makeDir(alreadyExistTarget)
 
 		t.Run(test.desc, func(t *testing.T) {
@@ -538,7 +537,6 @@ func TestNodePublishVolume(t *testing.T) {
 	d := NewFakeDriver()
 
 	for _, test := range tests {
-		test := test // pin
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
@@ -730,7 +728,6 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	d.workingMountDir = workingMountDir
 
 	for _, test := range tests {
-		test := test // pin
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
@@ -859,7 +856,6 @@ func TestNodeGetVolumeStats(t *testing.T) {
 
 	for _, test := range tests {
 		_ = makeDir(fakePath)
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.NodeGetVolumeStats(context.Background(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -910,7 +906,6 @@ func TestEnsureStrictSubpath(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			actualResult := ensureStrictSubpath(test.subPath)
 
@@ -978,7 +973,6 @@ func TestGetLustreVolFromID(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			lustreVolume, err := getLustreVolFromID(test.volumeID)
 
@@ -1034,7 +1028,6 @@ func TestGetInternalVolumePath(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalVolumePath(test.workingMountDir, test.mountPath, test.subDirPath)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -1077,7 +1070,6 @@ func TestGetInternalMountPath(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalMountPath(test.workingMountDir, test.mountPath)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -1191,7 +1183,6 @@ func TestNewLustreVolume(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			vol, err := newLustreVolume(test.id, test.volName, test.params)
 			if !reflect.DeepEqual(err, test.expectedErr) {
