@@ -80,7 +80,7 @@ func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) err
 	if err == nil {
 		pollerResp, err := az.groupsClient.BeginDelete(ctx, groupName, nil)
 		if err != nil {
-			return fmt.Errorf("cannot delete resource group %v: %v", groupName, err)
+			return fmt.Errorf("cannot delete resource group %v: %w", groupName, err)
 		}
 		_, err = pollerResp.PollUntilDone(ctx, nil)
 		if err != nil {
