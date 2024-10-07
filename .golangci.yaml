@@ -11,5 +11,6 @@ linters:
     - protogetter
     - nonamedreturns
     - gci
+    - forbidigo
 run:
   timeout: 30m0s

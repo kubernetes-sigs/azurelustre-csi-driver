@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 
 	"k8s.io/klog/v2"
@@ -43,7 +42,7 @@ func main() {
 		if err != nil {
 			klog.Fatalln(err)
 		}
-		fmt.Println(info)
+		klog.V(2).Info(info)
 		os.Exit(0)
 	}
 
