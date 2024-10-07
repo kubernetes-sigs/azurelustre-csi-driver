@@ -66,7 +66,7 @@ func TestAddControllerServiceCapabilities(t *testing.T) {
 	var cl []csi.ControllerServiceCapability_RPC_Type
 	cl = append(cl, csi.ControllerServiceCapability_RPC_UNKNOWN)
 	d.AddControllerServiceCapabilities(cl)
-	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().Type)
+	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().GetType())
 }
 
 func TestGetVolumeCapabilityAccessModes(t *testing.T) {

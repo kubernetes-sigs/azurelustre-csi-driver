@@ -415,25 +415,26 @@ func (d *Driver) NodeGetVolumeStats(
 	_ context.Context,
 	req *csi.NodeGetVolumeStatsRequest,
 ) (*csi.NodeGetVolumeStatsResponse, error) {
-	if len(req.VolumeId) == 0 {
+	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"NodeGetVolumeStats volume ID was empty")
 	}
-	if len(req.VolumePath) == 0 {
+	volumePath := req.GetVolumePath()
+	if len(volumePath) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"NodeGetVolumeStats volume path was empty")
 	}
 
-	if _, err := os.Lstat(req.VolumePath); err != nil {
+	if _, err := os.Lstat(volumePath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, status.Errorf(codes.NotFound,
-				"path %s does not exist", req.VolumePath)
+				"path %s does not exist", volumePath)
 		}
 		return nil, status.Errorf(codes.Internal,
-			"failed to stat file %s: %v", req.VolumePath, err)
+			"failed to stat file %s: %v", volumePath, err)
 	}
 
-	volumeMetrics, err := volume.NewMetricsStatFS(req.VolumePath).GetMetrics()
+	volumeMetrics, err := volume.NewMetricsStatFS(volumePath).GetMetrics()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to get metrics: %v", err)
