@@ -39,12 +39,9 @@ func TestControllerGetCapabilities(t *testing.T) {
 	resp, err := d.ControllerGetCapabilities(context.Background(), &req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
-	var capabilitiesSupported []csi.ControllerServiceCapability_RPC_Type
+	capabilitiesSupported := make([]csi.ControllerServiceCapability_RPC_Type, 0, len(resp.GetCapabilities()))
 	for _, capabilitySupported := range resp.GetCapabilities() {
-		capabilitiesSupported = append(
-			capabilitiesSupported,
-			capabilitySupported.GetRpc().GetType(),
-		)
+		capabilitiesSupported = append(capabilitiesSupported, capabilitySupported.GetRpc().GetType())
 	}
 	sort.Slice(capabilitiesSupported,
 		func(i, j int) bool {
