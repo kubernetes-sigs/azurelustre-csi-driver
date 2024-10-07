@@ -70,8 +70,8 @@ func TestProbe(t *testing.T) {
 	resp, err := d.Probe(context.Background(), &req)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
-	assert.Equal(t, resp.XXX_sizecache, int32(0))
-	assert.Equal(t, true, resp.Ready.Value)
+	assert.Equal(t, int32(0), resp.XXX_sizecache)
+	assert.True(t, resp.Ready.Value)
 }
 
 func TestGetPluginCapabilities(t *testing.T) {
