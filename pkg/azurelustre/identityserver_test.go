@@ -33,7 +33,7 @@ func TestGetPluginInfo(t *testing.T) {
 	req := csi.GetPluginInfoRequest{}
 	resp, err := d.GetPluginInfo(context.Background(), &req)
 	require.NoError(t, err)
-	assert.Equal(t, fakeDriverName, resp.Name)
+	assert.Equal(t, fakeDriverName, resp.GetName())
 	assert.Equal(t, vendorVersion, resp.GetVendorVersion())
 }
 
@@ -72,7 +72,7 @@ func TestProbe(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, int32(0), resp.XXX_sizecache)
-	assert.True(t, resp.Ready.Value)
+	assert.True(t, resp.GetReady().GetValue())
 }
 
 func TestGetPluginCapabilities(t *testing.T) {

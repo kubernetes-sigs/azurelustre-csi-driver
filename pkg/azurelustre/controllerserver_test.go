@@ -43,7 +43,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 	for _, capabilitySupported := range resp.GetCapabilities() {
 		capabilitiesSupported = append(
 			capabilitiesSupported,
-			capabilitySupported.GetRpc().Type,
+			capabilitySupported.GetRpc().GetType(),
 		)
 	}
 	sort.Slice(capabilitiesSupported,
@@ -107,7 +107,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 		}
 		rep, err := d.CreateVolume(context.Background(), req)
 		require.NoError(t, err)
-		assert.Equal(t, expectedOutputs[idx], rep.Volume.GetCapacityBytes())
+		assert.Equal(t, expectedOutputs[idx], rep.GetVolume().GetCapacityBytes())
 	}
 }
 
@@ -162,7 +162,7 @@ func TestCreateVolume_Err_NoParameters(t *testing.T) {
 func TestCreateVolume_Err_ParametersNoIP(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	delete(req.Parameters, VolumeContextMGSIPAddress)
+	delete(req.GetParameters(), VolumeContextMGSIPAddress)
 	_, err := d.CreateVolume(context.Background(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
@@ -186,7 +186,7 @@ func TestCreateVolume_Err_ParametersEmptyIP(t *testing.T) {
 func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	delete(req.Parameters, VolumeContextFSName)
+	delete(req.GetParameters(), VolumeContextFSName)
 	_, err := d.CreateVolume(context.Background(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
@@ -198,7 +198,7 @@ func TestCreateVolume_Err_ParametersNoFSName(t *testing.T) {
 func TestCreateVolume_Err_ParametersEmptyFSName(t *testing.T) {
 	d := NewFakeDriver()
 	req := buildCreateVolumeRequest()
-	req.Parameters[VolumeContextFSName] = ""
+	req.GetParameters()[VolumeContextFSName] = ""
 	_, err := d.CreateVolume(context.Background(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
