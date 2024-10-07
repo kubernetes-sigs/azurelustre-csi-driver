@@ -23,6 +23,7 @@ import (
 	"text/template"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -80,22 +81,22 @@ func TestCreateAzureCredentialFileOnAzureStackCloud(t *testing.T) {
 
 func withAzureCredentials(t *testing.T) {
 	tempFile, err := os.CreateTemp("", "azure.toml")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		err := os.Remove(tempFile.Name())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
 
 	os.Setenv("AZURE_CREDENTIALS", tempFile.Name())
 
 	_, err = tempFile.Write([]byte(fakeAzureCredentials))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	creds, err := CreateAzureCredentialFile()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		err := DeleteAzureCredentialFile()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
 
 	cloud := AzurePublicCloud
@@ -109,7 +110,7 @@ func withAzureCredentials(t *testing.T) {
 	assert.Equal(t, testLocation, creds.Location)
 
 	azureCredentialFileContent, err := os.ReadFile(TempAzureCredentialFilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	const expectedAzureCredentialFileContent = `
 	{
@@ -124,7 +125,7 @@ func withAzureCredentials(t *testing.T) {
 	`
 	tmpl := template.New("expectedAzureCredentialFileContent")
 	tmpl, err = tmpl.Parse(expectedAzureCredentialFileContent)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, struct {
@@ -132,7 +133,7 @@ func withAzureCredentials(t *testing.T) {
 	}{
 		cloud,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, buf.String(), string(azureCredentialFileContent))
 }
 
@@ -140,9 +141,9 @@ func withEnvironmentVariables(t *testing.T) {
 	creds, err := CreateAzureCredentialFile()
 	defer func() {
 		err := DeleteAzureCredentialFile()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var cloud string
 	cloud = os.Getenv(cloudNameEnvVar)
@@ -159,7 +160,7 @@ func withEnvironmentVariables(t *testing.T) {
 	assert.Equal(t, testLocation, creds.Location)
 
 	azureCredentialFileContent, err := os.ReadFile(TempAzureCredentialFilePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	const expectedAzureCredentialFileContent = `
 	{
@@ -174,7 +175,7 @@ func withEnvironmentVariables(t *testing.T) {
 	`
 	tmpl := template.New("expectedAzureCredentialFileContent")
 	tmpl, err = tmpl.Parse(expectedAzureCredentialFileContent)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, struct {
@@ -182,6 +183,6 @@ func withEnvironmentVariables(t *testing.T) {
 	}{
 		cloud,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, buf.String(), string(azureCredentialFileContent))
 }

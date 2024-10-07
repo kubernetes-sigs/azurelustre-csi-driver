@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRoundUpBytes(t *testing.T) {
@@ -161,9 +161,9 @@ func TestMakeDir(t *testing.T) {
 	// Successfully create directory
 	targetTest := "./target_test"
 	err := MakeDir(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
