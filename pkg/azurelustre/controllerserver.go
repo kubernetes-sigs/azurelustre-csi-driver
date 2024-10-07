@@ -41,7 +41,7 @@ const (
 
 func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 	for _, capability := range capabilities {
-		if nil == capability.GetMount() {
+		if capability.GetMount() == nil {
 			// Lustre just support mount type. i.e. block type is unsupported.
 			return status.Error(codes.InvalidArgument,
 				"Doesn't support block volume.")
@@ -87,7 +87,7 @@ func (d *Driver) CreateVolume(
 	}
 
 	capacityInBytes := req.GetCapacityRange().GetRequiredBytes()
-	if 0 == capacityInBytes {
+	if capacityInBytes == 0 {
 		capacityInBytes = defaultSize
 	}
 
@@ -147,26 +147,26 @@ func checkVolumeRequest(req *csi.CreateVolumeRequest) error {
 			"CreateVolume Volume capabilities must be provided",
 		)
 	}
-	if nil != req.GetVolumeContentSource() {
+	if req.GetVolumeContentSource() != nil {
 		return status.Error(
 			codes.InvalidArgument,
 			"CreateVolume doesn't support being created from an existing volume",
 		)
 	}
-	if nil != req.GetSecrets() {
+	if req.GetSecrets() != nil {
 		return status.Error(
 			codes.InvalidArgument,
 			"CreateVolume doesn't support secrets",
 		)
 	}
-	if nil != req.GetAccessibilityRequirements() {
+	if req.GetAccessibilityRequirements() != nil {
 		return status.Error(
 			codes.InvalidArgument,
 			"CreateVolume doesn't support accessibility_requirements",
 		)
 	}
 	capabilityError := validateVolumeCapabilities(volumeCapabilities)
-	if nil != capabilityError {
+	if capabilityError != nil {
 		return capabilityError
 	}
 	return nil
@@ -187,7 +187,7 @@ func (d *Driver) DeleteVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID missing in request")
 	}
-	if nil != req.GetSecrets() {
+	if req.GetSecrets() != nil {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"CreateVolume doesn't support secrets",
@@ -220,7 +220,7 @@ func (d *Driver) ValidateVolumeCapabilities(
 	_ context.Context,
 	req *csi.ValidateVolumeCapabilitiesRequest,
 ) (*csi.ValidateVolumeCapabilitiesResponse, error) {
-	if nil != req.GetSecrets() {
+	if req.GetSecrets() != nil {
 		return nil, status.Error(
 			codes.InvalidArgument,
 			"Doesn't support secrets",
@@ -243,7 +243,7 @@ func (d *Driver) ValidateVolumeCapabilities(
 		VolumeCapabilities: capabilities,
 	}
 	capabilityError := validateVolumeCapabilities(capabilities)
-	if nil != capabilityError {
+	if capabilityError != nil {
 		confirmed = nil
 	}
 
