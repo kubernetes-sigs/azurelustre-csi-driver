@@ -67,7 +67,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 	req := csi.NodeGetCapabilitiesRequest{}
 	resp, err := d.NodeGetCapabilities(context.Background(), &req)
 	assert.NotNil(t, resp)
-	assert.Equal(t, capType, resp.Capabilities[0].GetType())
+	assert.Equal(t, capType, resp.GetCapabilities()[0].GetType())
 	require.NoError(t, err)
 }
 
@@ -568,9 +568,9 @@ func TestNodePublishVolume(t *testing.T) {
 			// the contents in workingMountDir still exist after the test. The reason is
 			// os.Remove on workingMountDir fails because it is non-empty after unmount
 			// since it's not a real mounted Lustre
-			if subDirPath, ok := test.req.PublishContext["sub-dir"]; ok {
+			if subDirPath, ok := test.req.GetPublishContext()["sub-dir"]; ok {
 				if test.expectedErr == nil {
-					internalMountDir := filepath.Join(d.workingMountDir, test.req.VolumeId)
+					internalMountDir := filepath.Join(d.workingMountDir, test.req.GetVolumeId())
 					subDirPath := filepath.Join(internalMountDir, subDirPath)
 					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be created", subDirPath)
 					err = d.mounter.Unmount(internalMountDir)

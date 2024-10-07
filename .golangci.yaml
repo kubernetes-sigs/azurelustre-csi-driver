@@ -7,5 +7,6 @@ linters:
     - predeclared
     - tenv
     - copyloopvar
+    - protogetter
 run:
   timeout: 30m0s
