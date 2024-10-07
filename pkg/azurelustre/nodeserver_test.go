@@ -26,13 +26,11 @@ import (
 	"syscall"
 	"testing"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	mount "k8s.io/mount-utils"
 	testingexec "k8s.io/utils/exec/testing"
 )

@@ -21,11 +21,9 @@ import (
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-
 	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
