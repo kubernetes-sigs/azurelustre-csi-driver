@@ -75,40 +75,17 @@ func (d *Driver) CreateVolume(
 		d.Name,
 	)
 
-	volumeCapabilities := req.GetVolumeCapabilities()
 	volName := req.GetName()
 	if len(volName) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"CreateVolume Name must be provided")
 	}
-	if len(volumeCapabilities) == 0 {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume Volume capabilities must be provided",
-		)
+
+	err := checkVolumeRequest(req)
+	if err != nil {
+		return nil, err
 	}
-	if nil != req.GetVolumeContentSource() {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume doesn't support being created from an existing volume",
-		)
-	}
-	if nil != req.GetSecrets() {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume doesn't support secrets",
-		)
-	}
-	if nil != req.GetAccessibilityRequirements() {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"CreateVolume doesn't support accessibility_requirements",
-		)
-	}
-	capabilityError := validateVolumeCapabilities(volumeCapabilities)
-	if nil != capabilityError {
-		return nil, capabilityError
-	}
+
 	capacityInBytes := req.GetCapacityRange().GetRequiredBytes()
 	if 0 == capacityInBytes {
 		capacityInBytes = defaultSize
@@ -160,6 +137,39 @@ func (d *Driver) CreateVolume(
 			VolumeContext: parameters,
 		},
 	}, nil
+}
+
+func checkVolumeRequest(req *csi.CreateVolumeRequest) error {
+	volumeCapabilities := req.GetVolumeCapabilities()
+	if len(volumeCapabilities) == 0 {
+		return status.Error(
+			codes.InvalidArgument,
+			"CreateVolume Volume capabilities must be provided",
+		)
+	}
+	if nil != req.GetVolumeContentSource() {
+		return status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support being created from an existing volume",
+		)
+	}
+	if nil != req.GetSecrets() {
+		return status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support secrets",
+		)
+	}
+	if nil != req.GetAccessibilityRequirements() {
+		return status.Error(
+			codes.InvalidArgument,
+			"CreateVolume doesn't support accessibility_requirements",
+		)
+	}
+	capabilityError := validateVolumeCapabilities(volumeCapabilities)
+	if nil != capabilityError {
+		return capabilityError
+	}
+	return nil
 }
 
 // DeleteVolume delete a volume
