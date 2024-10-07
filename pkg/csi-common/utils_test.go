@@ -24,6 +24,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	"k8s.io/klog/v2"
@@ -32,53 +33,53 @@ import (
 func TestParseEndpoint(t *testing.T) {
 	// Valid unix domain socket endpoint
 	sockType, addr, err := ParseEndpoint("unix://fake.sock")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "fake.sock", addr)
 
 	sockType, addr, err = ParseEndpoint("unix:///fakedir/fakedir/fake.sock")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "/fakedir/fakedir/fake.sock", addr)
 
 	// Valid unix domain socket with uppercase
 	sockType, addr, err = ParseEndpoint("UNIX://fake.sock")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "UNIX", sockType)
 	assert.Equal(t, "fake.sock", addr)
 
 	// Valid TCP endpoint with ip
 	sockType, addr, err = ParseEndpoint("tcp://127.0.0.1:80")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "tcp", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
 	// Valid TCP endpoint with uppercase
 	sockType, addr, err = ParseEndpoint("TCP://127.0.0.1:80")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "TCP", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
 	// Valid TCP endpoint with hostname
 	sockType, addr, err = ParseEndpoint("tcp://fakehost:80")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "tcp", sockType)
 	assert.Equal(t, "fakehost:80", addr)
 
 	_, _, err = ParseEndpoint("unix:/fake.sock/")
-	assert.NotNil(t, err)
+	require.Error(t, err)
 
 	_, _, err = ParseEndpoint("fake.sock")
-	assert.NotNil(t, err)
+	require.Error(t, err)
 
 	_, _, err = ParseEndpoint("unix://")
-	assert.NotNil(t, err)
+	require.Error(t, err)
 
 	_, _, err = ParseEndpoint("://")
-	assert.NotNil(t, err)
+	require.Error(t, err)
 
 	_, _, err = ParseEndpoint("")
-	assert.NotNil(t, err)
+	require.Error(t, err)
 }
 
 func TestLogGRPC(t *testing.T) {

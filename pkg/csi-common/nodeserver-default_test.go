@@ -23,6 +23,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,7 +36,7 @@ func TestNodeGetInfo(t *testing.T) {
 	// Test valid request
 	req := csi.NodeGetInfoRequest{}
 	resp, err := ns.NodeGetInfo(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
 
@@ -47,7 +48,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 	// Test valid request
 	req := csi.NodeGetCapabilitiesRequest{}
 	_, err := ns.NodeGetCapabilities(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestNodeStageVolume(t *testing.T) {
