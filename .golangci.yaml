@@ -1,0 +1,6 @@
+linters:
+  enable:
+    - revive
+    - gofmt
+run:
+  timeout: 30m0s
