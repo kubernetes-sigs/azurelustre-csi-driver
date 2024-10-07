@@ -23,6 +23,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -53,14 +54,14 @@ func TestValidateVolumeCapabilities(t *testing.T) {
 	// Test when there are common capabilities
 	req := csi.ValidateVolumeCapabilitiesRequest{VolumeCapabilities: capability}
 	resp, err := cs.ValidateVolumeCapabilities(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int32(0), resp.XXX_sizecache)
 
 	// Test when there are no common capabilities
 	req = csi.ValidateVolumeCapabilitiesRequest{VolumeCapabilities: capabilityDisjoint}
 	resp, err = cs.ValidateVolumeCapabilities(context.Background(), &req)
 	assert.NotNil(t, resp)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestControllerGetCapabilities(t *testing.T) {
@@ -70,7 +71,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 	// Test valid request
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := cs.ControllerGetCapabilities(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int32(0), resp.XXX_sizecache)
 }
 

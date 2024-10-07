@@ -21,6 +21,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -88,7 +89,7 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 
 	// Valid requests which require no capabilities
 	err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_UNKNOWN)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service publish/unpublish not supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
@@ -107,17 +108,17 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 
 	// Test controller service publish/unpublish is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service create/delete is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service list volumes is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_LIST_VOLUMES)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service get capacity is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_GET_CAPACITY)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

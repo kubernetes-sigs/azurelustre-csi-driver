@@ -28,47 +28,48 @@ import (
 	"sigs.k8s.io/azurelustre-csi-driver/test/utils/credentials"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSanity(t *testing.T) {
 	creds, err := credentials.CreateAzureCredentialFile()
 	defer func() {
 		err := credentials.DeleteAzureCredentialFile()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, creds)
 
 	os.Setenv("AZURE_CREDENTIAL_FILE", credentials.TempAzureCredentialFilePath)
 
 	azureClient, err := azure.GetClient(creds.Cloud, creds.SubscriptionID, creds.AADClientID, creds.TenantID, creds.AADClientSecret)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	// Create an empty resource group for sanity test
 	log.Printf("Creating resource group %s in %s", creds.ResourceGroup, creds.Cloud)
 	_, err = azureClient.EnsureResourceGroup(ctx, creds.ResourceGroup, creds.Location, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer func() {
 		// Only delete resource group the test created
 		if strings.HasPrefix(creds.ResourceGroup, credentials.ResourceGroupPrefix) {
 			log.Printf("Deleting resource group %s", creds.ResourceGroup)
 			err := azureClient.DeleteResourceGroup(ctx, creds.ResourceGroup)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 	}()
 
 	// Execute the script from project root
 	err = os.Chdir("../..")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	// Change directory back to test/sanity
 	defer func() {
 		err := os.Chdir("test/sanity")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}()
 
 	projectRoot, err := os.Getwd()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, strings.HasSuffix(projectRoot, "azurelustre-csi-driver"))
 
 	cmd := exec.Command("./test/sanity/run-tests-all-clouds.sh", creds.Cloud)
