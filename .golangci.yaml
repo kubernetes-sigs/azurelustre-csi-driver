@@ -3,5 +3,6 @@ linters:
     - revive
     - gofmt
     - testifylint
+    - stylecheck
 run:
   timeout: 30m0s
