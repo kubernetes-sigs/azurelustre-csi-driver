@@ -82,6 +82,7 @@ func (lm *LockMap) lockAndCallback(_ *testing.T, entry string, callbackChan chan
 var callbackTimeout = 2 * time.Second
 
 func ensureCallbackHappens(t *testing.T, callbackChan <-chan interface{}) bool {
+	t.Helper()
 	select {
 	case <-callbackChan:
 		return true
@@ -92,6 +93,7 @@ func ensureCallbackHappens(t *testing.T, callbackChan <-chan interface{}) bool {
 }
 
 func ensureNoCallback(t *testing.T, callbackChan <-chan interface{}) bool {
+	t.Helper()
 	select {
 	case <-callbackChan:
 		t.Fatalf("unexpected callback")
