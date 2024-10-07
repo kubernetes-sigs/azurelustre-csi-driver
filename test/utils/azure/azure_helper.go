@@ -46,7 +46,7 @@ func GetClient(cloud string, subscriptionID string, clientID string, tenantID st
 	return getClient(env, subscriptionID, credential), nil
 }
 
-func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (resourceGroup *armresources.ResourceGroup, err error) {
+func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (*armresources.ResourceGroup, error) {
 	var tags map[string]*string
 	group, err := az.groupsClient.Get(ctx, name, nil)
 	if err == nil && group.Tags != nil {

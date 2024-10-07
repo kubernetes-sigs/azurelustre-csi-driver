@@ -9,5 +9,6 @@ linters:
     - tenv
     - copyloopvar
     - protogetter
+    - nonamedreturns
 run:
   timeout: 30m0s
