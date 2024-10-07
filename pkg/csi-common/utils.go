@@ -68,6 +68,7 @@ func NewControllerServiceCapability(capability csi.ControllerServiceCapability_R
 		},
 	}
 }
+
 func NewNodeServiceCapability(capability csi.NodeServiceCapability_RPC_Type) *csi.NodeServiceCapability {
 	return &csi.NodeServiceCapability{
 		Type: &csi.NodeServiceCapability_Rpc{
