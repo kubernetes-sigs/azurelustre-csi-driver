@@ -819,7 +819,7 @@ func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
 func TestNewSafeMounter(t *testing.T) {
 	resp, err := NewSafeMounter()
 	assert.NotNil(t, resp)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestNodeGetVolumeStats(t *testing.T) {

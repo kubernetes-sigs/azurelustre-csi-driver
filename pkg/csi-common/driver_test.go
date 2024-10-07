@@ -74,13 +74,13 @@ func TestGetVolumeCapabilityAccessModes(t *testing.T) {
 	// Test no volume access modes.
 	// REVISIT: Do we need to support any default access modes.
 	c := d.GetVolumeCapabilityAccessModes()
-	assert.Zero(t, len(c))
+	assert.Empty(t, c)
 
 	// Test driver with access modes.
 	d.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER})
 	modes := d.GetVolumeCapabilityAccessModes()
-	assert.Equal(t, 1, len(modes))
-	assert.Equal(t, modes[0].GetMode(), csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER)
+	assert.Len(t, modes, 1)
+	assert.Equal(t, csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, modes[0].GetMode())
 }
 
 func TestValidateControllerServiceRequest(t *testing.T) {
@@ -94,7 +94,7 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, s.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, s.Code())
 
 	// Add controller service publish & unpublish request
 	d.AddControllerServiceCapabilities(
