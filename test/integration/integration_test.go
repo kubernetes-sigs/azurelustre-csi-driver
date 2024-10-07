@@ -24,11 +24,10 @@ import (
 	"strings"
 	"testing"
 
-	"sigs.k8s.io/azurelustre-csi-driver/test/utils/azure"
-	"sigs.k8s.io/azurelustre-csi-driver/test/utils/credentials"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/azure"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/credentials"
 )
 
 func TestIntegration(t *testing.T) {
