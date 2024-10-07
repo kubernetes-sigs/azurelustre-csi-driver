@@ -76,8 +76,6 @@ var (
 	}
 )
 
-var retriableErrors = []string{}
-
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
 	NodeID                     string
@@ -153,17 +151,6 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 func IsCorruptedDir(dir string) bool {
 	_, pathErr := mount.PathExists(dir)
 	return pathErr != nil && mount.IsCorruptedMnt(pathErr)
-}
-
-func isRetriableError(err error) bool {
-	if err != nil {
-		for _, v := range retriableErrors {
-			if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(v)) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // replaceWithMap replace key with value for str
