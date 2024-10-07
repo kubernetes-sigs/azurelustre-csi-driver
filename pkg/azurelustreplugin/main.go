@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"os"
 
-	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
-
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 var (

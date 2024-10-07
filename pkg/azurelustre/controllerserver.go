@@ -21,13 +21,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/container-storage-interface/spec/lib/go/csi"
-
 	"k8s.io/klog/v2"
-
 	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
 )
 

@@ -22,10 +22,9 @@ import (
 	"log"
 	"os"
 
-	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
-
 	"github.com/pborman/uuid"
 	"github.com/pelletier/go-toml"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
 )
 
 const (
