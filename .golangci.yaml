@@ -5,6 +5,7 @@ linters:
     - testifylint
     - stylecheck
     - predeclared
+    - makezero
     - tenv
     - copyloopvar
     - protogetter
