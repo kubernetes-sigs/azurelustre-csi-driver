@@ -155,7 +155,6 @@ func (d *Driver) NodePublishVolume(
 	}
 
 	err = mountVolumeAtPath(d, source, target, mountOptions)
-
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
 			return nil, status.Errorf(
@@ -249,7 +248,7 @@ func getVolume(volumeID string, context map[string]string) (*lustreVolume, error
 	return vol, nil
 }
 
-func mountVolumeAtPath(d *Driver, source string, target string, mountOptions []string) error {
+func mountVolumeAtPath(d *Driver, source, target string, mountOptions []string) error {
 	d.kernelModuleLock.Lock()
 	defer d.kernelModuleLock.Unlock()
 	err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
@@ -529,7 +528,7 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 	return !notMnt, nil
 }
 
-func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath string, mountOptions []string) error {
+func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, mountOptions []string) error {
 	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
 		return err
 	}
@@ -547,7 +546,7 @@ func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath st
 
 	klog.V(2).Infof("Making subdirectory at %q", internalVolumePath)
 
-	if err := os.MkdirAll(internalVolumePath, 0775); err != nil {
+	if err := os.MkdirAll(internalVolumePath, 0o775); err != nil {
 		return status.Errorf(codes.Internal, "failed to make subdirectory: %v", err.Error())
 	}
 
@@ -558,7 +557,7 @@ func getSourceString(mgsIPAddress, azureLustreName string) string {
 	return fmt.Sprintf("%s@tcp:/%s", mgsIPAddress, azureLustreName)
 }
 
-func getInternalMountPath(workingMountDir string, mountPath string) (string, error) {
+func getInternalMountPath(workingMountDir, mountPath string) (string, error) {
 	mountPath = strings.Trim(mountPath, "/")
 
 	if isSubpath := ensureStrictSubpath(mountPath); !isSubpath {
@@ -572,7 +571,7 @@ func getInternalMountPath(workingMountDir string, mountPath string) (string, err
 	return filepath.Join(workingMountDir, mountPath), nil
 }
 
-func getInternalVolumePath(workingMountDir string, mountPath string, subDirPath string) (string, error) {
+func getInternalVolumePath(workingMountDir, mountPath, subDirPath string) (string, error) {
 	internalMountPath, err := getInternalMountPath(workingMountDir, mountPath)
 	if err != nil {
 		return "", err
@@ -629,7 +628,6 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 	)
 
 	err = mountVolumeAtPath(d, source, target, mountOptions)
-
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
 			return status.Errorf(
@@ -701,7 +699,7 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 }
 
 // Convert context parameters to a lustreVolume
-func newLustreVolume(volumeID string, volumeName string, params map[string]string) (*lustreVolume, error) {
+func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lustreVolume, error) {
 	var mgsIPAddress, azureLustreName, subDir string
 	// validate parameters (case-insensitive).
 	for k, v := range params {

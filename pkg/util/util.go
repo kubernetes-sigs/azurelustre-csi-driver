@@ -57,7 +57,7 @@ func GiBToBytes(volumeSizeGiB int64) int64 {
 // allocates volumes in gibibyte-sized chunks,
 // RoundUpSize(1500 * 1024*1024, 1024*1024*1024) returns '2'
 // (2 GiB is the smallest allocatable volume that can hold 1500MiB)
-func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
+func roundUpSize(volumeSizeBytes, allocationUnitBytes int64) int64 {
 	roundedUp := volumeSizeBytes / allocationUnitBytes
 	if volumeSizeBytes%allocationUnitBytes > 0 {
 		roundedUp++
@@ -78,7 +78,7 @@ func GetMountOptions(options []string) string {
 }
 
 func MakeDir(pathname string) error {
-	err := os.MkdirAll(pathname, os.FileMode(0775)) // TODO_JUSJIN: revisit the ACL
+	err := os.MkdirAll(pathname, os.FileMode(0o775)) // TODO_JUSJIN: revisit the ACL
 	if err != nil {
 		if !os.IsExist(err) {
 			return err
