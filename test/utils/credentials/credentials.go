@@ -30,7 +30,7 @@ import (
 const (
 	AzurePublicCloud            = "AzurePublicCloud"
 	ResourceGroupPrefix         = "azurelustre-csi-driver-test-"
-	TempAzureCredentialFilePath = "/tmp/azure.json"
+	TempAzureCredentialFilePath = "/tmp/azure.json" // #nosec G101
 
 	azureCredentialFileTemplate = `{
     "cloud": "{{.Cloud}}",
@@ -40,7 +40,7 @@ const (
     "aadClientSecret": "{{.AADClientSecret}}",
     "resourceGroup": "{{.ResourceGroup}}",
     "location": "{{.Location}}"
-}`
+}` // #nosec G101
 	defaultAzurePublicCloudLocation = "eastus2"
 
 	// Env vars
@@ -48,7 +48,7 @@ const (
 	tenantIDEnvVar        = "AZURE_TENANT_ID"
 	subscriptionIDEnvVar  = "AZURE_SUBSCRIPTION_ID"
 	aadClientIDEnvVar     = "AZURE_CLIENT_ID"
-	aadClientSecretEnvVar = "AZURE_CLIENT_SECRET"
+	aadClientSecretEnvVar = "AZURE_CLIENT_SECRET" // #nosec G101
 	resourceGroupEnvVar   = "AZURE_RESOURCE_GROUP"
 	locationEnvVar        = "AZURE_LOCATION"
 )

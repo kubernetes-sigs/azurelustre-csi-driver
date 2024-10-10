@@ -132,7 +132,8 @@ func TestLogGRPC(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// EXECUTE
-			_, _ = logGRPC(context.Background(), test.req, &info, handler)
+			_, err := logGRPC(context.Background(), test.req, &info, handler)
+			require.NoError(t, err)
 			klog.Flush()
 
 			// ASSERT
