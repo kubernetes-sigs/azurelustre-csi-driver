@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	mount "k8s.io/mount-utils"
 )
 
@@ -145,7 +146,8 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
 		}
 
-		mountPoints, _ := d.mounter.List()
+		mountPoints, err := d.mounter.List()
+		require.NoError(t, err)
 		assert.Equal(t, test.expectedMountpoints, mountPoints)
 	}
 }

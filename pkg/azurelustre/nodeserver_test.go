@@ -117,7 +117,8 @@ func TestEnsureMountPoint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_ = makeDir(alreadyExistTarget)
+		err := makeDir(alreadyExistTarget)
+		require.NoError(t, err)
 
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.ensureMountPoint(test.target)
@@ -126,7 +127,7 @@ func TestEnsureMountPoint(t *testing.T) {
 			}
 		})
 
-		err := os.RemoveAll(alreadyExistTarget)
+		err = os.RemoveAll(alreadyExistTarget)
 		require.NoError(t, err)
 		err = os.RemoveAll(targetTest)
 		require.NoError(t, err)
@@ -542,8 +543,10 @@ func TestNodePublishVolume(t *testing.T) {
 			Exec:      fakeExec,
 		}
 		d.workingMountDir = workingMountDir
-		_ = makeDir(targetTest)
-		_ = makeDir(alreadyExistTarget)
+		err := makeDir(targetTest)
+		require.NoError(t, err)
+		err = makeDir(alreadyExistTarget)
+		require.NoError(t, err)
 
 		if test.setup != nil {
 			test.setup(d)
@@ -552,12 +555,13 @@ func TestNodePublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodePublishVolume(context.Background(), &test.req)
+			_, err = d.NodePublishVolume(context.Background(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
 
-			mountPoints, _ := d.mounter.List()
+			mountPoints, err := d.mounter.List()
+			require.NoError(t, err)
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
 			mountActions := fakeMounter.GetLog()
 			assert.Equal(t, test.expectedMountActions, mountActions, "Desc: %s - Incorrect mount actions: %v - Expected: %v", test.desc, mountActions, test.expectedMountActions)
@@ -732,7 +736,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			Interface: fakeMounter,
 			Exec:      fakeExec,
 		}
-		_ = makeDir(targetTest)
+		err := makeDir(targetTest)
+		require.NoError(t, err)
 
 		if test.setup != nil {
 			test.setup(d)
@@ -745,7 +750,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
-			mountPoints, _ := d.mounter.List()
+			mountPoints, err := d.mounter.List()
+			require.NoError(t, err)
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
 			mountActions := fakeMounter.GetLog()
 			assert.Equal(t, test.expectedMountActions, mountActions, "Desc: %s - Incorrect mount actions: %v - Expected: %v", test.desc, mountActions, test.expectedMountActions)
@@ -853,7 +859,8 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	d := NewFakeDriver()
 
 	for _, test := range tests {
-		_ = makeDir(fakePath)
+		err := makeDir(fakePath)
+		require.NoError(t, err)
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.NodeGetVolumeStats(context.Background(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -861,7 +868,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 			}
 		})
 
-		err := os.RemoveAll(fakePath)
+		err = os.RemoveAll(fakePath)
 		require.NoError(t, err)
 	}
 }
