@@ -35,7 +35,7 @@ const (
 	SubscriptionID = "b9d2281e-xxxx-xxxx-xxxx-0d50377cdf76"
 	StorageAccountName = "TestStorageAccountName"
 	StorageAccountKey = "TestStorageAccountKey"
-	`
+	` // #nosec G101
 	testTenantID        = "test-tenant-id"
 	testSubscriptionID  = "test-subscription-id"
 	testAadClientID     = "test-aad-client-id"
@@ -122,7 +122,7 @@ func withAzureCredentials(t *testing.T) {
 		"resourceGroup": "test-resource-group",
 		"location": "test-location"
 	}
-	`
+	` // #nosec G101
 	tmpl := template.New("expectedAzureCredentialFileContent")
 	tmpl, err = tmpl.Parse(expectedAzureCredentialFileContent)
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func withEnvironmentVariables(t *testing.T) {
 		"resourceGroup": "test-resource-group",
 		"location": "test-location"
 	}
-	`
+	` // #nosec G101
 	tmpl := template.New("expectedAzureCredentialFileContent")
 	tmpl, err = tmpl.Parse(expectedAzureCredentialFileContent)
 	require.NoError(t, err)

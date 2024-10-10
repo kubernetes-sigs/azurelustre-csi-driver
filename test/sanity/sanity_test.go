@@ -71,7 +71,7 @@ func TestSanity(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, strings.HasSuffix(projectRoot, "azurelustre-csi-driver"))
 
-	cmd := exec.Command("./test/sanity/run-tests-all-clouds.sh", creds.Cloud)
+	cmd := exec.Command("./test/sanity/run-tests-all-clouds.sh", creds.Cloud) // #nosec G204
 	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

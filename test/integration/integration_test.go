@@ -72,7 +72,7 @@ func TestIntegration(t *testing.T) {
 	assert.True(t, strings.HasSuffix(cwd, "azurelustre-csi-driver"))
 
 	// Pass in resource group name, storage account name and cloud type
-	cmd := exec.Command("./test/integration/run-tests-all-clouds.sh", creds.ResourceGroup, creds.Cloud)
+	cmd := exec.Command("./test/integration/run-tests-all-clouds.sh", creds.ResourceGroup, creds.Cloud) // #nosec G204
 	cmd.Dir = cwd
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
