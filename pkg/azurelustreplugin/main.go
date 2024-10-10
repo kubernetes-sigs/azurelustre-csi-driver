@@ -35,7 +35,10 @@ var (
 
 func main() {
 	klog.InitFlags(nil)
-	_ = flag.Set("logtostderr", "true")
+	err := flag.Set("logtostderr", "true")
+	if err != nil {
+		klog.Fatalln(err)
+	}
 	flag.Parse()
 	if *version {
 		info, err := azurelustre.GetVersionYAML(*driverName)

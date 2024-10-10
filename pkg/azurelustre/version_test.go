@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
 )
 
@@ -51,7 +52,8 @@ func TestGetVersionYAML(t *testing.T) {
 	}
 
 	versionInfo := GetVersion("")
-	marshalled, _ := yaml.Marshal(&versionInfo)
+	marshalled, err := yaml.Marshal(&versionInfo)
+	require.NoError(t, err)
 
 	expected := strings.TrimSpace(string(marshalled))
 
