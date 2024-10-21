@@ -25,6 +25,7 @@ import (
 
 type DefaultIdentityServer struct {
 	Driver *CSIDriver
+	csi.UnimplementedIdentityServer
 }
 
 func (ids *DefaultIdentityServer) GetPluginInfo(_ context.Context, _ *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {

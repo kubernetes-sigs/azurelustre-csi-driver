@@ -25,6 +25,7 @@ import (
 
 type DefaultNodeServer struct {
 	Driver *CSIDriver
+	csi.UnimplementedNodeServer
 }
 
 func (ns *DefaultNodeServer) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
