@@ -25,6 +25,7 @@ import (
 
 type DefaultControllerServer struct {
 	Driver *CSIDriver
+	csi.UnimplementedControllerServer
 }
 
 func (cs *DefaultControllerServer) CreateVolume(_ context.Context, _ *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
