@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
@@ -317,10 +318,44 @@ func (d *Driver) NodeUnpublishVolume(
 }
 
 func unmountVolumeAtPath(d *Driver, targetPath string) error {
+	shouldUnmountBadPath := false
+
 	d.kernelModuleLock.Lock()
 	defer d.kernelModuleLock.Unlock()
-	err := mount.CleanupMountPoint(targetPath, d.mounter,
-		true /*extensiveMountPointCheck*/)
+
+	parent := filepath.Dir(targetPath)
+	klog.V(2).Infof("Listing dir: %s", parent)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		klog.Warningf("could not list directory %s, will explicitly unmount path before cleanup %s: %q", parent, targetPath, err)
+		shouldUnmountBadPath = true
+	}
+
+	for _, e := range entries {
+		if e.Name() == filepath.Base(targetPath) {
+			_, err := e.Info()
+			if err != nil {
+				klog.Warningf("could not get info for entry %s, will explicitly unmount path before cleanup %s: %q", e.Name(), targetPath, err)
+				shouldUnmountBadPath = true
+			}
+		}
+	}
+
+	if shouldUnmountBadPath {
+		// In these cases, if we only ran mount.CleanupMountWithForce,
+		// it would have issues trying to stat the directory before
+		// cleanup, so we need to explicitly unmount the path, with
+		// force if necessary. Then the directory can be cleaned up
+		// by the mount.CleanupMountWithForce call.
+		klog.V(4).Infof("unmounting bad mount: %s)", targetPath)
+		forceUnmounter := *d.forceMounter
+		if err := forceUnmounter.UnmountWithForce(targetPath, 30*time.Second); err != nil {
+			klog.Warningf("couldn't unmount %s: %q", targetPath, err)
+		}
+	}
+
+	err = mount.CleanupMountWithForce(targetPath, *d.forceMounter,
+		true /*extensiveMountPointCheck*/, 10*time.Second)
 	return err
 }
 
@@ -653,7 +688,7 @@ func (d *Driver) internalUnmount(mountPath string) error {
 
 	klog.V(4).Infof("internally unmounting %v", target)
 
-	err = mount.CleanupMountPoint(target, d.mounter, true)
+	err = mount.CleanupMountWithForce(target, *d.forceMounter, true, 10*time.Second)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to unmount staging target %q: %v", target, err)
 	}

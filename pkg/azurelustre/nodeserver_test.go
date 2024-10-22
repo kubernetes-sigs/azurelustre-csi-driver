@@ -115,6 +115,9 @@ func TestEnsureMountPoint(t *testing.T) {
 		Interface: fakeMounter,
 		Exec:      fakeExec,
 	}
+	forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+	require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+	d.forceMounter = &forceMounter
 
 	for _, test := range tests {
 		err := makeDir(alreadyExistTarget)
@@ -542,6 +545,9 @@ func TestNodePublishVolume(t *testing.T) {
 			Interface: fakeMounter,
 			Exec:      fakeExec,
 		}
+		forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+		require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+		d.forceMounter = &forceMounter
 		d.workingMountDir = workingMountDir
 		err := makeDir(targetTest)
 		require.NoError(t, err)
@@ -736,6 +742,9 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			Interface: fakeMounter,
 			Exec:      fakeExec,
 		}
+		forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+		require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+		d.forceMounter = &forceMounter
 		err := makeDir(targetTest)
 		require.NoError(t, err)
 
