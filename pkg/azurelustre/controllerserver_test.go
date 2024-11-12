@@ -335,33 +335,31 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 				csi.VolumeCapability_AccessMode_Mode(capability))
 		}
 	}
-	if len(capabilitiesNotSupported) != 0 {
-		d := NewFakeDriver()
-		req := buildCreateVolumeRequest()
-		req.VolumeCapabilities = []*csi.VolumeCapability{}
-		t.Logf("Unsupported access modes: %s", capabilitiesNotSupported)
-		for _, capabilityNotSupported := range capabilitiesNotSupported {
-			req.VolumeCapabilities = append(req.VolumeCapabilities,
-				&csi.VolumeCapability{
-					AccessType: &csi.VolumeCapability_Mount{
-						Mount: &csi.VolumeCapability_MountVolume{},
-					},
-					AccessMode: &csi.VolumeCapability_AccessMode{
-						Mode: capabilityNotSupported,
-					},
+
+	require.NotEmpty(t, capabilitiesNotSupported, "No unsupported AccessMode.")
+
+	d := NewFakeDriver()
+	req := buildCreateVolumeRequest()
+	req.VolumeCapabilities = []*csi.VolumeCapability{}
+	t.Logf("Unsupported access modes: %s", capabilitiesNotSupported)
+	for _, capabilityNotSupported := range capabilitiesNotSupported {
+		req.VolumeCapabilities = append(req.VolumeCapabilities,
+			&csi.VolumeCapability{
+				AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{},
 				},
-			)
-		}
-		_, err := d.CreateVolume(context.Background(), req)
-		require.Error(t, err)
-		grpcStatus, ok := status.FromError(err)
-		assert.True(t, ok)
-		assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-		require.ErrorContains(t, err, capabilitiesNotSupported[0].String())
-	} else {
-		t.Log("No unsupported AccessMode.")
-		assert.True(t, true)
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: capabilityNotSupported,
+				},
+			},
+		)
 	}
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	require.ErrorContains(t, err, capabilitiesNotSupported[0].String())
 }
 
 func TestCreateVolume_Err_OperationExists(t *testing.T) {
@@ -636,33 +634,31 @@ func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
 				csi.VolumeCapability_AccessMode_Mode(capability))
 		}
 	}
-	if len(capabilitiesNotSupported) != 0 {
-		d := NewFakeDriver()
-		capabilities := []*csi.VolumeCapability{}
-		for _, capability := range capabilitiesNotSupported {
-			capabilities = append(
-				capabilities,
-				&csi.VolumeCapability{
-					AccessType: &csi.VolumeCapability_Block{
-						Block: &csi.VolumeCapability_BlockVolume{},
-					},
-					AccessMode: &csi.VolumeCapability_AccessMode{
-						Mode: capability,
-					},
-				},
-			)
-		}
-		req := &csi.ValidateVolumeCapabilitiesRequest{
-			VolumeId: fmt.Sprintf(volumeIDTemplate,
-				"test", "testFs", "127.0.0.1", "testSubDir"),
-			VolumeCapabilities: capabilities,
-		}
 
-		res, err := d.ValidateVolumeCapabilities(context.Background(), req)
-		require.NoError(t, err)
-		assert.Nil(t, res.GetConfirmed())
-	} else {
-		t.Log("No unsupported AccessMode.")
-		assert.True(t, true)
+	require.NotEmpty(t, capabilitiesNotSupported, "No unsupported AccessMode.")
+
+	d := NewFakeDriver()
+	capabilities := []*csi.VolumeCapability{}
+	for _, capability := range capabilitiesNotSupported {
+		capabilities = append(
+			capabilities,
+			&csi.VolumeCapability{
+				AccessType: &csi.VolumeCapability_Block{
+					Block: &csi.VolumeCapability_BlockVolume{},
+				},
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: capability,
+				},
+			},
+		)
 	}
+	req := &csi.ValidateVolumeCapabilitiesRequest{
+		VolumeId: fmt.Sprintf(volumeIDTemplate,
+			"test", "testFs", "127.0.0.1", "testSubDir"),
+		VolumeCapabilities: capabilities,
+	}
+
+	res, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	require.NoError(t, err)
+	assert.Nil(t, res.GetConfirmed())
 }
