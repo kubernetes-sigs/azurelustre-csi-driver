@@ -68,10 +68,10 @@ else
 fi
 
 print_logs_info "Upgrading node pool to the latest node image"
-az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only
+az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only -y
 
 print_logs_info "Upgrading node pool to the latest"
-az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName
+az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName -y
 
 print_logs_title "Print versions after"
 print_versions

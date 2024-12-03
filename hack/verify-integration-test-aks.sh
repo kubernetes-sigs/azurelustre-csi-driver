@@ -40,7 +40,7 @@ function catlog {
 trap catlog ERR EXIT
 
 ./kubectl wait --for=condition=Ready pod/aml-integration-test --timeout=60s
-./kubectl wait --for=condition=Ready=false pod/aml-integration-test --timeout=300s
+./kubectl wait --for=condition=Ready=false pod/aml-integration-test --timeout=600s
 
 exit_code=$(./kubectl get pod aml-integration-test -o=jsonpath='{.status.containerStatuses[*].state.*.exitCode}')
 

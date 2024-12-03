@@ -7,7 +7,7 @@ spec:
   accessModes:
     - ReadWriteMany
   capacity:
-    storage: 4Ti
+    storage: 48Ti
   csi:
     driver: ${csi_name}
     volumeAttributes:
