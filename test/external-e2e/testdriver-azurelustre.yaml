@@ -7,7 +7,7 @@ StorageClass:
 DriverInfo:
   Name: azurelustre.csi.azure.com
   SupportedSizeRange:
-    Max: 8Ti
+    Max: 48Ti
     Min: 4Ti
   RequiredAccessModes:
     - ReadWriteMany
