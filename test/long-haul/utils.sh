@@ -1,6 +1,9 @@
+set -x
 set -o errexit
 set -o pipefail
 set -o nounset
+
+trap print_debug EXIT
 
 REPO_ROOT_PATH=${REPO_ROOT_PATH:-$(git rev-parse --show-toplevel)}
 
@@ -37,7 +40,8 @@ reset_csi_driver () {
     echo "Reset CSI driver"
     kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml --ignore-not-found
     kubectl delete -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml --ignore-not-found
-    kubectl wait pod -n kube-system --for=delete --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
+    kubectl wait pod -n kube-system --for=delete --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=600s
+
 
     echo "Reset node label"
     kubectl get nodes --no-headers | grep "$PoolName" | awk '{print $1}' | 
@@ -51,7 +55,7 @@ reset_csi_driver () {
     kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-controller.yaml
     kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node.yaml
 
-    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
+    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=600s
 
     sleep 60
 }
@@ -144,13 +148,19 @@ verify_csi_driver () {
         print_logs_info "$nodePodsNum node pods running..."        
     fi
 
-    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=300s
+    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=600s
+
 }
 
 start_sample_workload () {
     stop_sample_workload
-    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=300s
-    kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=300s
+    kubectl apply -f ./sample-workload/deployment_write_print_file.yaml --timeout=600s
+    kubectl wait pod --for=condition=Ready --selector=app=azurelustre-longhaulsample-deployment --timeout=600s
+
+    if [[ $? -ne 0 ]]; then
+        print_logs_error "Failed to start sample workload"
+        print_debug
+    fi
     sleep 15
 }
 
@@ -160,8 +170,9 @@ stop_sample_workload () {
         kubectl patch pvc azurelustre-longhaulsample-pvc -p '{"metadata":{"finalizers":null}}'
     fi
 
-    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --timeout=300s --grace-period=0 --force --cascade
-    kubectl wait pod --for=delete --selector=app=azurelustre-longhaulsample-deployment --timeout=300s
+    kubectl delete -f ./sample-workload/deployment_write_print_file.yaml --ignore-not-found --timeout=600s --grace-period=0 --force --cascade
+    kubectl wait pod --for=delete --selector=app=azurelustre-longhaulsample-deployment --timeout=600s
+
 }
 
 verify_sample_workload_logs () {

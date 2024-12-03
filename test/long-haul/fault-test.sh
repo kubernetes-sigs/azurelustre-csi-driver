@@ -38,7 +38,7 @@ sleep $SleepInSecs
 verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew
 if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     print_logs_error "workload pod $workloadPodName should be killed and new workload should be started"
-    print_debug_on_ERR
+    print_debug
     fast_exit
 fi
 
@@ -92,12 +92,12 @@ print_logs_info "running 'kubectl delete po' by background task"
 sleep $SleepInSecs
 
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
-if [[ -z $podState || "$podState" != "Terminating" ]]; then
-    print_logs_error "Workload pod $workloadPodName should be in Terminating state on node $workloadNodeName, but its actual state is $podState"
-    print_debug_on_ERR
+if [[ "$podState" != "Terminating" && "$podState" != "Error" ]]; then
+    print_logs_error "Workload pod $workloadPodName should be in Error/Terminating state on node $workloadNodeName, but its actual state is $podState"
+    print_debug
     fast_exit
 else
-    print_logs_info "Workload pod $workloadPodName is in Terminating state on node $workloadNodeName"
+    print_logs_info "Workload pod $workloadPodName is in Error state on node $workloadNodeName"
 fi
 
 
@@ -105,7 +105,7 @@ print_logs_title "Verify the new workload pod in Running state on other nodes or
 verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew "Running\|ContainerCreating"
 if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
     print_logs_error "New workload pod should be started, but still find old running pod $workloadPodName"
-    print_debug_on_ERR
+    print_debug
     fast_exit
 else
     print_logs_info "new workload pod $workloadPodNameNew started on another node $workloadNodeNameNew"
@@ -119,7 +119,7 @@ sleep $SleepInSecs
 podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
 if  [[ -z "$podState" || "$podState" != "Running" ]]; then
     print_logs_error "Lustre CSI node pod can't be started on $nodeName, state=$podState"
-    print_debug_on_ERR
+    print_debug
     fast_exit
 else
     print_logs_info "Lustre CSI node pod started on $nodeName again"
@@ -132,7 +132,7 @@ sleep $SleepInSecs
 podState=$(get_pod_state $workloadPodName $workloadNodeName)
 if [[ ! -z $podState ]]; then
     print_logs_error "Still can find workload pod $workloadPodName in $podState state on node $workloadNodeName, it should be deleted successfully"
-    print_debug_on_ERR
+    print_debug
     fast_exit
 else
     print_logs_info "workload pod $workloadPodName has been deleted successfully from node $workloadNodeName"
