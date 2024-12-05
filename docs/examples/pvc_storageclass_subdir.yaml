@@ -10,6 +10,6 @@ spec:
   resources:
     requests:
       # The real storage capacity in the claim
-      storage: 1Gi
+      storage: 4Ti
   # This field must be the same as the storage class name in StorageClass
   storageClassName: subdir.azurelustre.csi.azure.com
