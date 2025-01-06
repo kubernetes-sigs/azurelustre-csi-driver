@@ -4,5 +4,6 @@ kind: CSIDriver
 metadata:
   name: azurelustre.csi.azure.com
 spec:
+  fsGroupPolicy: File
   attachRequired: false
   podInfoOnMount: true
