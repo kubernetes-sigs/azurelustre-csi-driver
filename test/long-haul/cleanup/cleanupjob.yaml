@@ -19,7 +19,7 @@ spec:
     - ReadWriteMany
   resources:
     requests:
-      storage: 1Gi
+      storage: 48Ti
   storageClassName: azurelustre-longhaulcleanup-sc
 
 ---

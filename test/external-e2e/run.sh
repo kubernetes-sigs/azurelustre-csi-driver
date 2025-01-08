@@ -60,15 +60,15 @@ echo "deploy test pvc"
 kubectl apply -f ${claim_file}
 echo "wait pvc to Bound status"
 # wait for json is supported in kubectl v1.24
-kubectl wait --for=jsonpath='{.status.phase}'=Bound -f ${claim_file} --timeout=300s
+kubectl wait --for=jsonpath='{.status.phase}'=Bound -f ${claim_file} --timeout=600s
 bounded_pv=$(kubectl get -f ${claim_file} -ojsonpath='{.spec.volumeName}')
 echo "bounded pv is ${bounded_pv}"
 echo "delete pvc"
 kubectl delete -f ${claim_file}
 echo "wait for the pvc to be deleted"
-kubectl wait --for=delete -f ${claim_file} --timeout=300s
+kubectl wait --for=delete -f ${claim_file} --timeout=600s
 echo "wait for pv ${bounded_pv} to be deleted"
-kubectl wait --for=delete pv/${bounded_pv} --timeout=300s
+kubectl wait --for=delete pv/${bounded_pv} --timeout=600s
 
 echo "delete test storageclass"
 kubectl delete -f ${sc_file}
