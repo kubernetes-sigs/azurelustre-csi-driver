@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRoundUpBytes(t *testing.T) {
@@ -82,6 +82,7 @@ func (lm *LockMap) lockAndCallback(_ *testing.T, entry string, callbackChan chan
 var callbackTimeout = 2 * time.Second
 
 func ensureCallbackHappens(t *testing.T, callbackChan <-chan interface{}) bool {
+	t.Helper()
 	select {
 	case <-callbackChan:
 		return true
@@ -92,6 +93,7 @@ func ensureCallbackHappens(t *testing.T, callbackChan <-chan interface{}) bool {
 }
 
 func ensureNoCallback(t *testing.T, callbackChan <-chan interface{}) bool {
+	t.Helper()
 	select {
 	case <-callbackChan:
 		t.Fatalf("unexpected callback")
@@ -161,9 +163,9 @@ func TestMakeDir(t *testing.T) {
 	// Successfully create directory
 	targetTest := "./target_test"
 	err := MakeDir(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

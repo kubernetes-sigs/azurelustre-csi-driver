@@ -34,7 +34,7 @@ type Client struct {
 	groupsClient   *armresources.ResourceGroupsClient
 }
 
-func GetClient(cloud string, subscriptionID string, clientID string, tenantID string, clientSecret string) (*Client, error) {
+func GetClient(cloud, subscriptionID, clientID, tenantID, clientSecret string) (*Client, error) {
 	env, err := azure.EnvironmentFromName(cloud)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func GetClient(cloud string, subscriptionID string, clientID string, tenantID st
 	return getClient(env, subscriptionID, credential), nil
 }
 
-func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (resourceGroup *armresources.ResourceGroup, err error) {
+func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (*armresources.ResourceGroup, error) {
 	var tags map[string]*string
 	group, err := az.groupsClient.Get(ctx, name, nil)
 	if err == nil && group.Tags != nil {
@@ -80,7 +80,7 @@ func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) err
 	if err == nil {
 		pollerResp, err := az.groupsClient.BeginDelete(ctx, groupName, nil)
 		if err != nil {
-			return fmt.Errorf("cannot delete resource group %v: %v", groupName, err)
+			return fmt.Errorf("cannot delete resource group %v: %w", groupName, err)
 		}
 		_, err = pollerResp.PollUntilDone(ctx, nil)
 		if err != nil {

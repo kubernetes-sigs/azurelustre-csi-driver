@@ -34,7 +34,7 @@ func ParseEndpoint(ep string) (string, string, error) {
 			return s[0], s[1], nil
 		}
 	}
-	return "", "", fmt.Errorf("Invalid endpoint: %v", ep)
+	return "", "", fmt.Errorf("invalid endpoint: %v", ep)
 }
 
 func NewVolumeCapabilityAccessMode(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability_AccessMode {
@@ -59,21 +59,21 @@ func NewDefaultControllerServer(d *CSIDriver) *DefaultControllerServer {
 	}
 }
 
-func NewControllerServiceCapability(cap csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
+func NewControllerServiceCapability(capability csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
 	return &csi.ControllerServiceCapability{
 		Type: &csi.ControllerServiceCapability_Rpc{
 			Rpc: &csi.ControllerServiceCapability_RPC{
-				Type: cap,
+				Type: capability,
 			},
 		},
 	}
 }
 
-func NewNodeServiceCapability(cap csi.NodeServiceCapability_RPC_Type) *csi.NodeServiceCapability {
+func NewNodeServiceCapability(capability csi.NodeServiceCapability_RPC_Type) *csi.NodeServiceCapability {
 	return &csi.NodeServiceCapability{
 		Type: &csi.NodeServiceCapability_Rpc{
 			Rpc: &csi.NodeServiceCapability_RPC{
-				Type: cap,
+				Type: capability,
 			},
 		},
 	}

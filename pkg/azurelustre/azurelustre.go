@@ -21,11 +21,9 @@ import (
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-
 	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
@@ -76,8 +74,6 @@ var (
 	}
 )
 
-var retriableErrors = []string{}
-
 // DriverOptions defines driver parameters specified in driver deployment
 type DriverOptions struct {
 	NodeID                     string
@@ -95,6 +91,7 @@ type Driver struct {
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
 	mounter                    *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
+	forceMounter               *mount.MounterForceUnmounter
 	volLockMap                 *util.LockMap
 	// Directory to temporarily mount to for subdirectory creation
 	workingMountDir string
@@ -136,6 +133,13 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 		Interface: mount.New(""),
 		Exec:      utilexec.New(),
 	}
+	forceUnmounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+	if ok {
+		klog.V(4).Infof("Using force unmounter interface")
+		d.forceMounter = &forceUnmounter
+	} else {
+		klog.Fatalf("Mounter does not support force unmount")
+	}
 
 	// TODO_JUSJIN: revisit these caps
 	// Initialize default library driver
@@ -153,17 +157,6 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 func IsCorruptedDir(dir string) bool {
 	_, pathErr := mount.PathExists(dir)
 	return pathErr != nil && mount.IsCorruptedMnt(pathErr)
-}
-
-func isRetriableError(err error) bool {
-	if err != nil {
-		for _, v := range retriableErrors {
-			if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(v)) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // replaceWithMap replace key with value for str

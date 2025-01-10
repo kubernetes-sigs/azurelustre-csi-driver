@@ -12,18 +12,15 @@ name: Windows Tests
 
 jobs:
   build:
-    strategy:
-      matrix:
-        go-versions: [1.17.x]
-        platform: [windows-latest]
-    runs-on: ${{ matrix.platform }}
+    name: Build
+    runs-on: windows-latest
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
       - name: Build Test
         run: |
           make azurelustre-windows

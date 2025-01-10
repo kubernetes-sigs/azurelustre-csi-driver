@@ -1,0 +1,57 @@
+linters:
+  presets:
+    - bugs
+  enable:
+    - containedctx
+    - copyloopvar
+    - decorder
+    - dupl
+    - forbidigo
+    - forcetypeassert
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - gosimple
+    - grouper
+    - inamedparam
+    - ineffassign
+    - misspell
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - predeclared
+    - revive
+    - stylecheck
+    - tagalign
+    - tenv
+    - unconvert
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+linters-settings:
+  copyloopvar:
+    check-alias: true
+  errcheck:
+    check-blank: true
+    check-type-assertions: true
+    disable-default-exclusions: true
+  gofumpt:
+    extra-rules: true
+  grouper:
+    const-require-grouping: true
+    const-require-single-const: true
+    import-require-grouping: false
+    import-require-single-import: true
+    type-require-grouping: false
+    type-require-single-type: false
+    var-require-grouping: false
+    var-require-single-var: true
+  nolintlint:
+    require-explanation: true
+    require-specific: true
+  unparam:
+    check-exported: true
+run:
+  timeout: 30m0s

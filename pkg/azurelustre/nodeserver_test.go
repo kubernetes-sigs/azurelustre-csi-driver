@@ -26,12 +26,11 @@ import (
 	"syscall"
 	"testing"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
-
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	mount "k8s.io/mount-utils"
 	testingexec "k8s.io/utils/exec/testing"
 )
@@ -47,7 +46,7 @@ func TestNodeGetInfo(t *testing.T) {
 	// Test valid request
 	req := csi.NodeGetInfoRequest{}
 	resp, err := d.NodeGetInfo(context.Background(), &req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
 
@@ -66,8 +65,8 @@ func TestNodeGetCapabilities(t *testing.T) {
 	req := csi.NodeGetCapabilitiesRequest{}
 	resp, err := d.NodeGetCapabilities(context.Background(), &req)
 	assert.NotNil(t, resp)
-	assert.Equal(t, capType, resp.Capabilities[0].GetType())
-	assert.NoError(t, err)
+	assert.Equal(t, capType, resp.GetCapabilities()[0].GetType())
+	require.NoError(t, err)
 }
 
 func TestEnsureMountPoint(t *testing.T) {
@@ -116,10 +115,13 @@ func TestEnsureMountPoint(t *testing.T) {
 		Interface: fakeMounter,
 		Exec:      fakeExec,
 	}
+	forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+	require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+	d.forceMounter = &forceMounter
 
 	for _, test := range tests {
-		test := test // pin
-		_ = makeDir(alreadyExistTarget)
+		err := makeDir(alreadyExistTarget)
+		require.NoError(t, err)
 
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.ensureMountPoint(test.target)
@@ -128,10 +130,10 @@ func TestEnsureMountPoint(t *testing.T) {
 			}
 		})
 
-		err := os.RemoveAll(alreadyExistTarget)
-		assert.NoError(t, err)
+		err = os.RemoveAll(alreadyExistTarget)
+		require.NoError(t, err)
 		err = os.RemoveAll(targetTest)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -463,9 +465,9 @@ func TestNodePublishVolume(t *testing.T) {
 			setup: func(d *Driver) {
 				d.workingMountDir = "./false_is_likely"
 				err = makeDir(filepath.Join("./false_is_likely", targetTest))
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs/existing", filepath.Join("./false_is_likely", targetTest), "lustre", []string{"noatime", "flock"})
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			},
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
@@ -537,16 +539,20 @@ func TestNodePublishVolume(t *testing.T) {
 	d := NewFakeDriver()
 
 	for _, test := range tests {
-		test := test // pin
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
 			Interface: fakeMounter,
 			Exec:      fakeExec,
 		}
+		forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+		require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+		d.forceMounter = &forceMounter
 		d.workingMountDir = workingMountDir
-		_ = makeDir(targetTest)
-		_ = makeDir(alreadyExistTarget)
+		err := makeDir(targetTest)
+		require.NoError(t, err)
+		err = makeDir(alreadyExistTarget)
+		require.NoError(t, err)
 
 		if test.setup != nil {
 			test.setup(d)
@@ -555,12 +561,13 @@ func TestNodePublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodePublishVolume(context.Background(), &test.req)
+			_, err = d.NodePublishVolume(context.Background(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
 
-			mountPoints, _ := d.mounter.List()
+			mountPoints, err := d.mounter.List()
+			require.NoError(t, err)
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
 			mountActions := fakeMounter.GetLog()
 			assert.Equal(t, test.expectedMountActions, mountActions, "Desc: %s - Incorrect mount actions: %v - Expected: %v", test.desc, mountActions, test.expectedMountActions)
@@ -569,15 +576,15 @@ func TestNodePublishVolume(t *testing.T) {
 			// the contents in workingMountDir still exist after the test. The reason is
 			// os.Remove on workingMountDir fails because it is non-empty after unmount
 			// since it's not a real mounted Lustre
-			if subDirPath, ok := test.req.PublishContext["sub-dir"]; ok {
+			if subDirPath, ok := test.req.GetPublishContext()["sub-dir"]; ok {
 				if test.expectedErr == nil {
-					internalMountDir := filepath.Join(d.workingMountDir, test.req.VolumeId)
+					internalMountDir := filepath.Join(d.workingMountDir, test.req.GetVolumeId())
 					subDirPath := filepath.Join(internalMountDir, subDirPath)
 					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be created", subDirPath)
 					err = d.mounter.Unmount(internalMountDir)
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					err = os.RemoveAll(internalMountDir)
-					assert.NoError(t, err)
+					require.NoError(t, err)
 				}
 			}
 		})
@@ -587,15 +594,15 @@ func TestNodePublishVolume(t *testing.T) {
 		}
 
 		err = d.mounter.Unmount(d.workingMountDir)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = os.RemoveAll(d.workingMountDir)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = d.mounter.Unmount(targetTest)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = os.RemoveAll(alreadyExistTarget)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = os.RemoveAll(targetTest)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
@@ -656,7 +663,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					Readonly:      false,
 				}
 				_, err := d.NodePublishVolume(context.Background(), &req)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1"},
 			expectedErr:          nil,
@@ -694,7 +701,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					Readonly:      false,
 				}
 				_, err := d.NodePublishVolume(context.Background(), &req)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
 			expectedErr:          nil,
@@ -708,11 +715,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			desc: "Valid request with unexpected ID skips cleanup",
 			setup: func(d *Driver) {
 				err = makeDir(targetTest)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				err = makeDir(filepath.Join(workingMountDir, targetTest, subDir))
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs/"+subDir, targetTest, "lustre", []string{"noatime", "flock"})
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1"},
 			expectedErr:          nil,
@@ -729,14 +736,17 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	d.workingMountDir = workingMountDir
 
 	for _, test := range tests {
-		test := test // pin
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
 			Interface: fakeMounter,
 			Exec:      fakeExec,
 		}
-		_ = makeDir(targetTest)
+		forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
+		require.True(t, ok, "Mounter should implement MounterForceUnmounter")
+		d.forceMounter = &forceMounter
+		err := makeDir(targetTest)
+		require.NoError(t, err)
 
 		if test.setup != nil {
 			test.setup(d)
@@ -749,7 +759,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
-			mountPoints, _ := d.mounter.List()
+			mountPoints, err := d.mounter.List()
+			require.NoError(t, err)
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
 			mountActions := fakeMounter.GetLog()
 			assert.Equal(t, test.expectedMountActions, mountActions, "Desc: %s - Incorrect mount actions: %v - Expected: %v", test.desc, mountActions, test.expectedMountActions)
@@ -764,27 +775,27 @@ func TestNodeUnpublishVolume(t *testing.T) {
 				}
 			}
 			err = d.mounter.Unmount(internalMountDir)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			err = os.RemoveAll(internalMountDir)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		})
 		if test.cleanup != nil {
 			test.cleanup(d)
 		}
 
 		err = d.mounter.Unmount(d.workingMountDir)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = os.RemoveAll(d.workingMountDir)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = d.mounter.Unmount(targetTest)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		err = os.RemoveAll(targetTest)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 }
 
 func makeDir(pathname string) error {
-	err := os.MkdirAll(pathname, os.FileMode(0755))
+	err := os.MkdirAll(pathname, os.FileMode(0o755))
 	if err != nil {
 		if !os.IsExist(err) {
 			return err
@@ -796,7 +807,7 @@ func makeDir(pathname string) error {
 func TestMakeDir(t *testing.T) {
 	// Successfully create directory
 	err := makeDir(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Failed case
 	err = makeDir("./azurelustre.go")
@@ -807,7 +818,7 @@ func TestMakeDir(t *testing.T) {
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
@@ -819,7 +830,7 @@ func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
 func TestNewSafeMounter(t *testing.T) {
 	resp, err := NewSafeMounter()
 	assert.NotNil(t, resp)
-	assert.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestNodeGetVolumeStats(t *testing.T) {
@@ -857,8 +868,8 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	d := NewFakeDriver()
 
 	for _, test := range tests {
-		_ = makeDir(fakePath)
-		test := test // pin
+		err := makeDir(fakePath)
+		require.NoError(t, err)
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.NodeGetVolumeStats(context.Background(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -866,8 +877,8 @@ func TestNodeGetVolumeStats(t *testing.T) {
 			}
 		})
 
-		err := os.RemoveAll(fakePath)
-		assert.NoError(t, err)
+		err = os.RemoveAll(fakePath)
+		require.NoError(t, err)
 	}
 }
 
@@ -909,7 +920,6 @@ func TestEnsureStrictSubpath(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			actualResult := ensureStrictSubpath(test.subPath)
 
@@ -977,7 +987,6 @@ func TestGetLustreVolFromID(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			lustreVolume, err := getLustreVolFromID(test.volumeID)
 
@@ -1033,7 +1042,6 @@ func TestGetInternalVolumePath(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalVolumePath(test.workingMountDir, test.mountPath, test.subDirPath)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -1076,7 +1084,6 @@ func TestGetInternalMountPath(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalMountPath(test.workingMountDir, test.mountPath)
 			if !reflect.DeepEqual(err, test.expectedErr) {
@@ -1190,7 +1197,6 @@ func TestNewLustreVolume(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		test := test // pin
 		t.Run(test.desc, func(t *testing.T) {
 			vol, err := newLustreVolume(test.id, test.volName, test.params)
 			if !reflect.DeepEqual(err, test.expectedErr) {

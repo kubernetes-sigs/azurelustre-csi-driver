@@ -10,7 +10,7 @@ spec:
   capacity:
     # This field should be the true size of the Azure Lustre you want
     # to used. So that, k8s can allocate resources better.
-    storage: 4Ti
+    storage: 48Ti
   csi:
     driver: azurelustre.csi.azure.com
     volumeAttributes:

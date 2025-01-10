@@ -21,6 +21,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -62,10 +63,9 @@ func TestNewFakeDriver(t *testing.T) {
 
 func TestAddControllerServiceCapabilities(t *testing.T) {
 	d := NewFakeDriver()
-	var cl []csi.ControllerServiceCapability_RPC_Type
-	cl = append(cl, csi.ControllerServiceCapability_RPC_UNKNOWN)
+	cl := []csi.ControllerServiceCapability_RPC_Type{csi.ControllerServiceCapability_RPC_UNKNOWN}
 	d.AddControllerServiceCapabilities(cl)
-	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().Type)
+	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().GetType())
 }
 
 func TestGetVolumeCapabilityAccessModes(t *testing.T) {
@@ -74,13 +74,13 @@ func TestGetVolumeCapabilityAccessModes(t *testing.T) {
 	// Test no volume access modes.
 	// REVISIT: Do we need to support any default access modes.
 	c := d.GetVolumeCapabilityAccessModes()
-	assert.Zero(t, len(c))
+	assert.Empty(t, c)
 
 	// Test driver with access modes.
 	d.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER})
 	modes := d.GetVolumeCapabilityAccessModes()
-	assert.Equal(t, 1, len(modes))
-	assert.Equal(t, modes[0].GetMode(), csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER)
+	assert.Len(t, modes, 1)
+	assert.Equal(t, csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER, modes[0].GetMode())
 }
 
 func TestValidateControllerServiceRequest(t *testing.T) {
@@ -88,13 +88,13 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 
 	// Valid requests which require no capabilities
 	err := d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_UNKNOWN)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service publish/unpublish not supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
 	s, ok := status.FromError(err)
 	assert.True(t, ok)
-	assert.Equal(t, s.Code(), codes.InvalidArgument)
+	assert.Equal(t, codes.InvalidArgument, s.Code())
 
 	// Add controller service publish & unpublish request
 	d.AddControllerServiceCapabilities(
@@ -107,17 +107,17 @@ func TestValidateControllerServiceRequest(t *testing.T) {
 
 	// Test controller service publish/unpublish is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service create/delete is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service list volumes is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_LIST_VOLUMES)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test controller service get capacity is supported
 	err = d.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_GET_CAPACITY)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }

@@ -21,20 +21,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
-	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-
+	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/volume"
 	mount "k8s.io/mount-utils"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"golang.org/x/net/context"
+	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
 )
 
 // NodePublishVolume mount the volume from staging to target path
@@ -73,44 +70,9 @@ func (d *Driver) NodePublishVolume(
 			"Volume context must be provided")
 	}
 
-	volName := ""
-
-	volFromID, err := getLustreVolFromID(volumeID)
-	if err != nil {
-		klog.Warningf("error parsing volume ID '%v'", err)
-	} else {
-		volName = volFromID.name
-	}
-
-	vol, err := newLustreVolume(volumeID, volName, context)
+	vol, err := getVolume(volumeID, context)
 	if err != nil {
 		return nil, err
-	}
-
-	if volFromID != nil && *volFromID != *vol {
-		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
-	}
-
-	subDirReplaceMap := map[string]string{}
-
-	// get metadata values
-	for k, v := range context {
-		switch strings.ToLower(k) {
-		case podNameKey:
-			subDirReplaceMap[podNameMetadata] = v
-		case podNamespaceKey:
-			subDirReplaceMap[podNamespaceMetadata] = v
-		case podUIDKey:
-			subDirReplaceMap[podUIDMetadata] = v
-		case serviceAccountNameKey:
-			subDirReplaceMap[serviceAccountNameMetadata] = v
-		case pvcNamespaceKey:
-			subDirReplaceMap[pvcNamespaceMetadata] = v
-		case pvcNameKey:
-			subDirReplaceMap[pvcNameMetadata] = v
-		case pvNameKey:
-			subDirReplaceMap[pvNameMetadata] = v
-		}
 	}
 
 	lockKey := fmt.Sprintf("%s-%s", volumeID, target)
@@ -128,26 +90,10 @@ func (d *Driver) NodePublishVolume(
 
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
-	readOnly := false
-
-	mountOptions := []string{}
-	if req.GetReadonly() {
-		readOnly = true
-		mountOptions = append(mountOptions, "ro")
-	}
-	for _, userMountFlag := range userMountFlags {
-		if userMountFlag == "ro" {
-			readOnly = true
-
-			if req.GetReadonly() {
-				continue
-			}
-		}
-		mountOptions = append(mountOptions, userMountFlag)
-	}
+	mountOptions, readOnly := getMountOptions(req, userMountFlags)
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
+		interpolatedSubDir := interpolateSubDirVariables(context, vol)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(
@@ -209,17 +155,7 @@ func (d *Driver) NodePublishVolume(
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	d.kernelModuleLock.Lock()
-	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
-		source,
-		target,
-		"lustre",
-		mountOptions,
-		nil,
-		[]string{"--no-mtab"},
-	)
-	d.kernelModuleLock.Unlock()
-
+	err = mountVolumeAtPath(d, source, target, mountOptions)
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
 			return nil, status.Errorf(
@@ -242,6 +178,89 @@ func (d *Driver) NodePublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodePublishVolumeResponse{}, nil
+}
+
+func interpolateSubDirVariables(context map[string]string, vol *lustreVolume) string {
+	subDirReplaceMap := map[string]string{}
+
+	// get metadata values
+	for k, v := range context {
+		switch strings.ToLower(k) {
+		case podNameKey:
+			subDirReplaceMap[podNameMetadata] = v
+		case podNamespaceKey:
+			subDirReplaceMap[podNamespaceMetadata] = v
+		case podUIDKey:
+			subDirReplaceMap[podUIDMetadata] = v
+		case serviceAccountNameKey:
+			subDirReplaceMap[serviceAccountNameMetadata] = v
+		case pvcNamespaceKey:
+			subDirReplaceMap[pvcNamespaceMetadata] = v
+		case pvcNameKey:
+			subDirReplaceMap[pvcNameMetadata] = v
+		case pvNameKey:
+			subDirReplaceMap[pvNameMetadata] = v
+		}
+	}
+
+	interpolatedSubDir := replaceWithMap(vol.subDir, subDirReplaceMap)
+	return interpolatedSubDir
+}
+
+func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string) ([]string, bool) {
+	readOnly := false
+	mountOptions := []string{}
+	if req.GetReadonly() {
+		readOnly = true
+		mountOptions = append(mountOptions, "ro")
+	}
+	for _, userMountFlag := range userMountFlags {
+		if userMountFlag == "ro" {
+			readOnly = true
+
+			if req.GetReadonly() {
+				continue
+			}
+		}
+		mountOptions = append(mountOptions, userMountFlag)
+	}
+	return mountOptions, readOnly
+}
+
+func getVolume(volumeID string, context map[string]string) (*lustreVolume, error) {
+	volName := ""
+
+	volFromID, err := getLustreVolFromID(volumeID)
+	if err != nil {
+		klog.Warningf("error parsing volume ID '%v'", err)
+	} else {
+		volName = volFromID.name
+	}
+
+	vol, err := newLustreVolume(volumeID, volName, context)
+	if err != nil {
+		return nil, err
+	}
+
+	if volFromID != nil && *volFromID != *vol {
+		klog.Warningf("volume context does not match values in volume ID for volume %q", volumeID)
+	}
+
+	return vol, nil
+}
+
+func mountVolumeAtPath(d *Driver, source, target string, mountOptions []string) error {
+	d.kernelModuleLock.Lock()
+	defer d.kernelModuleLock.Unlock()
+	err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
+		source,
+		target,
+		"lustre",
+		mountOptions,
+		nil,
+		[]string{"--no-mtab"},
+	)
+	return err
 }
 
 // NodeUnpublishVolume unmount the volume from the target path
@@ -282,10 +301,7 @@ func (d *Driver) NodeUnpublishVolume(
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
-	d.kernelModuleLock.Lock()
-	err := mount.CleanupMountPoint(targetPath, d.mounter,
-		true /*extensiveMountPointCheck*/)
-	d.kernelModuleLock.Unlock()
+	err := unmountVolumeAtPath(d, targetPath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)
@@ -299,6 +315,48 @@ func (d *Driver) NodeUnpublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
+}
+
+func unmountVolumeAtPath(d *Driver, targetPath string) error {
+	shouldUnmountBadPath := false
+
+	d.kernelModuleLock.Lock()
+	defer d.kernelModuleLock.Unlock()
+
+	parent := filepath.Dir(targetPath)
+	klog.V(2).Infof("Listing dir: %s", parent)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		klog.Warningf("could not list directory %s, will explicitly unmount path before cleanup %s: %q", parent, targetPath, err)
+		shouldUnmountBadPath = true
+	}
+
+	for _, e := range entries {
+		if e.Name() == filepath.Base(targetPath) {
+			_, err := e.Info()
+			if err != nil {
+				klog.Warningf("could not get info for entry %s, will explicitly unmount path before cleanup %s: %q", e.Name(), targetPath, err)
+				shouldUnmountBadPath = true
+			}
+		}
+	}
+
+	if shouldUnmountBadPath {
+		// In these cases, if we only ran mount.CleanupMountWithForce,
+		// it would have issues trying to stat the directory before
+		// cleanup, so we need to explicitly unmount the path, with
+		// force if necessary. Then the directory can be cleaned up
+		// by the mount.CleanupMountWithForce call.
+		klog.V(4).Infof("unmounting bad mount: %s)", targetPath)
+		forceUnmounter := *d.forceMounter
+		if err := forceUnmounter.UnmountWithForce(targetPath, 30*time.Second); err != nil {
+			klog.Warningf("couldn't unmount %s: %q", targetPath, err)
+		}
+	}
+
+	err = mount.CleanupMountWithForce(targetPath, *d.forceMounter,
+		true /*extensiveMountPointCheck*/, 10*time.Second)
+	return err
 }
 
 // Staging and Unstaging is not able to be supported with how Lustre is mounted
@@ -387,25 +445,26 @@ func (d *Driver) NodeGetVolumeStats(
 	_ context.Context,
 	req *csi.NodeGetVolumeStatsRequest,
 ) (*csi.NodeGetVolumeStatsResponse, error) {
-	if len(req.VolumeId) == 0 {
+	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"NodeGetVolumeStats volume ID was empty")
 	}
-	if len(req.VolumePath) == 0 {
+	volumePath := req.GetVolumePath()
+	if len(volumePath) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"NodeGetVolumeStats volume path was empty")
 	}
 
-	if _, err := os.Lstat(req.VolumePath); err != nil {
+	if _, err := os.Lstat(volumePath); err != nil {
 		if os.IsNotExist(err) {
 			return nil, status.Errorf(codes.NotFound,
-				"path %s does not exist", req.VolumePath)
+				"path %s does not exist", volumePath)
 		}
 		return nil, status.Errorf(codes.Internal,
-			"failed to stat file %s: %v", req.VolumePath, err)
+			"failed to stat file %s: %v", volumePath, err)
 	}
 
-	volumeMetrics, err := volume.NewMetricsStatFS(req.VolumePath).GetMetrics()
+	volumeMetrics, err := volume.NewMetricsStatFS(volumePath).GetMetrics()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to get metrics: %v", err)
@@ -504,7 +563,7 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 	return !notMnt, nil
 }
 
-func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath string, mountOptions []string) error {
+func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, mountOptions []string) error {
 	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
 		return err
 	}
@@ -522,7 +581,7 @@ func (d *Driver) createSubDir(vol *lustreVolume, mountPath string, subDirPath st
 
 	klog.V(2).Infof("Making subdirectory at %q", internalVolumePath)
 
-	if err := os.MkdirAll(internalVolumePath, 0775); err != nil {
+	if err := os.MkdirAll(internalVolumePath, 0o775); err != nil {
 		return status.Errorf(codes.Internal, "failed to make subdirectory: %v", err.Error())
 	}
 
@@ -533,7 +592,7 @@ func getSourceString(mgsIPAddress, azureLustreName string) string {
 	return fmt.Sprintf("%s@tcp:/%s", mgsIPAddress, azureLustreName)
 }
 
-func getInternalMountPath(workingMountDir string, mountPath string) (string, error) {
+func getInternalMountPath(workingMountDir, mountPath string) (string, error) {
 	mountPath = strings.Trim(mountPath, "/")
 
 	if isSubpath := ensureStrictSubpath(mountPath); !isSubpath {
@@ -547,7 +606,7 @@ func getInternalMountPath(workingMountDir string, mountPath string) (string, err
 	return filepath.Join(workingMountDir, mountPath), nil
 }
 
-func getInternalVolumePath(workingMountDir string, mountPath string, subDirPath string) (string, error) {
+func getInternalVolumePath(workingMountDir, mountPath, subDirPath string) (string, error) {
 	internalMountPath, err := getInternalMountPath(workingMountDir, mountPath)
 	if err != nil {
 		return "", err
@@ -603,17 +662,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 		vol.id, source, target, mountOptions,
 	)
 
-	d.kernelModuleLock.Lock()
-	err = d.mounter.MountSensitiveWithoutSystemdWithMountFlags(
-		source,
-		target,
-		"lustre",
-		mountOptions,
-		nil,
-		[]string{"--no-mtab"},
-	)
-	d.kernelModuleLock.Unlock()
-
+	err = mountVolumeAtPath(d, source, target, mountOptions)
 	if err != nil {
 		if removeErr := os.Remove(target); removeErr != nil {
 			return status.Errorf(
@@ -639,7 +688,7 @@ func (d *Driver) internalUnmount(mountPath string) error {
 
 	klog.V(4).Infof("internally unmounting %v", target)
 
-	err = mount.CleanupMountPoint(target, d.mounter, true)
+	err = mount.CleanupMountWithForce(target, *d.forceMounter, true, 10*time.Second)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to unmount staging target %q: %v", target, err)
 	}
@@ -685,7 +734,7 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 }
 
 // Convert context parameters to a lustreVolume
-func newLustreVolume(volumeID string, volumeName string, params map[string]string) (*lustreVolume, error) {
+func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lustreVolume, error) {
 	var mgsIPAddress, azureLustreName, subDir string
 	// validate parameters (case-insensitive).
 	for k, v := range params {

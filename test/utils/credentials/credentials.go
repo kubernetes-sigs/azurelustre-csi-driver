@@ -22,16 +22,15 @@ import (
 	"log"
 	"os"
 
-	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
-
 	"github.com/pborman/uuid"
 	"github.com/pelletier/go-toml"
+	"sigs.k8s.io/azurelustre-csi-driver/test/utils/testutil"
 )
 
 const (
 	AzurePublicCloud            = "AzurePublicCloud"
 	ResourceGroupPrefix         = "azurelustre-csi-driver-test-"
-	TempAzureCredentialFilePath = "/tmp/azure.json"
+	TempAzureCredentialFilePath = "/tmp/azure.json" // #nosec G101
 
 	azureCredentialFileTemplate = `{
     "cloud": "{{.Cloud}}",
@@ -41,7 +40,7 @@ const (
     "aadClientSecret": "{{.AADClientSecret}}",
     "resourceGroup": "{{.ResourceGroup}}",
     "location": "{{.Location}}"
-}`
+}` // #nosec G101
 	defaultAzurePublicCloudLocation = "eastus2"
 
 	// Env vars
@@ -49,7 +48,7 @@ const (
 	tenantIDEnvVar        = "AZURE_TENANT_ID"
 	subscriptionIDEnvVar  = "AZURE_SUBSCRIPTION_ID"
 	aadClientIDEnvVar     = "AZURE_CLIENT_ID"
-	aadClientSecretEnvVar = "AZURE_CLIENT_SECRET"
+	aadClientSecretEnvVar = "AZURE_CLIENT_SECRET" // #nosec G101
 	resourceGroupEnvVar   = "AZURE_RESOURCE_GROUP"
 	locationEnvVar        = "AZURE_LOCATION"
 )
@@ -122,14 +121,14 @@ func CreateAzureCredentialFile() (*Credentials, error) {
 		return parseAndExecuteTemplate(cloud, c.TenantID, c.SubscriptionID, c.ClientID, c.ClientSecret, resourceGroup, location)
 	}
 
-	return nil, fmt.Errorf("If you are running tests locally, you will need to set the following env vars: $%s, $%s, $%s, $%s, $%s, $%s",
+	return nil, fmt.Errorf("if you are running tests locally, you will need to set the following env vars: $%s, $%s, $%s, $%s, $%s, $%s",
 		tenantIDEnvVar, subscriptionIDEnvVar, aadClientIDEnvVar, aadClientSecretEnvVar, resourceGroupEnvVar, locationEnvVar)
 }
 
 // DeleteAzureCredentialFile deletes the temporary Azure credential file
 func DeleteAzureCredentialFile() error {
 	if err := os.Remove(TempAzureCredentialFilePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("error removing %s %v", TempAzureCredentialFilePath, err)
+		return fmt.Errorf("error removing %s %w", TempAzureCredentialFilePath, err)
 	}
 
 	return nil
@@ -141,12 +140,12 @@ func getCredentialsFromAzureCredentials(azureCredentialsPath string) (*FromProw,
 	content, err := os.ReadFile(azureCredentialsPath)
 	log.Printf("Reading credentials file %v", azureCredentialsPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading credentials file %v %v", azureCredentialsPath, err)
+		return nil, fmt.Errorf("error reading credentials file %v %w", azureCredentialsPath, err)
 	}
 
 	c := Config{}
 	if err := toml.Unmarshal(content, &c); err != nil {
-		return nil, fmt.Errorf("error parsing credentials file %v %v", azureCredentialsPath, err)
+		return nil, fmt.Errorf("error parsing credentials file %v %w", azureCredentialsPath, err)
 	}
 
 	return &c.Creds, nil
@@ -157,12 +156,12 @@ func parseAndExecuteTemplate(cloud, tenantID, subscriptionID, aadClientID, aadCl
 	t := template.New("AzureCredentialFileTemplate")
 	t, err := t.Parse(azureCredentialFileTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing azureCredentialFileTemplate %v", err)
+		return nil, fmt.Errorf("error parsing azureCredentialFileTemplate %w", err)
 	}
 
 	f, err := os.Create(TempAzureCredentialFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("error creating %s %v", TempAzureCredentialFilePath, err)
+		return nil, fmt.Errorf("error creating %s %w", TempAzureCredentialFilePath, err)
 	}
 	defer f.Close()
 
@@ -177,7 +176,7 @@ func parseAndExecuteTemplate(cloud, tenantID, subscriptionID, aadClientID, aadCl
 	}
 	err = t.Execute(f, c)
 	if err != nil {
-		return nil, fmt.Errorf("error executing parsed azure credential file template %v", err)
+		return nil, fmt.Errorf("error executing parsed azure credential file template %w", err)
 	}
 
 	return &c, nil

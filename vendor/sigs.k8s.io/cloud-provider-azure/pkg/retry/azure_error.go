@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -62,13 +62,6 @@ type Error struct {
 	RetryAfter time.Time
 	// RetryAfter indicates the raw error from API.
 	RawError error
-}
-
-// RawErrorContainer is the container of the Error.RawError
-type RawErrorContainer struct {
-	Code    string   `json:"code"`
-	Message string   `json:"message"`
-	Details []string `json:"details"`
 }
 
 // Error returns the error.
@@ -156,7 +149,7 @@ func GetError(resp *http.Response, err error) *Error {
 		return nil
 	}
 
-	if err == nil && resp != nil && isSuccessHTTPResponse(resp) {
+	if err == nil && resp != nil && IsSuccessHTTPResponse(resp) {
 		// HTTP 2xx suggests a successful response
 		return nil
 	}
@@ -173,8 +166,8 @@ func GetError(resp *http.Response, err error) *Error {
 	}
 }
 
-// isSuccessHTTPResponse determines if the response from an HTTP request suggests success
-func isSuccessHTTPResponse(resp *http.Response) bool {
+// IsSuccessHTTPResponse determines if the response from an HTTP request suggests success
+func IsSuccessHTTPResponse(resp *http.Response) bool {
 	if resp == nil {
 		return false
 	}
@@ -198,8 +191,8 @@ func getRawError(resp *http.Response, err error) error {
 
 	// return the http status if it is unable to get response body.
 	defer resp.Body.Close()
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	resp.Body = ioutil.NopCloser(bytes.NewReader(respBody))
+	respBody, _ := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 	if len(respBody) == 0 {
 		return fmt.Errorf("HTTP status code (%d)", resp.StatusCode)
 	}
@@ -226,7 +219,7 @@ func shouldRetryHTTPRequest(resp *http.Response, err error) bool {
 		}
 
 		// should retry on <200, error>.
-		if isSuccessHTTPResponse(resp) && err != nil {
+		if IsSuccessHTTPResponse(resp) && err != nil {
 			return true
 		}
 
@@ -303,14 +296,14 @@ func GetStatusNotFoundAndForbiddenIgnoredError(resp *http.Response, err error) *
 
 	// Returns nil when it is StatusNotFound error.
 	if rerr.HTTPStatusCode == http.StatusNotFound {
-		klog.V(3).Infof("Ignoring StatusNotFound error: %w", rerr)
+		klog.V(3).Infof("Ignoring StatusNotFound error: %+v", rerr)
 		return nil
 	}
 
 	// Returns nil if the status code is StatusForbidden.
 	// This happens when AuthorizationFailed is reported from Azure API.
 	if rerr.HTTPStatusCode == http.StatusForbidden {
-		klog.V(3).Infof("Ignoring StatusForbidden error: %w", rerr)
+		klog.V(3).Infof("Ignoring StatusForbidden error: %+v", rerr)
 		return nil
 	}
 
@@ -424,4 +417,17 @@ func getOperationNotAllowedReason(msg string) string {
 		return QuotaExceeded
 	}
 	return OperationNotAllowed
+}
+
+// PartialUpdateError implements error interface. It is meant to be returned for errors with http status code of 2xx
+type PartialUpdateError struct {
+	message string
+}
+
+func NewPartialUpdateError(msg string) *PartialUpdateError {
+	return &PartialUpdateError{message: msg}
+}
+
+func (e *PartialUpdateError) Error() string {
+	return e.message
 }

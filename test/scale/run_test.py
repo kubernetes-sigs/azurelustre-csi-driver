@@ -251,7 +251,7 @@ class PerfScaleTest:
         self.run_command(
             "kubectl rollout status deployment"
             " scale-test-set"
-            " --timeout=300s"
+            " --timeout=600s"
         )
         logger.info("workload was ready")
 

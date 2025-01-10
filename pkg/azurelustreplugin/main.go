@@ -18,12 +18,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 
-	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
-
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 var (
@@ -37,14 +35,17 @@ var (
 
 func main() {
 	klog.InitFlags(nil)
-	_ = flag.Set("logtostderr", "true")
+	err := flag.Set("logtostderr", "true")
+	if err != nil {
+		klog.Fatalln(err)
+	}
 	flag.Parse()
 	if *version {
 		info, err := azurelustre.GetVersionYAML(*driverName)
 		if err != nil {
 			klog.Fatalln(err)
 		}
-		fmt.Println(info)
+		klog.V(2).Info(info)
 		os.Exit(0)
 	}
 

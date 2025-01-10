@@ -19,26 +19,25 @@ package azurelustre
 import (
 	"context"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // GetPluginInfo return the version and name of the plugin
-func (f *Driver) GetPluginInfo(_ context.Context, _ *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
-	if f.Name == "" {
+func (d *Driver) GetPluginInfo(_ context.Context, _ *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
+	if d.Name == "" {
 		return nil, status.Error(codes.Unavailable, "Driver name not configured")
 	}
 
-	if f.Version == "" {
+	if d.Version == "" {
 		return nil, status.Error(codes.Unavailable, "Driver is missing version")
 	}
 
 	return &csi.GetPluginInfoResponse{
-		Name:          f.Name,
-		VendorVersion: f.Version,
+		Name:          d.Name,
+		VendorVersion: d.Version,
 	}, nil
 }
 
@@ -46,12 +45,12 @@ func (f *Driver) GetPluginInfo(_ context.Context, _ *csi.GetPluginInfoRequest) (
 // This method does not need to return anything.
 // Currently the spec does not dictate what you should return either.
 // Hence, return an empty response
-func (f *Driver) Probe(_ context.Context, _ *csi.ProbeRequest) (*csi.ProbeResponse, error) {
+func (d *Driver) Probe(_ context.Context, _ *csi.ProbeRequest) (*csi.ProbeResponse, error) {
 	return &csi.ProbeResponse{Ready: &wrapperspb.BoolValue{Value: true}}, nil
 }
 
 // GetPluginCapabilities returns the capabilities of the plugin
-func (f *Driver) GetPluginCapabilities(_ context.Context, _ *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
+func (d *Driver) GetPluginCapabilities(_ context.Context, _ *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
 	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
 			{

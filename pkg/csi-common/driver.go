@@ -18,10 +18,9 @@ package csicommon
 
 import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"k8s.io/klog/v2"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 )
 
 type CSIDriver struct {
@@ -35,7 +34,7 @@ type CSIDriver struct {
 
 // Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
-func NewCSIDriver(name string, v string, nodeID string) *CSIDriver {
+func NewCSIDriver(name, v, nodeID string) *CSIDriver {
 	if name == "" {
 		klog.Errorf("Driver name missing")
 		return nil
@@ -74,18 +73,17 @@ func (d *CSIDriver) ValidateControllerServiceRequest(c csi.ControllerServiceCapa
 }
 
 func (d *CSIDriver) AddControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) {
-	var csc []*csi.ControllerServiceCapability
+	csc := make([]*csi.ControllerServiceCapability, 0, len(cl))
 
 	for _, c := range cl {
 		klog.Infof("Enabling controller service capability: %v", c.String())
 		csc = append(csc, NewControllerServiceCapability(c))
 	}
-
 	d.Cap = csc
 }
 
 func (d *CSIDriver) AddNodeServiceCapabilities(nl []csi.NodeServiceCapability_RPC_Type) {
-	var nsc []*csi.NodeServiceCapability
+	nsc := make([]*csi.NodeServiceCapability, 0, len(nl))
 	for _, n := range nl {
 		klog.V(2).Infof("Enabling node service capability: %v", n.String())
 		nsc = append(nsc, NewNodeServiceCapability(n))
@@ -94,7 +92,7 @@ func (d *CSIDriver) AddNodeServiceCapabilities(nl []csi.NodeServiceCapability_RP
 }
 
 func (d *CSIDriver) AddVolumeCapabilityAccessModes(vc []csi.VolumeCapability_AccessMode_Mode) {
-	var vca []*csi.VolumeCapability_AccessMode
+	vca := make([]*csi.VolumeCapability_AccessMode, 0, len(vc))
 	for _, c := range vc {
 		klog.Infof("Enabling volume access mode: %v", c.String())
 		vca = append(vca, NewVolumeCapabilityAccessMode(c))

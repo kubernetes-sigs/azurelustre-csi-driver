@@ -32,12 +32,14 @@ function add_net_interfaces() {
   ethernet_interfaces=()
   for interface in $interface_list; do
     interface_info=$(ip link show "${interface}")
+    # Skip interfaces that are not needed
     if [[ "$interface_info" =~ 'SLAVE' ]]; then
       echo "$(date -u) Not adding slave interface: ${interface}"
-      continue
     elif [[ "$interface_info" =~ 'link-netns' ]]; then
       echo "$(date -u) Not adding namespaced interface: ${interface}"
-      continue
+    elif [[ "$interface_info" =~ 'UNKNOWN' ]]; then
+      echo "$(date -u) Not adding state unknown interface: ${interface}"
+    # Add remaining link/ether interface
     elif [[ "$interface_info" =~ 'link/ether' ]]; then
       echo "$(date -u) Including ethernet interface: ${interface}"
       ethernet_interfaces+=("$interface")
@@ -65,10 +67,10 @@ function add_net_interfaces() {
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
-requiredLustreVersion=${LUSTRE_VERSION:-"2.15.4"}
+requiredLustreVersion=${LUSTRE_VERSION:-"2.15.5"}
 echo "requiredLustreVersion: ${requiredLustreVersion}"
 
-requiredClientSha=${CLIENT_SHA_SUFFIX:-"42-gd6d405d"}
+requiredClientSha=${CLIENT_SHA_SUFFIX:-"41-gc010524"}
 echo "requiredClientSha: ${requiredClientSha}"
 
 pkgVersion="${requiredLustreVersion}-${requiredClientSha}"

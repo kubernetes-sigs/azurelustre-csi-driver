@@ -39,7 +39,7 @@ spec:
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
-          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.9.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.14.0
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=120s
@@ -53,7 +53,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: node-driver-registrar
-          image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.9.0
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.12.0
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
@@ -84,7 +84,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.15
+          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.17
           imagePullPolicy: IfNotPresent
           lifecycle:
             preStop:
@@ -116,9 +116,9 @@ spec:
             - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
               value: "yes"
             - name: LUSTRE_VERSION
-              value: "2.15.4"
+              value: "2.15.5"
             - name: CLIENT_SHA_SUFFIX
-              value: "42-gd6d405d"
+              value: "41-gc010524"
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
