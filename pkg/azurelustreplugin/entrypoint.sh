@@ -82,20 +82,9 @@ echo "pkgName: ${pkgName}"
 if [[ ! -z $(grep -R 'bionic' /etc/os-release) ]]; then
   osReleaseCodeName="bionic"
 elif [[ ! -z $(grep -R 'jammy' /etc/os-release) ]]; then
-#   cat << EOF | tee /etc/apt/sources.list.d/jammy.list
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy main restricted
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates main restricted
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy universe
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates universe
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy multiverse
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-updates multiverse
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security main restricted
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security universe
-# deb http://azure.archive.ubuntu.com/ubuntu/ jammy-security multiverse
-# EOF
-#
   osReleaseCodeName="jammy"
+elif [[ ! -z $(grep -R 'focal' /etc/os-release) ]]; then
+  osReleaseCodeName="focal"
 else
   echo "Unsupported Linux distro"
   exit 1
