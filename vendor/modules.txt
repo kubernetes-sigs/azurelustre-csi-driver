@@ -888,7 +888,7 @@ k8s.io/kube-openapi/pkg/schemaconv
 k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/spec
-# k8s.io/kubernetes v1.31.1
+# k8s.io/kubernetes v1.31.6
 ## explicit; go 1.22.0
 k8s.io/kubernetes/pkg/features
 k8s.io/kubernetes/pkg/kubelet/server/metrics
