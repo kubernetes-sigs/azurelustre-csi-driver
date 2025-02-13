@@ -16,7 +16,7 @@ require (
 	google.golang.org/protobuf v1.35.1
 	k8s.io/apimachinery v0.31.1
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kubernetes v1.31.1
+	k8s.io/kubernetes v1.31.6
 	k8s.io/mount-utils v0.31.1
 	k8s.io/utils v0.0.0-20240921022957-49e7df575cb6
 	sigs.k8s.io/cloud-provider-azure v1.31.1
