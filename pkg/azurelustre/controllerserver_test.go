@@ -19,7 +19,7 @@ package azurelustre
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -42,15 +42,9 @@ func TestControllerGetCapabilities(t *testing.T) {
 	for _, capabilitySupported := range resp.GetCapabilities() {
 		capabilitiesSupported = append(capabilitiesSupported, capabilitySupported.GetRpc().GetType())
 	}
-	sort.Slice(capabilitiesSupported,
-		func(i, j int) bool {
-			return capabilitiesSupported[i] < capabilitiesSupported[j]
-		})
+	slices.Sort(capabilitiesSupported)
 	capabilitiesWanted := controllerServiceCapabilities
-	sort.Slice(capabilitiesWanted,
-		func(i, j int) bool {
-			return capabilitiesWanted[i] < capabilitiesWanted[j]
-		})
+	slices.Sort(capabilitiesWanted)
 	assert.Equal(t, capabilitiesWanted, capabilitiesSupported)
 }
 
@@ -322,14 +316,7 @@ func TestCreateVolume_Err_BlockMountVolume(t *testing.T) {
 func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 	capabilitiesNotSupported := []csi.VolumeCapability_AccessMode_Mode{}
 	for capability := range csi.VolumeCapability_AccessMode_Mode_name {
-		supported := false
-		for _, supportedCapability := range volumeCapabilities {
-			if csi.VolumeCapability_AccessMode_Mode(capability) ==
-				supportedCapability {
-				supported = true
-				break
-			}
-		}
+		supported := slices.Contains(volumeCapabilities, csi.VolumeCapability_AccessMode_Mode(capability))
 		if !supported {
 			capabilitiesNotSupported = append(capabilitiesNotSupported,
 				csi.VolumeCapability_AccessMode_Mode(capability))
@@ -621,14 +608,7 @@ func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
 ) {
 	capabilitiesNotSupported := []csi.VolumeCapability_AccessMode_Mode{}
 	for capability := range csi.VolumeCapability_AccessMode_Mode_name {
-		supported := false
-		for _, supportedCapability := range volumeCapabilities {
-			if csi.VolumeCapability_AccessMode_Mode(capability) ==
-				supportedCapability {
-				supported = true
-				break
-			}
-		}
+		supported := slices.Contains(volumeCapabilities, csi.VolumeCapability_AccessMode_Mode(capability))
 		if !supported {
 			capabilitiesNotSupported = append(capabilitiesNotSupported,
 				csi.VolumeCapability_AccessMode_Mode(capability))
