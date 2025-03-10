@@ -119,7 +119,8 @@ func TestEnsureMountPoint(t *testing.T) {
 	require.True(t, ok, "Mounter should implement MounterForceUnmounter")
 	d.forceMounter = &forceMounter
 
-	for _, test := range tests {
+	for i := range tests {
+		test := &tests[i]
 		err := makeDir(alreadyExistTarget)
 		require.NoError(t, err)
 
@@ -535,10 +536,11 @@ func TestNodePublishVolume(t *testing.T) {
 		},
 	}
 
-	// Setup
 	d := NewFakeDriver()
 
-	for _, test := range tests {
+	for i := range tests {
+		test := &tests[i]
+
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
@@ -735,7 +737,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	d := NewFakeDriver()
 	d.workingMountDir = workingMountDir
 
-	for _, test := range tests {
+	for i := range tests {
+		test := &tests[i]
 		fakeMounter := &fakeMounter{}
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
@@ -867,7 +870,8 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	// Setup
 	d := NewFakeDriver()
 
-	for _, test := range tests {
+	for i := range tests {
+		test := &tests[i]
 		err := makeDir(fakePath)
 		require.NoError(t, err)
 		t.Run(test.desc, func(t *testing.T) {

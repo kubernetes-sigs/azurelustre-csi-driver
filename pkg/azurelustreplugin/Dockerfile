@@ -19,8 +19,17 @@ COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
 
 RUN chmod +x "/app/entrypoint.sh"
 
-RUN apt-get update && apt --only-upgrade -y install tar libudev1 libsystemd0 libssl3
-RUN apt-get clean all
+RUN apt-get update && \
+  apt-get upgrade -y && \
+  apt-get autoremove -y && \
+  apt-get clean -y && \
+  rm -rf \
+  /var/cache/debconf/* \
+  /var/lib/apt/lists/* \
+  /var/log/* \
+  /tmp/* \
+  /var/tmp/*
+
 
 WORKDIR "/app"
 

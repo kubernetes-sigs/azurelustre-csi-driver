@@ -55,7 +55,7 @@ func TestValidateVolumeCapabilities(t *testing.T) {
 	req := csi.ValidateVolumeCapabilitiesRequest{VolumeCapabilities: capability}
 	resp, err := cs.ValidateVolumeCapabilities(context.Background(), &req)
 	require.NoError(t, err)
-	assert.Equal(t, int32(0), resp.XXX_sizecache)
+	assert.Equal(t, &csi.ValidateVolumeCapabilitiesResponse{}, resp)
 
 	// Test when there are no common capabilities
 	req = csi.ValidateVolumeCapabilitiesRequest{VolumeCapabilities: capabilityDisjoint}
@@ -72,7 +72,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := cs.ControllerGetCapabilities(context.Background(), &req)
 	require.NoError(t, err)
-	assert.Equal(t, int32(0), resp.XXX_sizecache)
+	assert.Equal(t, cs.Driver.Cap, resp.GetCapabilities())
 }
 
 func TestCreateVolume(t *testing.T) {
