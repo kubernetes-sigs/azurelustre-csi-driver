@@ -53,7 +53,12 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 
 	_, ok := status.FromError(err)
 	if ok {
+		// The error is already a gRPC status error
 		return err
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, err.Error())
 	}
 
 	var httpError *azcore.ResponseError

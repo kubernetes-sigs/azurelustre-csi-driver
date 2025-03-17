@@ -32,11 +32,19 @@ import (
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
+var DriverDefaultLocationSkuValues = map[string]*LustreSkuValue{
+	"AMLFS-Durable-Premium-40":  {IncrementInTib: 96, MaximumInTib: 1536},
+	"AMLFS-Durable-Premium-125": {IncrementInTib: 32, MaximumInTib: 256},
+	"AMLFS-Durable-Premium-250": {IncrementInTib: 16, MaximumInTib: 256},
+	"AMLFS-Durable-Premium-500": {IncrementInTib: 8, MaximumInTib: 256},
+}
+
 const (
 	fakeNodeID                = "fakeNodeID"
 	fakeDriverName            = "fake"
 	vendorVersion             = "0.3.0"
 	clusterRequestFailureName = "testShouldFail"
+	driverDefaultLocation     = "defaultFakeLocation"
 )
 
 func NewFakeDriver() *Driver {
@@ -51,7 +59,7 @@ func NewFakeDriver() *Driver {
 	driver.Version = vendorVersion
 	driver.cloud = &azure.Cloud{}
 	driver.cloud.SubscriptionID = "defaultFakeSubID"
-	driver.location = "defaultFakeLocation"
+	driver.location = driverDefaultLocation
 	driver.resourceGroup = "defaultFakeResourceGroup"
 	driver.dynamicProvisioner = &FakeDynamicProvisioner{}
 
@@ -91,8 +99,11 @@ func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, _, amlFi
 	return nil
 }
 
-func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, _ string) map[string]*LustreSkuValue {
+func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, location string) map[string]*LustreSkuValue {
 	f.recordFakeCall("GetSkuValuesForLocation")
+	if location == driverDefaultLocation {
+		return DriverDefaultLocationSkuValues
+	}
 	return map[string]*LustreSkuValue{
 		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768},
 		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128},

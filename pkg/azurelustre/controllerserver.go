@@ -307,7 +307,21 @@ func (d *Driver) CreateVolume(
 	blockSizeInBytes := int64(defaultLaaSOBlockSizeInTib) * util.TiB
 	maxCapacityInBytes := int64(0)
 
+	createdByDynamicProvisioningStringValue := "f"
+
 	if shouldCreateAmlfsCluster {
+		createdByDynamicProvisioningStringValue = "t"
+
+		if len(amlFilesystemProperties.Location) == 0 {
+			amlFilesystemProperties.Location = d.location
+		}
+
+		if len(amlFilesystemProperties.ResourceGroupName) == 0 {
+			amlFilesystemProperties.ResourceGroupName = d.resourceGroup
+		}
+
+		amlFilesystemProperties.SubnetInfo = d.populateSubnetPropertiesFromCloudConfig(amlFilesystemProperties.SubnetInfo)
+
 		klog.V(2).Infof("finding capacity based on SKU %s for location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
 		lustreSkuValue, err := d.getBlockSizeAndMaxCapacityForSkuInLocation(ctx, amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
 		if err != nil {
@@ -335,21 +349,7 @@ func (d *Driver) CreateVolume(
 			capacityInBytes, capacityRange.GetLimitBytes())
 	}
 
-	createdByDynamicProvisioningStringValue := "f"
-
 	if shouldCreateAmlfsCluster {
-		createdByDynamicProvisioningStringValue = "t"
-
-		if len(amlFilesystemProperties.Location) == 0 {
-			amlFilesystemProperties.Location = d.location
-		}
-
-		if len(amlFilesystemProperties.ResourceGroupName) == 0 {
-			amlFilesystemProperties.ResourceGroupName = d.resourceGroup
-		}
-
-		amlFilesystemProperties.SubnetInfo = d.populateSubnetPropertiesFromCloudConfig(amlFilesystemProperties.SubnetInfo)
-
 		amlFilesystemProperties.StorageCapacityTiB = storageCapacityTib
 
 		if !isValidVolumeName(volName) {

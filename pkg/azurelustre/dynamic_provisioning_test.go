@@ -786,6 +786,28 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 	}
 }
 
+func TestDynamicProvisioner_CreateAmlFilesystem_Err_Timeout(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	recorder := newMockAmlfsRecorder([]string{})
+	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+	cancel()
+
+	_, err := dynamicProvisioner.CreateAmlFilesystem(ctx, &AmlFilesystemProperties{
+		ResourceGroupName: expectedResourceGroupName,
+		AmlFilesystemName: expectedAmlFilesystemName,
+		SubnetInfo:        buildExpectedSubnetInfo(),
+	})
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
+	require.ErrorContains(t, err, "context deadline exceeded")
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+}
+
 func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForClusterTimeout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1080,6 +1102,23 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_NilCLient(t *testing.T) {
 
 	err := dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.ErrorContains(t, err, "aml filesystem client is nil")
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_Err_Timeout(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	recorder := newMockAmlfsRecorder([]string{})
+	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+	cancel()
+	err := dynamicProvisioner.DeleteAmlFilesystem(ctx, expectedResourceGroupName, expectedAmlFilesystemName)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
+	require.ErrorContains(t, err, "context deadline exceeded")
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_Err_ImmediateFailure(t *testing.T) {
