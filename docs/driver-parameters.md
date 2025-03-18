@@ -7,9 +7,10 @@ For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service d
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
 ### Permissions
+
 The kubelet identity attached to the cluster will require the following permission actions (at the Subscription scope):
 
-```
+```text
 Microsoft.Network/virtualNetworks/subnets/read
 Microsoft.Network/virtualNetworks/subnets/join/action
 Microsoft.StorageCache/getRequiredAmlFSSubnetsSize/action
@@ -26,7 +27,8 @@ Alternatively, users can grant the identity the following broader roles:
 - Network Contributor at the Virtual Network scope (the Virtual Network specified in the `vnet-name` parameter of the StorageClass) instead of the individual permissions.
 
 If using the `identities` parameter, users will also need to grant Managed Identity Operator role on the identity being assigned or the following permission action:
-```
+
+```text
 Microsoft.ManagedIdentity/userAssignedIdentities/assign/action
 ```
 
@@ -52,4 +54,4 @@ sub-dir | This is the subdirectory within the AMLFS cluster's root directory whi
 Name | Meaning | Available Value | Mandatory | Default value
 --- | --- | --- | --- | ---
 mgs-ip-address | The IP address of the Lustre MGS, see AMLFS cluster details. | Must be a valid IP address i.e., `x.x.x.x` | Yes | This value must be provided.
-sub-dir | This is subdirectory within the AMLFS cluster's root directory which is where each pod will actually be mounted within the AMLFS filesystem. This subdirectory does not need to exist beforehand. | This must be a valid Linux file path. It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`.| No | None, will default to mounting the root directory of the AMLFS cluster.
+sub-dir | This is the subdirectory within the AMLFS cluster's root directory which is where each pod will actually be mounted within the AMLFS filesystem. This subdirectory does not need to exist beforehand. | This must be a valid Linux file path. It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`.| No | None, will default to mounting the root directory of the AMLFS cluster.
