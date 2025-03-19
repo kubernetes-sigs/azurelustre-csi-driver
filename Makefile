@@ -39,6 +39,7 @@ GINKGO_FLAGS = -ginkgo.v
 GO111MODULE = on
 GOPATH ?= $(shell go env GOPATH)
 GOBIN ?= $(GOPATH)/bin
+CGO_ENABLED ?= 0
 DOCKER_CLI_EXPERIMENTAL = enabled
 export GOPATH GOBIN GO111MODULE DOCKER_CLI_EXPERIMENTAL
 
@@ -120,6 +121,10 @@ quicklustre:
 .PHONY: azurelustre
 azurelustre:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
+
+.PHONY: azurelustre-dalec
+azurelustre-dalec:
+	GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o /app/azurelustreplugin ./pkg/azurelustreplugin
 
 .PHONY: azurelustre-windows
 azurelustre-windows:
