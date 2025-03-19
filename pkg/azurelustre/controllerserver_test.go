@@ -206,6 +206,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
 	require.NotEmpty(t, fakeDynamicProvisioner.Filesystems)
 	assert.Equal(t, d.location, fakeDynamicProvisioner.Filesystems[0].Location)
+	assert.Equal(t, DriverDefaultLocationSkuValues["AMLFS-Durable-Premium-250"].IncrementInTib*util.TiB, rep.GetVolume().GetCapacityBytes())
 }
 
 func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {

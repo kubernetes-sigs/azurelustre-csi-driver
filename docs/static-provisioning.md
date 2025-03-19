@@ -1,20 +1,20 @@
 # Static Provisioning
 
-This document explains how to deploy your workload with an existing Azure Lustre cluster using Lustre CSI driver.
+This document explains how to deploy your workload with an existing Azure Managed Lustre cluster using the Lustre CSI driver.
 
 &nbsp;
 
-## Create a Volume bound to an existing Azure Lustre Cluster
+## Create a Volume bound to an existing Azure Managed Lustre cluster
 
 ### Option 1: Use Storage Class
 
 * Download
 [static provision storage class](./examples/storageclass_existing_lustre.yaml)
-and [PVC file](./examples/pvc_storageclass.yaml).
+and [persistent volume claim file](./examples/pvc_storageclass.yaml).
 
 * Edit the `EXISTING_LUSTRE_IP_ADDRESS` in the storage class.
 
-* Create storage class and `PVC`
+* Create the storage class and persistent volume claim
 
 ```shell
 kubectl create -f storageclass_existing_lustre.yaml
