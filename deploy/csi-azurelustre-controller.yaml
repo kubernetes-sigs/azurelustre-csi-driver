@@ -68,7 +68,7 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.17
+          image: mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v1.0.0.1-dynamic-provisioning-preview
           imagePullPolicy: IfNotPresent
           args:
             - "-v=5"
