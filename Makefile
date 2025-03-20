@@ -18,7 +18,7 @@ REGISTRY ?= azurelustre.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 TARGET ?= csi
 IMAGE_NAME ?= azurelustre-$(TARGET)
-IMAGE_VERSION ?= v0.1.17
+IMAGE_VERSION ?= v0.1.18
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
 ifdef CI
@@ -113,6 +113,10 @@ e2e-teardown:
 #
 # Azure Lustre: Code build
 #
+.PHONY: quicklustre
+quicklustre:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
+
 .PHONY: azurelustre
 azurelustre:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
@@ -128,6 +132,10 @@ azurelustre-darwin:
 #
 # Azure Lustre: Docker build
 #
+.PHONY: quickcontainer
+quickcontainer: quicklustre
+	docker build -t $(IMAGE_TAG) --output=type=docker -f $(dockerfile) .
+
 .PHONY: container
 container: $(build_lustre_source_code)
 	docker build -t $(IMAGE_TAG) --output=type=docker -f $(dockerfile) .

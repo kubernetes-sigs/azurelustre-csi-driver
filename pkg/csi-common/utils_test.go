@@ -98,14 +98,14 @@ func TestLogGRPC(t *testing.T) {
 	buf := new(bytes.Buffer)
 	klog.SetOutput(buf)
 
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) { return nil, nil }
+	handler := func(_ context.Context, _ any) (any, error) { return nil, nil }
 	info := grpc.UnaryServerInfo{
 		FullMethod: "fake",
 	}
 
 	tests := []struct {
 		name   string
-		req    interface{}
+		req    any
 		expStr string
 	}{
 		{
@@ -116,7 +116,6 @@ func TestLogGRPC(t *testing.T) {
 					"account_name": "k8s",
 					"account_key":  "testkey",
 				},
-				XXX_sizecache: 100,
 			},
 			`GRPC request: {"secrets":"***stripped***","volume_id":"vol_1"}`,
 		},
@@ -170,7 +169,7 @@ func TestNewControllerServiceCapability(t *testing.T) {
 	for _, test := range tests {
 		resp := NewControllerServiceCapability(test.cap)
 		assert.NotNil(t, resp)
-		assert.Equal(t, int32(0), resp.XXX_sizecache)
+		assert.Equal(t, test.cap, resp.GetRpc().GetType())
 	}
 }
 
@@ -194,7 +193,7 @@ func TestNewNodeServiceCapability(t *testing.T) {
 	for _, test := range tests {
 		resp := NewNodeServiceCapability(test.cap)
 		assert.NotNil(t, resp)
-		assert.Equal(t, int32(0), resp.XXX_sizecache)
+		assert.Equal(t, test.cap, resp.GetRpc().GetType())
 	}
 }
 
