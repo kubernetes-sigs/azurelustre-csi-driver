@@ -164,20 +164,6 @@ if [[ "${installClientPackages}" == "yes" ]]; then
 
     add_net_interfaces
 
-    # Remove old udev rules
-    should_reload_udev="false"
-    for rule_file in /etc/udev/rules.d/{73-netadd,74-netremove,98-netadd,99-netremove}.rules; do
-      if [[ -e ${rule_file} ]]; then
-        echo "Deleting unnecessary udev rule: ${rule_file}"
-        rm -f "${rule_file}"
-        should_reload_udev="true"
-      fi
-    done
-    if [[ "${should_reload_udev}" == "true" ]]; then
-      echo "$(date -u) Reloading udevadm"
-      udevadm control --reload
-    fi
-
     echo "$(date -u) Done"
   fi
 
