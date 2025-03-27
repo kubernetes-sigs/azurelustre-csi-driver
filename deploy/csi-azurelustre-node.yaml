@@ -129,28 +129,13 @@ spec:
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
-            - mountPath: /mnt
-              name: azurelustre-cache
+            - mountPath: /var/lib/kubelet/
+              name: mountpoint-dir
+              mountPropagation: "Bidirectional"
+            - mountPath: /etc/kubernetes/
+              name: azure-cred
             - mountPath: /dev
               name: host-dev
-            - mountPath: /var
-              mountPropagation: Bidirectional
-              name: host-var
-            - mountPath: /usr
-              name: host-usr
-            - mountPath: /etc
-              name: host-etc
-            # udevadm needs this
-            - mountPath: /run/udev
-              name: host-run-udev
-            - mountPath: /lib
-              name: host-lib
-            - mountPath: /lib64
-              name: host-lib64
-            - mountPath: /sbin
-              name: host-sbin
-            - mountPath: /bin
-              name: host-bin
           resources:
             limits:
               cpu: 1
@@ -165,49 +150,17 @@ spec:
           name: socket-dir
         - hostPath:
             path: /var/lib/kubelet/plugins_registry/
-            type: DirectoryOrCreate
+            type: Directory
           name: registration-dir
+        - hostPath:
+            path: /var/lib/kubelet/
+            type: Directory
+          name: mountpoint-dir
         - hostPath:
             path: /etc/kubernetes/
             type: DirectoryOrCreate
           name: azure-cred
         - hostPath:
-            path: /mnt
-            type: DirectoryOrCreate
-          name: azurelustre-cache
-        - hostPath:
             path: /dev
             type: Directory
           name: host-dev
-        - hostPath:
-            path: /var
-            type: Directory
-          name: host-var
-        - hostPath:
-            path: /usr
-            type: Directory
-          name: host-usr
-        - hostPath:
-            path: /etc
-            type: Directory
-          name: host-etc
-        - hostPath:
-            path: /run/udev
-            type: Directory
-          name: host-run-udev
-        - hostPath:
-            path: /lib
-            type: Directory
-          name: host-lib
-        - hostPath:
-            path: /lib64
-            type: Directory
-          name: host-lib64
-        - hostPath:
-            path: /sbin
-            type: Directory
-          name: host-sbin
-        - hostPath:
-            path: /bin
-            type: Directory
-          name: host-bin
