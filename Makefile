@@ -124,7 +124,7 @@ azurelustre:
 
 .PHONY: azurelustre-dalec
 azurelustre-dalec:
-	GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o /app/azurelustreplugin ./pkg/azurelustreplugin
+	GOOS=linux go build -a -ldflags ${LDFLAGS} -mod vendor -o /app/azurelustreplugin ./pkg/azurelustreplugin
 
 .PHONY: azurelustre-windows
 azurelustre-windows:
