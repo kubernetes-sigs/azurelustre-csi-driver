@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: azurelustre-integration-dalec
+spec:
+  containers:
+    - name: integration-dalec
+      image: ${IMAGE_NAME}
+      imagePullPolicy: Always
+      command: ["bash", "/test/run_integration_test.sh"]
+      env:
+        - name: MSFT_GOLANG_PKG_VER
+          value: "${MSFT_GOLANG_PKG_VER}"
+      volumeMounts:
+        - name: script-volume
+          mountPath: /test/run_integration_test.sh
+          subPath: run_integration_test.sh
+          readOnly: true
+  volumes:
+    - name: script-volume
+      configMap:
+        name: integration-dalec-script
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/os: linux
