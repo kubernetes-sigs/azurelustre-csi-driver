@@ -14,7 +14,7 @@ DriverInfo:
   Capabilities:
     persistence: true
     block: false
-    fsGroup: false
+    fsGroup: true
     volumeMountGroup: false
     exec: true
     snapshotDataSource: false
@@ -29,3 +29,4 @@ DriverInfo:
     topology: false
     multiplePVsSameID: true
     readWriteOncePod: true
+    capReadOnlyMany: true
