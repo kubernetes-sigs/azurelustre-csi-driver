@@ -40,13 +40,12 @@ apt install -y msft-golang=${MSFT_GOLANG_PKG_VER}
 
 go version
 
-lctl network up || true
 echo "$(date -u) Enabled Lustre client kernel modules."
 
 echo "$(date -u) Entering Lustre CSI driver"
 
 echo "$(date -u) install csc"
-go install github.com/dell/gocsi/csc@latest
+go install github.com/dell/gocsi/csc@v1.13.0
 export PATH=$PATH:/root/go/bin # add csc to path
 
 mkdir /csi
