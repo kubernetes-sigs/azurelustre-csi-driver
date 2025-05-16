@@ -94,6 +94,14 @@ $ kubectl exec -it csi-azurelustre-node-9ds7f -n kube-system -c azurelustre -- m
 &nbsp;
 &nbsp;
 
+### Case#3: Updating from versions below v0.1.10 to v0.2.0 or later
+
+In-place updates are not supported from any versions below v0.1.10 to v0.2.0 or later. Ensure that you are installing the CSI driver into a fresh node pool to avoid any issues.
+
+
+&nbsp;
+&nbsp;
+
 ### Update driver version quickly by editing driver deployment directly
 
 &nbsp;
