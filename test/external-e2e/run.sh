@@ -41,6 +41,7 @@ cat ${sc_file}
 
 clean_up_and_print_logs() {
     echo "clean up"
+    sleep 180
     kubectl delete -f ${claim_file} --ignore-not-found
     kubectl delete -f ${sc_file} --ignore-not-found
     echo "print out driver logs ..."
