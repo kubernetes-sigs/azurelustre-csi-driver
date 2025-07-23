@@ -6,7 +6,7 @@ For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service d
 
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
-### Permissions
+### Permissions For Kubelet Identity
 
 The kubelet identity attached to the cluster will require the following permission actions (at the Subscription scope):
 

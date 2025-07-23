@@ -1,155 +1,428 @@
-## CSI driver troubleshooting guide
+# CSI Driver Troubleshooting Guide
 
-&nbsp;
+---
 
-### Case#1: volume create/delete issue
+## Volume Provisioning Issues
 
-&nbsp;
+### Dynamic Provisioning (AMLFS Cluster Creation)
 
-- Symptoms
-  - PVC can't go into Bound status
-  - User workload pod can't go into a Running status
+**Symptoms:**
 
-&nbsp;
+- PVC remains in `Pending` status for an extended period (more than 15–20 minutes)
+- Dynamic provisioning StorageClass is configured, but the AMLFS cluster is not created
+- PVC events show provisioning errors or timeouts
 
-- Locate csi driver pod
+**Check PVC status and events:**
 
-```console
-$ kubectl get po -o wide -n kube-system -l app=csi-azurelustre-controller
+```sh
+kubectl describe pvc <pvc-name>
 ```
 
-<pre>
+Look for events such as:
+
+- `waiting for a volume to be created`
+- `failed to provision volume`
+- `error creating AMLFS cluster`
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+
+**Check controller logs for dynamic provisioning errors:**
+
+```sh
+kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "dynamic\|provision\|amlfs\|create"
+```
+
+Common error patterns:
+
+- Authentication/authorization errors
+- Quota exceeded errors
+- Network/subnet configuration issues
+- Invalid StorageClass parameters
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+
+**Verify StorageClass configuration:**
+
+```sh
+kubectl get storageclass <storageclass-name> -o yaml
+```
+
+Check for:
+
+- Correct provisioner: `azurelustre.csi.azure.com`
+- Valid SKU name, zone (if required), and maintenance window parameters
+- Proper network configuration (`vnet-name`, `subnet-name`, etc.)
+- Resource group and location settings
+- Zone parameter matches available zones for the SKU and location
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+**Check Azure subscription quotas and limits:**
+
+```sh
+# Check if you have reached the AMLFS cluster limit in your subscription
+kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "quota\|limit\|insufficient"
+```
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+**Verify Azure permissions for the kubelet identity:**
+
+Confirm that the driver has the necessary [Permissions For Kubelet Identity](driver-parameters.md#Permissions%20For%20Kubleet%20Identity).
+
+Check for permission errors in the controller logs:
+
+```sh
+kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "forbidden\|unauthorized\|permission"
+```
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+**Monitor AMLFS cluster creation progress in the Azure portal:**
+
+1. Navigate to Azure portal → Resource Groups
+2. Look for the resource group specified in the StorageClass (or the AKS infrastructure RG if not specified)
+3. Check if the AMLFS cluster resource is being created
+   - The AMLFS cluster will have tags corresponding to the volume it was created for, example below:
+     - k8s-azure-created-by: kubernetes-azurelustre-csi-driver
+     - kubernetes.io-created-for-pv-name: pvc-78876f95-32c2-41c4-bdfa-eb92d1eeb341
+     - kubernetes.io-created-for-pvc-name: pvc-lustre-dynprov
+     - kubernetes.io-created-for-pvc-namespace: default
+4. Review the Activity Log for any deployment failures
+
+**Check for network issues:**
+
+```sh
+# Verify that the specified virtual network and subnet exist and are accessible
+kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "network\|subnet\|vnet"
+```
+
+Common network issues:
+
+- The virtual network or subnet does not exist
+- Insufficient IP addresses in the subnet
+- Network security group blocking traffic
+- Missing virtual network peering
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+**Check for zone configuration issues:**
+
+```sh
+# Verify zone parameter and available zones
+kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "zone\|available zones"
+
+# Check StorageClass zone configuration
+kubectl get storageclass <storageclass-name> -o yaml | grep -E "zone"
+```
+
+Common zone issues:
+
+- Zone parameter not specified when required for the SKU/location
+- Zone value not available for the specified SKU in the location
+- Zone specified when the SKU doesn't support zones in the location
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+***Find all available zones for a location***
+
+```sh
+# Find all available zones for a location (requires az-cli, curl, and jq):
+# Fill SUBSCRIPTION and LOCATION parameters with your values:
+LOCATION="<your-location>" ; \
+SUBSCRIPTION="<your-subscription-id>" ; \
+ACCESS_TOKEN=$(az account get-access-token | jq -r .accessToken) ; \
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+        "https://management.azure.com/subscriptions/${SUBSCRIPTION}/providers/Microsoft.StorageCache/skus?api-version=2024-03-01" \
+| jq '[.value.[] | select(.resourceType == "amlFilesystems") | select(.locationInfo[].location | test("^" + $location + "$"; "i")) | {sku: .name, location: .locationInfo[].location, zones: .locationInfo[].zones}] | unique' --arg location "$LOCATION"
+```
+
+For subscriptions / locations with zones available, you should see something like the following:
+
+```text
+[
+  {
+    "sku": "AMLFS-Durable-Premium-125",
+    "location": "eastus",
+    "zones": [
+      "2",
+      "1",
+      "3"
+    ]
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-250",
+    "location": "eastus",
+    "zones": [
+      "2",
+      "1",
+      "3"
+    ]
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-40",
+    "location": "eastus",
+    "zones": [
+      "2",
+      "1",
+      "3"
+    ]
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-500",
+    "location": "eastus",
+    "zones": [
+      "2",
+      "1",
+      "3"
+    ]
+  }
+]
+```
+
+For subscriptions / locations without zones enabled, you'll see something like the following:
+
+```text
+[
+  {
+    "sku": "AMLFS-Durable-Premium-125",
+    "location": "westus",
+    "zones": []
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-250",
+    "location": "westus",
+    "zones": []
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-40",
+    "location": "westus",
+    "zones": []
+  },
+  {
+    "sku": "AMLFS-Durable-Premium-500",
+    "location": "westus",
+    "zones": []
+  }
+]
+```
+
+---
+
+### Static Provisioning (Pre-existing Volumes)
+
+**Symptoms:**
+
+- PVC does not reach `Bound` status
+- User workload pod does not reach `Running` status
+
+**Locate the CSI driver pod:**
+
+```sh
+kubectl get po -o wide -n kube-system -l app=csi-azurelustre-controller
+```
+
+```text
 NAME                                              READY   STATUS    RESTARTS   AGE     IP             NODE
 csi-azurelustre-controller-56bfddd689-dh5tk       3/3     Running   0          35s     10.240.0.19    k8s-agentpool-22533604-0
 csi-azurelustre-controller-56bfddd689-sl4ll       3/3     Running   0          35s     10.240.0.23    k8s-agentpool-22533604-1
-</pre>
-
-&nbsp;
-
-- Get csi driver logs
-
-```console
-$ kubectl logs csi-azurelustre-controller-56bfddd689-dh5tk -c azurelustre -n kube-system > csi-lustre-controller.log
 ```
 
-> note:
->
-> - add --previous to retrieve logs from a previous running container
->
-> - there could be multiple controller pods, logs can be taken from all of them simultaneously
->
-> ```console
-> $ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=-1 --prefix 
-> ```
->
-> - retrieve logs with `follow` (realtime) mode
->
-> ```console
-> $ kubectl logs deploy/csi-azurelustre-controller -c azurelustre -f -n kube-system
-> ```
+**Get CSI driver logs:**
 
-&nbsp;
-
-### Case#2: volume mount/unmount issue
-
-- Locate csi driver pod and find out the pod does the actual volume mount/unmount operation
-
-```console
-$ kubectl get po -o wide -n kube-system -l app=csi-azurelustre-node
+```sh
+kubectl logs csi-azurelustre-controller-56bfddd689-dh5tk -c azurelustre -n kube-system > csi-lustre-controller.log
 ```
 
-<pre>
+> **Note:**
+>
+> - Add `--previous` to retrieve logs from a previously running container.
+> - There may be multiple controller pods; logs can be collected from all of them simultaneously:
+>
+>   ```sh
+>   kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=-1 --prefix
+>   ```
+>
+> - To retrieve logs in real time (follow mode):
+>
+>   ```sh
+>   kubectl logs deploy/csi-azurelustre-controller -c azurelustre -f -n kube-system
+>   ```
+
+Check for solutions in [Resolving Common Errors](errors.md)
+
+---
+
+## Volume Mount/Unmount Issues
+
+**Locate the CSI driver pod and identify the pod performing the actual volume mount/unmount operation:**
+
+```sh
+kubectl get po -o wide -n kube-system -l app=csi-azurelustre-node
+```
+
+```text
 NAME                           READY   STATUS    RESTARTS   AGE     IP             NODE
 csi-azurelustre-node-9ds7f     3/3     Running   0          7m4s    10.240.0.35    k8s-agentpool-22533604-1
 csi-azurelustre-node-dr4s4     3/3     Running   0          7m4s    10.240.0.4     k8s-agentpool-22533604-0
-</pre>
-
-&nbsp;
-
-- Get csi driver logs
-
-```console
-$ kubectl logs csi-azurelustre-node-9ds7f -c azurelustre -n kube-system > csi-azurelustre-node.log
 ```
 
-> note: to watch logs in realtime from multiple `csi-azurelustre-node` DaemonSet pods simultaneously, run the command:
+**Get CSI driver logs:**
+
+```sh
+kubectl logs csi-azurelustre-node-9ds7f -c azurelustre -n kube-system > csi-azurelustre-node.log
+```
+
+> **Note:** To watch logs in real time from multiple `csi-azurelustre-node` DaemonSet pods simultaneously, run:
 >
-> ```console
-> $ kubectl logs daemonset/csi-azurelustre-node -c azurelustre -n kube-system -f
+> ```sh
+> kubectl logs daemonset/csi-azurelustre-node -c azurelustre -n kube-system -f
 > ```
 
-&nbsp;
+**Check Lustre mounts inside the driver:**
 
-- Check Lustre mounts inside driver
-
-```console
-$ kubectl exec -it csi-azurelustre-node-9ds7f -n kube-system -c azurelustre -- mount | grep lustre
+```sh
+kubectl exec -it csi-azurelustre-node-9ds7f -n kube-system -c azurelustre -- mount | grep lustre
 ```
 
-<pre>
+```text
 172.18.8.12@tcp:/lustrefs on /var/lib/kubelet/pods/6632349a-05fd-466f-bc8a-8946617089ce/volumes/kubernetes.io~csi/pvc-841498d9-fa63-418c-8cc7-d94ec27f2ee2/mount type lustre (rw,flock,lazystatfs,encrypt)
 172.18.8.12@tcp:/lustrefs on /var/lib/kubelet/pods/6632349a-05fd-466f-bc8a-8946617089ce/volumes/kubernetes.io~csi/pvc-841498d9-fa63-418c-8cc7-d94ec27f2ee2/mount type lustre (rw,flock,lazystatfs,encrypt)
-</pre>
-
-&nbsp;
-&nbsp;
-
-### Update driver version quickly by editing driver deployment directly
-
-&nbsp;
-
-- Update controller deployment
-
-```console
-$ kubectl edit deployment csi-azurelustre-controller -n kube-system
 ```
 
-&nbsp;
+> **Note:** It is expected for each mount mount to be listed twice
 
-- Update daemonset deployment
+Check for solutions in [Resolving Common Errors](errors.md)
 
-```console
-$ kubectl edit ds csi-azurelustre-node -n kube-system
+---
+
+## Get Azure Lustre Driver Version
+
+```sh
+kubectl exec -it csi-azurelustre-node-9ds7f -n kube-system -c azurelustre -- /bin/bash -c "./azurelustreplugin --version"
 ```
 
-&nbsp;
-
-- Change lustre CSI docker image config
-
-```console
-image: mcr.microsoft.com/k8s/csi/azurelustre-csi:v0.1.0
-imagePullPolicy: Always
-```
-
-&nbsp;
-&nbsp;
-
-### Get azure lustre driver version
-
-```console
-$ kubectl exec -it csi-azurelustre-node-9ds7f -n kube-system -c azurelustre -- /bin/bash -c "./azurelustreplugin -version"
-```
-
-<pre>
-Build Date: "2022-05-11T10:25:15Z"
+```text
+Build Date: "2025-07-29T16:54:45Z"
 Compiler: gc
 Driver Name: azurelustre.csi.azure.com
-Driver Version: v0.1.0
-Git Commit: 43017c96b7cecaa09bc05ce9fad3fb9860a4c0ce
-Go Version: go1.18.1
+Driver Version: v1.0.0
+Git Commit: 6e8debb72b19181dcff82c81d0fa7fbd949f9337
+Go Version: go1.23.10
 Platform: linux/amd64
-</pre>
-
-&nbsp;
-&nbsp;
-
-### Collect logs for Lustre CSI Driver Product Team for further investigation
-
-&nbsp;
-
-- get utility from /utils/azurelustre_log.sh, run it and share output lustre.logs with us
-  
-```console
-$ chmod +x ./azurelustre_log.sh
-$ ./azurelustre_log.sh > lustre.logs 2>&1
 ```
+
+---
+
+## Collect Logs for the Lustre CSI Driver Product Team
+
+**Get the utility from `/utils/azurelustre_log.sh`, run it, and share the output `lustre.logs` file:**
+
+```sh
+chmod +x ./azurelustre_log.sh
+./azurelustre_log.sh > lustre.logs 2>&1
+```
+
+---
+
+## Quickly Update Driver Deployment
+
+**Update controller deployment:**
+
+```sh
+kubectl edit deployment csi-azurelustre-controller -n kube-system
+```
+
+**Update DaemonSet deployment:**
+
+```sh
+kubectl edit ds csi-azurelustre-node -n kube-system
+```
+
+### Verification Commands
+
+#### Check CSI Driver Status
+
+```bash
+# Verify driver pods are running
+kubectl get pods -n kube-system -l app=csi-azurelustre-controller
+kubectl get pods -n kube-system -l app=csi-azurelustre-node
+```
+
+#### Check Volume and Mount Status
+
+```bash
+# Check PVC status
+kubectl describe pvc <pvc-name>
+kubectl get pvc <pvc-name> -o yaml
+
+# Check PV details
+kubectl describe pv <pv-name>
+kubectl get pv <pv-name> -o yaml
+
+# Check active mounts on nodes
+kubectl exec -it -n kube-system csi-azurelustre-node-<pod> -c azurelustre -- mount | grep lustre
+```
+
+#### Check Azure Resources
+
+```bash
+# List AMLFS clusters in resource group
+az amlfs list --resource-group <rg-name>
+
+# Check number of available IP addresses needed for AMLFS cluster
+az amlfs get-subnets-size  --sku AMLFS-Durable-Premium-40 --storage-capacity 48
+# Example output:
+{
+  "filesystemSubnetSize": 10
+}
+
+# Check subnet IP availability
+az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 48 --location <location> --filesystem-subnet <subnet-id>
+# This command will only return with a successful or unsuccessful error code, without output
+```
+
+### Other Possible Resolution Steps
+
+1. **Restart CSI Driver Pods**
+
+   ```bash
+   kubectl rollout restart -n kube-system deployment/csi-azurelustre-controller
+   kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node
+   ```
+
+2. **Force PVC Recreation**
+
+   ```bash
+   kubectl delete pvc <pvc-name>
+   kubectl apply -f <pvc-file>.yaml
+   ```
+
+3. **Check Kubernetes Resource Quotas**
+
+   ```bash
+   kubectl describe quota -A
+   kubectl describe limitrange -A
+   ```
+
+4. **Validate Configuration**
+
+   ```bash
+   kubectl get storageclass <storageclass> -o yaml
+   kubectl get pv <pv-name> -o yaml
+   kubectl get pvc <pvc-name> -o yaml
+   ```
+
+5. **Reinstall Driver**
+    Ensure that all of your volumes are unmounted before uninstalling the driver.
+
+   ```bash
+   ./deploy/uninstall-driver.sh
+   ./deploy/install-driver.sh
+   # You can install other versions by checking them out locally and running a local install
+   # See the output of ./deploy/install-driver.sh --help for more information
+   ```
