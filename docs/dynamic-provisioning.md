@@ -1,9 +1,20 @@
-# Dynamic Provisioning
+# Dynamic Provisioning (Public Preview)
+
+> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
 
 This document explains how to deploy your workload to a dynamically provisioned Azure Managed Lustre cluster
 using the Lustre CSI driver.
 
-&nbsp;
+## Prerequisites
+
+### Permissions
+
+> [!IMPORTANT]
+***IMPORTANT NOTE***: Before using this CSI driver to dynamically create AMLFS clusters, the
+kubelet identity must have the correct permissions granted to it.
+
+Ensure that the kubelet identity has all of the permissions that are listed in the section
+on [Permissions For Kubelet Identity](driver-parameters.md#Permissions%20For%20Kubelet%20Identity).
 
 ## Create an Azure Managed Lustre cluster bound to a Persistent Volume Claim
 
@@ -136,3 +147,14 @@ kubectl describe pv <unique-volume-name-from-pvc>
 * Any issues encountered during creation should appear in the events list for the persistent volume.
 If the issue is not obvious from the event message, check the controller pod logs for any further
 relevant messages.
+
+## Troubleshooting
+
+### Common Errors
+
+* A list of possible errors that may be encountered while using the driver can be found on the
+ [errors](errors.md) page.
+
+### General Debugging
+
+* Debugging approaches can be found on the [debug](csi-debug.md) page.
