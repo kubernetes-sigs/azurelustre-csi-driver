@@ -22,7 +22,7 @@ echo "go mod tidy"
 go mod tidy
 echo "go mod vendor"
 go mod vendor
-diff=`git diff`
+diff=`git diff vendor`
 if [[ -n "${diff}" ]]; then
   echo "${diff}"
   echo

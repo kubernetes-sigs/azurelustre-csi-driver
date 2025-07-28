@@ -18,7 +18,7 @@ REGISTRY ?= azurelustre.azurecr.io
 REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
 TARGET ?= csi
 IMAGE_NAME ?= azurelustre-$(TARGET)
-IMAGE_VERSION ?= v1.0.0.1-dynamic-provisioning-preview
+IMAGE_VERSION ?= v0.2.0
 CLOUD ?= AzurePublicCloud
 # Use a custom version for E2E tests if we are in Prow
 ifdef CI
@@ -39,6 +39,7 @@ GINKGO_FLAGS = -ginkgo.v
 GO111MODULE = on
 GOPATH ?= $(shell go env GOPATH)
 GOBIN ?= $(GOPATH)/bin
+CGO_ENABLED ?= 0
 DOCKER_CLI_EXPERIMENTAL = enabled
 export GOPATH GOBIN GO111MODULE DOCKER_CLI_EXPERIMENTAL
 
@@ -120,6 +121,10 @@ quicklustre:
 .PHONY: azurelustre
 azurelustre:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -a -ldflags ${LDFLAGS} -mod vendor -o _output/azurelustreplugin ./pkg/azurelustreplugin
+
+.PHONY: azurelustre-dalec
+azurelustre-dalec:
+	GOOS=linux go build -a -ldflags ${LDFLAGS} -mod vendor -o /app/azurelustreplugin ./pkg/azurelustreplugin
 
 .PHONY: azurelustre-windows
 azurelustre-windows:
