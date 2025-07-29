@@ -56,6 +56,7 @@ const (
 	immediateCreateFailureName                  = "immediate-create-failure"
 	eventualCreateFailureName                   = "eventual-create-failure"
 	eventualInternalExecutionCreateFailureName  = "internal-execution-with-200-create-failure"
+	eventualAscInternalErrorCreateFailureName   = "asc-with-200-create-failure"
 	immediateDeleteFailureName                  = "immediate-delete-failure"
 	eventualDeleteFailureName                   = "eventual-delete-failure"
 	clusterGetImmediateFailureName              = "cluster-get-failure"
@@ -67,8 +68,9 @@ const (
 	invalidSkuMaximum                           = "invalid-sku-maximum"
 	noZonesForLocation                          = "no-zones-for-location"
 	noLocationInfoForSku                        = "no-location-info-for-sku"
-	immediateClusterRequestTimeoutFailureName   = "testClusterShouldImmediatelyTimeout"
+	immediateClusterCreateTimeoutFailureName    = "testClusterShouldImmediatelyTimeout"
 	immediateInternalExecutionCreateFailureName = "testClusterCreateImmediatelyInternalError"
+	immediateAscInternalErrorCreateFailureName  = "testClusterCreateImmediatelyAscInternalError"
 	clusterIsFailed                             = "testClusterGetImmediatelyInternalError"
 	eventualClusterCreateTimeoutFailureName     = "testClusterShouldEventuallyTimeout"
 	clusterRequestRetryDeleteFailureName        = "testClusterShouldFailRetryDelete"
@@ -462,6 +464,21 @@ func createInternalExecutionErrorResponse() *azcore.ResponseError {
 	return e
 }
 
+func createAscInternalErrorResponse() *azcore.ResponseError {
+	e := &azcore.ResponseError{}
+	err := e.UnmarshalJSON([]byte(
+		`{
+			"errorCode": "AscInternalError",
+			"statusCode": 200,
+			"errorMessage": "Provisioning timed out deploying Cluster VMs"
+		}`,
+	))
+	if err != nil {
+		return &azcore.ResponseError{StatusCode: http.StatusInternalServerError, ErrorCode: "UNEXPECTED_TEST_FAILURE"}
+	}
+	return e
+}
+
 func newFakeAmlFilesystemsClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.AmlFilesystemsClient {
 	amlFilesystemsClientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -529,12 +546,17 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			return resp, errResp
 		}
 		nextFailureBehavior := getNextFailureBehavior(recorder)
-		if nextFailureBehavior == immediateClusterRequestTimeoutFailureName {
+		if nextFailureBehavior == immediateClusterCreateTimeoutFailureName {
 			errResp.SetError(createTimeoutErrorResponse())
 			return resp, errResp
 		}
 		if nextFailureBehavior == immediateInternalExecutionCreateFailureName {
 			errResp.SetError(createInternalExecutionErrorResponse())
+			recorder.recordedAmlfsConfigurations[amlFilesystemName] = amlFilesystem
+			return resp, errResp
+		}
+		if nextFailureBehavior == immediateAscInternalErrorCreateFailureName {
+			errResp.SetError(createAscInternalErrorResponse())
 			recorder.recordedAmlfsConfigurations[amlFilesystemName] = amlFilesystem
 			return resp, errResp
 		}
@@ -548,6 +570,11 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		}
 		if nextFailureBehavior == eventualInternalExecutionCreateFailureName {
 			resp.SetTerminalError(http.StatusOK, "InternalExecutionError")
+			recorder.recordedAmlfsConfigurations[amlFilesystemName] = amlFilesystem
+			return resp, errResp
+		}
+		if nextFailureBehavior == eventualAscInternalErrorCreateFailureName {
+			resp.SetTerminalError(http.StatusOK, "AscInternalError")
 			recorder.recordedAmlfsConfigurations[amlFilesystemName] = amlFilesystem
 			return resp, errResp
 		}
@@ -586,9 +613,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeSucceeded)
 
 		nextFailureBehavior := getNextFailureBehavior(recorder)
-		if nextFailureBehavior == clusterIsDeleting {
+		switch nextFailureBehavior {
+		case clusterIsDeleting:
 			amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeDeleting)
-		} else if nextFailureBehavior == clusterIsFailed {
+		case clusterIsFailed:
 			amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeFailed)
 		}
 
@@ -769,8 +797,16 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 		expectedError            string
 	}{
 		{
-			desc:             "deletes on cluster timeout",
-			failureBehaviors: []string{immediateClusterRequestTimeoutFailureName},
+			desc:             "deletes on immediate cluster timeout",
+			failureBehaviors: []string{immediateClusterCreateTimeoutFailureName},
+			expectedCallsForTestCase: []string{
+				"AmlFilesystemsServerTransport.BeginDelete",
+			},
+			expectedError: "Deleted failed cluster, retrying cluster creation",
+		},
+		{
+			desc:             "deletes on eventual cluster timeout",
+			failureBehaviors: []string{eventualClusterCreateTimeoutFailureName},
 			expectedCallsForTestCase: []string{
 				"AmlFilesystemsServerTransport.BeginDelete",
 			},
@@ -801,6 +837,30 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 			expectedError: "Deleted failed cluster, retrying cluster creation",
 		},
 		{
+			desc: "deletes on immediate ASC internal error",
+			failureBehaviors: []string{
+				immediateAscInternalErrorCreateFailureName,
+				clusterIsFailed,
+			},
+			expectedCallsForTestCase: []string{
+				"AmlFilesystemsServerTransport.Get",
+				"AmlFilesystemsServerTransport.BeginDelete",
+			},
+			expectedError: "Deleted failed cluster, retrying cluster creation",
+		},
+		{
+			desc: "deletes on eventual ASC internal error with 200 create",
+			failureBehaviors: []string{
+				eventualAscInternalErrorCreateFailureName,
+				clusterIsFailed,
+			},
+			expectedCallsForTestCase: []string{
+				"AmlFilesystemsServerTransport.Get",
+				"AmlFilesystemsServerTransport.BeginDelete",
+			},
+			expectedError: "Deleted failed cluster, retrying cluster creation",
+		},
+		{
 			desc: "aborts if cluster is deleting",
 			failureBehaviors: []string{
 				"",
@@ -816,7 +876,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 			failureBehaviors: []string{
 				"",
 				clusterIsFailed,
-				immediateClusterRequestTimeoutFailureName,
+				immediateClusterCreateTimeoutFailureName,
 			},
 			expectedCallsForTestCase: []string{
 				"AmlFilesystemsServerTransport.Get",
@@ -899,12 +959,12 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_Timeout(t *testing.T) {
 	assert.Empty(t, recorder.recordedAmlfsConfigurations)
 }
 
-func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForClusterTimeout(t *testing.T) {
+func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForClusterCreateTimeout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	failureBehaviors := []string{
-		immediateClusterRequestTimeoutFailureName,
+		immediateClusterCreateTimeoutFailureName,
 		clusterRequestRetryDeleteFailureName,
 	}
 	recorder := newMockAmlfsRecorder(failureBehaviors)
@@ -934,76 +994,65 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForCluste
 	assert.Equal(t, expectedCalls, recorder.fakeCallCount)
 }
 
-func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedClusterStateGetOnRetryForImmediateClusterTimeout(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedClusterStateGetOnRetryFor200CreateError(t *testing.T) {
+	testCases := []struct {
+		desc            string
+		failureBehavior string
+	}{
+		{
+			desc:            "Immediate Internal Execution create failure",
+			failureBehavior: immediateInternalExecutionCreateFailureName,
+		},
+		{
+			desc:            "Eventual Internal Execution create failure",
+			failureBehavior: eventualInternalExecutionCreateFailureName,
+		},
+		{
+			desc:            "Immediate ASC Internal Error create failure",
+			failureBehavior: immediateAscInternalErrorCreateFailureName,
+		},
+		{
+			desc:            "Eventual ASC Internal Error create failure",
+			failureBehavior: eventualAscInternalErrorCreateFailureName,
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	failureBehaviors := []string{
-		immediateInternalExecutionCreateFailureName,
-	}
-	recorder := newMockAmlfsRecorder(failureBehaviors)
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+			failureBehaviors := []string{
+				tC.failureBehavior,
+			}
+			recorder := newMockAmlfsRecorder(failureBehaviors)
+			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
-		ResourceGroupName: expectedResourceGroupName,
-		AmlFilesystemName: clusterGetRetryCheckFailureName,
-		SubnetInfo:        buildExpectedSubnetInfo(),
-	})
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	require.True(t, ok)
-	assert.Equal(t, codes.Internal, grpcStatus.Code())
-	require.ErrorContains(t, err, clusterGetRetryCheckFailureName)
-	expectedCreateCalls := []string{
-		"AmlFilesystemsServerTransport.Get",
-		"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
-		"VirtualNetworksServerTransport.NewListUsagePager",
-		"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+			_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+				ResourceGroupName: expectedResourceGroupName,
+				AmlFilesystemName: clusterGetRetryCheckFailureName,
+				SubnetInfo:        buildExpectedSubnetInfo(),
+			})
+			require.Error(t, err)
+			grpcStatus, ok := status.FromError(err)
+			require.True(t, ok)
+			assert.Equal(t, codes.Internal, grpcStatus.Code())
+			require.ErrorContains(t, err, clusterGetRetryCheckFailureName)
+			expectedCreateCalls := []string{
+				"AmlFilesystemsServerTransport.Get",
+				"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+				"VirtualNetworksServerTransport.NewListUsagePager",
+				"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+			}
+			expectedGetCall := []string{
+				"AmlFilesystemsServerTransport.Get",
+			}
+			expectedCalls := slices.Concat(
+				expectedCreateCalls,
+				expectedGetCall,
+			)
+			assert.Equal(t, expectedCalls, recorder.fakeCallCount)
+		})
 	}
-	expectedGetCall := []string{
-		"AmlFilesystemsServerTransport.Get",
-	}
-	expectedCalls := slices.Concat(
-		expectedCreateCalls,
-		expectedGetCall,
-	)
-	assert.Equal(t, expectedCalls, recorder.fakeCallCount)
-}
-
-func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedClusterStateGetOnRetryForEventualClusterTimeout(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	failureBehaviors := []string{
-		eventualInternalExecutionCreateFailureName,
-	}
-	recorder := newMockAmlfsRecorder(failureBehaviors)
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
-
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
-		ResourceGroupName: expectedResourceGroupName,
-		AmlFilesystemName: clusterGetRetryCheckFailureName,
-		SubnetInfo:        buildExpectedSubnetInfo(),
-	})
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	require.True(t, ok)
-	assert.Equal(t, codes.Internal, grpcStatus.Code())
-	require.ErrorContains(t, err, clusterGetRetryCheckFailureName)
-	expectedCreateCalls := []string{
-		"AmlFilesystemsServerTransport.Get",
-		"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
-		"VirtualNetworksServerTransport.NewListUsagePager",
-		"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
-	}
-	expectedGetCall := []string{
-		"AmlFilesystemsServerTransport.Get",
-	}
-	expectedCalls := slices.Concat(
-		expectedCreateCalls,
-		expectedGetCall,
-	)
-	assert.Equal(t, expectedCalls, recorder.fakeCallCount)
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Err_NilClient(t *testing.T) {
@@ -1638,6 +1687,21 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 		{
 			name:         "InternalExecutionError",
 			inputError:   &azcore.ResponseError{StatusCode: http.StatusOK, ErrorCode: "InternalExecutionError"},
+			expectedCode: codes.DeadlineExceeded,
+		},
+		{
+			name:         "AscInternalError",
+			inputError:   &azcore.ResponseError{StatusCode: http.StatusOK, ErrorCode: "AscInternalError"},
+			expectedCode: codes.DeadlineExceeded,
+		},
+		{
+			name:         "DeploymentFailed",
+			inputError:   &azcore.ResponseError{StatusCode: http.StatusOK, ErrorCode: "DeploymentFailed"},
+			expectedCode: codes.DeadlineExceeded,
+		},
+		{
+			name:         "DeploymentFailure",
+			inputError:   &azcore.ResponseError{StatusCode: http.StatusOK, ErrorCode: "DeploymentFailure"},
 			expectedCode: codes.DeadlineExceeded,
 		},
 		{

@@ -105,8 +105,10 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 			// Prefer to default to Unknown rather than Internal so provisioner will retry
 			grpcErrorCode = codes.Unknown
 		}
-	} else if httpError.ErrorCode == "InternalExecutionError" || httpError.ErrorCode == "CreateTimeout" {
-		// Special case for CreateTimeout to ensure preserve the reason
+	} else if strings.Contains(httpError.ErrorCode, "Error") ||
+		strings.Contains(httpError.ErrorCode, "Timeout") ||
+		strings.Contains(httpError.ErrorCode, "Fail") {
+		// Special case for 200 status errors to ensure preserve the reason
 		return status.Errorf(codes.DeadlineExceeded, "%s: %v", httpError.ErrorCode, httpError)
 	}
 
@@ -285,12 +287,12 @@ func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, 
 	err = convertHTTPResponseErrorToGrpcCodeError(err)
 	errCode := status.Code(err)
 
-	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "CreateTimeout") {
+	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "Timeout") {
 		klog.Warningf("AMLFS creation failed due to a creation timeout error, deleting and recreating AMLFS cluster: %v", err)
 		return true, nil
 	}
 
-	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "InternalExecutionError") {
+	if errCode == codes.DeadlineExceeded && (strings.Contains(err.Error(), "Error") || strings.Contains(err.Error(), "Fail")) {
 		currentClusterState, err := d.currentClusterState(ctx, amlFilesystemProperties.ResourceGroupName, amlFilesystemProperties.AmlFilesystemName)
 		if err != nil {
 			klog.Errorf("error getting current cluster state for cluster %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
