@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -188,8 +189,10 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		Location:   to.Ptr(amlFilesystemProperties.Location),
 		Tags:       tags,
 		Properties: properties,
-		Zones:      []*string{to.Ptr(amlFilesystemProperties.Zone)},
 		SKU:        &armstoragecache.SKUName{Name: to.Ptr(amlFilesystemProperties.SKUName)},
+	}
+	if amlFilesystemProperties.Zone != "" {
+		amlFilesystem.Zones = []*string{to.Ptr(amlFilesystemProperties.Zone)}
 	}
 	if amlFilesystemProperties.Identities != nil {
 		userAssignedIdentities := make(map[string]*armstoragecache.UserAssignedIdentitiesValue, len(amlFilesystemProperties.Identities))
@@ -349,6 +352,26 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	for _, sku := range skusForLocation {
 		var incrementInTib int64
 		var maximumInTib int64
+		availableZones := []string{}
+		foundLocation := false
+		for _, locationInfo := range sku.LocationInfo {
+			if locationInfo.Location != nil && strings.EqualFold(*locationInfo.Location, location) {
+				if locationInfo.Zones != nil {
+					foundLocation = true
+					for _, zone := range locationInfo.Zones {
+						if zone != nil && *zone != "" {
+							availableZones = append(availableZones, *zone)
+						}
+					}
+				} else {
+					klog.Warningf("no zones available for SKU %s in location %s", *sku.Name, location)
+				}
+			}
+		}
+		if !foundLocation {
+			klog.Warningf("could not find location info for sku %s in location %s", *sku.Name, location)
+			return d.defaultSkuValues
+		}
 		for _, capability := range sku.Capabilities {
 			if *capability.Name == AmlfsSkuCapacityIncrementName {
 				parsedValue, err := strconv.ParseInt(*capability.Value, 10, 64)
@@ -367,9 +390,11 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 			}
 		}
 		if incrementInTib != 0 && maximumInTib != 0 {
+			sort.Strings(availableZones)
 			skuValues[*sku.Name] = &LustreSkuValue{
 				IncrementInTib: incrementInTib,
 				MaximumInTib:   maximumInTib,
+				AvailableZones: availableZones,
 			}
 		}
 	}

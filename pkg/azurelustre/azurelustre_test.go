@@ -33,10 +33,10 @@ import (
 )
 
 var DriverDefaultLocationSkuValues = map[string]*LustreSkuValue{
-	"AMLFS-Durable-Premium-40":  {IncrementInTib: 96, MaximumInTib: 1536},
-	"AMLFS-Durable-Premium-125": {IncrementInTib: 32, MaximumInTib: 256},
-	"AMLFS-Durable-Premium-250": {IncrementInTib: 16, MaximumInTib: 256},
-	"AMLFS-Durable-Premium-500": {IncrementInTib: 8, MaximumInTib: 256},
+	"AMLFS-Durable-Premium-40":  {IncrementInTib: 96, MaximumInTib: 1536, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+	"AMLFS-Durable-Premium-125": {IncrementInTib: 32, MaximumInTib: 256, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+	"AMLFS-Durable-Premium-250": {IncrementInTib: 16, MaximumInTib: 256, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+	"AMLFS-Durable-Premium-500": {IncrementInTib: 8, MaximumInTib: 256, AvailableZones: []string{"zone1", "zone2", "zone3"}},
 }
 
 const (
@@ -45,6 +45,7 @@ const (
 	vendorVersion             = "0.3.0"
 	clusterRequestFailureName = "testShouldFail"
 	driverDefaultLocation     = "defaultFakeLocation"
+	emptyZonesLocation        = "emptyZonesLocation"
 )
 
 func NewFakeDriver() *Driver {
@@ -104,11 +105,19 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 	if location == driverDefaultLocation {
 		return DriverDefaultLocationSkuValues
 	}
+	if location == emptyZonesLocation {
+		return map[string]*LustreSkuValue{
+			"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768, AvailableZones: []string{}},
+			"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128, AvailableZones: []string{}},
+			"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128, AvailableZones: []string{}},
+			"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: []string{}},
+		}
+	}
 	return map[string]*LustreSkuValue{
-		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768},
-		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128},
-		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128},
-		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128},
+		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128, AvailableZones: []string{"zone1", "zone2", "zone3"}},
+		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: []string{"zone1", "zone2", "zone3"}},
 	}
 }
 

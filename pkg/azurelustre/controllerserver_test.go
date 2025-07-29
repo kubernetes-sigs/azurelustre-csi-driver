@@ -321,6 +321,63 @@ func TestDynamicCreateVolume_Err_CreateError(t *testing.T) {
 	require.ErrorContains(t, err, clusterRequestFailureName)
 }
 
+func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
+	d := NewFakeDriver()
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	delete(req.GetParameters(), "zone")
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	require.ErrorContains(t, err, "zone must be provided")
+}
+
+func TestParseAmlfilesystemProperties_Err_InvalidZone(t *testing.T) {
+	d := NewFakeDriver()
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	req.Parameters["zone"] = "invalid-zone"
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	require.ErrorContains(t, err, "zone must be one of")
+	require.ErrorContains(t, err, "invalid-zone")
+}
+
+func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
+	d := NewFakeDriver()
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	req.Parameters["location"] = emptyZonesLocation
+	req.Parameters["zone"] = "invalid-zone"
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	require.ErrorContains(t, err, fmt.Sprintf("Parameter zone cannot be used in location %s", emptyZonesLocation))
+	require.ErrorContains(t, err, "no zones available for SKU")
+}
+
 func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
 	d := NewFakeDriver()
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
@@ -1230,26 +1287,6 @@ func TestParseAmlfilesystemProperties_Err_InvalidTimeOfDay(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 	require.ErrorContains(t, err, "maintenance-time-of-day-utc must be in the form HH:MM")
-}
-
-func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
-	properties := map[string]string{
-		"resource-group-name":         "test-resource-group",
-		"location":                    "test-location",
-		"vnet-resource-group":         "test-vnet-rg",
-		"vnet-name":                   "test-vnet-name",
-		"subnet-name":                 "test-subnet-name",
-		"maintenance-day-of-week":     "Monday",
-		"maintenance-time-of-day-utc": "12:00",
-		"sku-name":                    "AMLFS-Durable-Premium-40",
-	}
-
-	_, err := parseAmlFilesystemProperties(properties)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "zone must be provided")
 }
 
 func TestParseAmlfilesystemProperties_Err_InvalidTags(t *testing.T) {

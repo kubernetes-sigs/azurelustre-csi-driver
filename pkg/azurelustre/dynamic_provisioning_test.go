@@ -41,6 +41,7 @@ const (
 	expectedFullIPCount                         = 256
 	expectedTotalIPCount                        = 256
 	expectedSku                                 = "fake-sku"
+	otherSkuForLocation                         = "other-sku-for-location"
 	expectedClusterSize                         = 48
 	expectedSkuIncrement                        = "4"
 	expectedSkuMaximum                          = "128"
@@ -64,6 +65,8 @@ const (
 	noAmlfsSkusForLocation                      = "no-amlfs-skus-for-location"
 	invalidSkuIncrement                         = "invalid-sku-increment"
 	invalidSkuMaximum                           = "invalid-sku-maximum"
+	noZonesForLocation                          = "no-zones-for-location"
+	noLocationInfoForSku                        = "no-location-info-for-sku"
 	immediateClusterRequestTimeoutFailureName   = "testClusterShouldImmediatelyTimeout"
 	immediateInternalExecutionCreateFailureName = "testClusterCreateImmediatelyInternalError"
 	clusterIsFailed                             = "testClusterGetImmediatelyInternalError"
@@ -73,6 +76,8 @@ const (
 
 	quickPollFrequency = 1 * time.Millisecond
 )
+
+var expectedZones = []string{"zone3", "zone2", "zone1"}
 
 func (recorder *mockAmlfsRecorder) recordFakeCall() {
 	pc, _, _, ok := runtime.Caller(2)
@@ -142,13 +147,25 @@ func newFakeSkusClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecac
 	return fakeSkusClient
 }
 
-func newResourceSku(resourceType, skuName, location, increment, maximum string) *armstoragecache.ResourceSKU {
+func newResourceSku(resourceType, skuName, location, increment, maximum string, zones []string) *armstoragecache.ResourceSKU {
 	resourceSku := &armstoragecache.ResourceSKU{
 		ResourceType: to.Ptr(resourceType),
 	}
 	if resourceType == AmlfsSkuResourceType {
 		resourceSku.Name = to.Ptr(skuName)
 		resourceSku.Locations = []*string{to.Ptr(location)}
+		resourceSku.LocationInfo = []*armstoragecache.ResourceSKULocationInfo{
+			{
+				Location: to.Ptr(location),
+			},
+		}
+		if zones != nil {
+			zonePointers := make([]*string, 0, len(zones))
+			for _, zone := range zones {
+				zonePointers = append(zonePointers, to.Ptr(zone))
+			}
+			resourceSku.LocationInfo[0].Zones = zonePointers
+		}
 		resourceSku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{
 			{
 				Name:  to.Ptr("OSS capacity increment (TiB)"),
@@ -199,7 +216,7 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 				resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
 					ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
 						Value: []*armstoragecache.ResourceSKU{
-							newResourceSku("caches", "", expectedLocation, "", ""),
+							newResourceSku("caches", "", expectedLocation, "", "", []string{}),
 						},
 					},
 				}, nil)
@@ -213,7 +230,8 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 								expectedSku,
 								otherSkuLocation,
 								expectedSkuIncrement,
-								expectedSkuMaximum),
+								expectedSkuMaximum,
+								expectedZones),
 						},
 					},
 				}, nil)
@@ -227,7 +245,8 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 								expectedSku,
 								expectedLocation,
 								invalidSkuIncrementValue,
-								expectedSkuMaximum),
+								expectedSkuMaximum,
+								expectedZones),
 						},
 					},
 				}, nil)
@@ -241,7 +260,37 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 								expectedSku,
 								expectedLocation,
 								expectedSkuIncrement,
-								invalidSkuMaximumValue),
+								invalidSkuMaximumValue,
+								expectedZones),
+						},
+					},
+				}, nil)
+				return resp
+			case noZonesForLocation:
+				resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
+					ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
+						Value: []*armstoragecache.ResourceSKU{
+							newResourceSku(AmlfsSkuResourceType,
+								expectedSku,
+								expectedLocation,
+								expectedSkuIncrement,
+								expectedSkuMaximum,
+								[]string{}),
+						},
+					},
+				}, nil)
+				return resp
+			case noLocationInfoForSku:
+				resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
+					ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
+						Value: []*armstoragecache.ResourceSKU{
+							newResourceSku(AmlfsSkuResourceType,
+								expectedSku,
+								expectedLocation,
+								expectedSkuIncrement,
+								expectedSkuMaximum,
+								nil,
+							),
 						},
 					},
 				}, nil)
@@ -251,12 +300,19 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 		resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
 			ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
 				Value: []*armstoragecache.ResourceSKU{
-					newResourceSku("caches", "", expectedLocation, "", ""),
+					newResourceSku("caches", "", expectedLocation, "", "", []string{}),
+					newResourceSku(AmlfsSkuResourceType,
+						otherSkuForLocation,
+						expectedLocation,
+						expectedSkuIncrement,
+						expectedSkuMaximum,
+						expectedZones),
 					newResourceSku(AmlfsSkuResourceType,
 						expectedSku,
 						expectedLocation,
 						expectedSkuIncrement,
-						expectedSkuMaximum),
+						expectedSkuMaximum,
+						expectedZones),
 				},
 			},
 		}, nil)
@@ -637,6 +693,41 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Zone(t *testing.T) {
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 	assert.Len(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, 1)
 	assert.Equal(t, expectedZone, *recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones[0])
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_Success_NoZone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	recorder := newMockAmlfsRecorder([]string{})
+	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+
+	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+		ResourceGroupName: expectedResourceGroupName,
+		AmlFilesystemName: expectedAmlFilesystemName,
+		SubnetInfo:        buildExpectedSubnetInfo(),
+	})
+	require.NoError(t, err)
+	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
+	require.Nil(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, "Expected no zones to be set when zone is not specified")
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_Success_EmptyZone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	recorder := newMockAmlfsRecorder([]string{})
+	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+
+	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+		ResourceGroupName: expectedResourceGroupName,
+		AmlFilesystemName: expectedAmlFilesystemName,
+		Zone:              "",
+		SubnetInfo:        buildExpectedSubnetInfo(),
+	})
+	require.NoError(t, err)
+	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
+	require.Nil(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, "Expected no zones to be set when zone is empty")
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Success_Identities(t *testing.T) {
@@ -1359,11 +1450,15 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Success(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	expectedSkuValues := map[string]*LustreSkuValue{expectedSku: {IncrementInTib: 4, MaximumInTib: 128}}
+	expectedZones := []string{"zone1", "zone2", "zone3"}
+	expectedSkuValues := map[string]*LustreSkuValue{
+		expectedSku:         {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: expectedZones},
+		otherSkuForLocation: {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: expectedZones},
+	}
 
 	skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
-	t.Log(skuValues)
-	require.Len(t, skuValues, 1)
+	t.Logf("SKU values: %#v", skuValues)
+	require.Len(t, skuValues, 2)
 	assert.Equal(t, expectedSkuValues, skuValues)
 }
 
@@ -1380,6 +1475,25 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_NilClientReturnsDefaults(t *
 	require.Len(t, skuValues, 4)
 	assert.Equal(t, DefaultSkuValues, skuValues)
 	assert.NotContains(t, skuValues, expectedSku)
+}
+
+func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	recorder := newMockAmlfsRecorder([]string{noZonesForLocation})
+	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+
+	skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	t.Log(skuValues)
+	require.Len(t, skuValues, 1)
+
+	// Verify the SKU exists but has no zones
+	skuValue, exists := skuValues[expectedSku]
+	require.True(t, exists, "expected SKU should exist")
+	assert.Equal(t, int64(4), skuValue.IncrementInTib)
+	assert.Equal(t, int64(128), skuValue.MaximumInTib)
+	assert.Empty(t, skuValue.AvailableZones, "expected no zones to be available")
 }
 
 func TestDynamicProvisioner_GetSkuValuesForLocation_ErrorReturnsDefaults(t *testing.T) {
@@ -1402,6 +1516,10 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_ErrorReturnsDefaults(t *test
 		{
 			desc:             "Invalid SKU maximum",
 			failureBehaviors: []string{invalidSkuMaximum},
+		},
+		{
+			desc:             "No location info for SKU",
+			failureBehaviors: []string{noLocationInfoForSku},
 		},
 		{
 			desc:             "Invalid location",

@@ -196,12 +196,6 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 				"CreateVolume %s must be provided for dynamically provisioned AMLFS",
 				VolumeContextMaintenanceTimeOfDayUtc)
 		}
-
-		if len(amlFilesystemProperties.Zone) == 0 {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"CreateVolume %s must be provided for dynamically provisioned AMLFS",
-				VolumeContextZone)
-		}
 	}
 
 	return &amlFilesystemProperties, nil
@@ -301,6 +295,8 @@ func (d *Driver) CreateVolume(
 
 	createdByDynamicProvisioningStringValue := "f"
 
+	availableZones := []string{}
+
 	if shouldCreateAmlfsCluster {
 		createdByDynamicProvisioningStringValue = "t"
 
@@ -315,13 +311,14 @@ func (d *Driver) CreateVolume(
 		amlFilesystemProperties.SubnetInfo = d.populateSubnetPropertiesFromCloudConfig(amlFilesystemProperties.SubnetInfo)
 
 		klog.V(2).Infof("finding capacity based on SKU %s for location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
-		lustreSkuValue, err := d.getBlockSizeAndMaxCapacityForSkuInLocation(ctx, amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
+		lustreSkuValue, err := d.getSkuValuesForLocation(ctx, amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
 		if err != nil {
-			klog.Errorf("failed to get block size and max capacity for SKU: %s, error: %v", amlFilesystemProperties.SKUName, err)
+			klog.Errorf("failed to get SKU values for %s in location %s, error: %v", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location, err)
 			return nil, err
 		}
 		blockSizeInBytes = lustreSkuValue.IncrementInTib * util.TiB
 		maxCapacityInBytes = lustreSkuValue.MaximumInTib * util.TiB
+		availableZones = lustreSkuValue.AvailableZones
 	}
 
 	capacityInBytes, err = d.roundToAmlfsBlockSize(capacityInBytes, blockSizeInBytes, maxCapacityInBytes)
@@ -343,6 +340,27 @@ func (d *Driver) CreateVolume(
 
 	if shouldCreateAmlfsCluster {
 		amlFilesystemProperties.StorageCapacityTiB = storageCapacityTib
+
+		if len(availableZones) > 0 {
+			klog.V(2).Infof("available zones for SKU %s in location %s: %v", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location, availableZones)
+			if len(amlFilesystemProperties.Zone) == 0 {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"CreateVolume Parameter %s must be provided for dynamically provisioned AMLFS in location %s, available zones: %v",
+					VolumeContextZone, amlFilesystemProperties.Location, availableZones)
+			}
+			if !slices.Contains(availableZones, amlFilesystemProperties.Zone) {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"CreateVolume Parameter %s %s must be one of: %v",
+					VolumeContextZone, amlFilesystemProperties.Zone, availableZones)
+			}
+		} else {
+			klog.Warningf("no zones available for SKU %s in location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
+			if len(amlFilesystemProperties.Zone) > 0 {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"CreateVolume Parameter %s cannot be used in location %s, no zones available for SKU %s",
+					VolumeContextZone, amlFilesystemProperties.Location, amlFilesystemProperties.SKUName)
+			}
+		}
 
 		if !isValidVolumeName(volName) {
 			return nil, status.Errorf(codes.InvalidArgument,
@@ -392,7 +410,7 @@ func (d *Driver) CreateVolume(
 	}, nil
 }
 
-func (d *Driver) getBlockSizeAndMaxCapacityForSkuInLocation(ctx context.Context, skuName, location string) (*LustreSkuValue, error) {
+func (d *Driver) getSkuValuesForLocation(ctx context.Context, skuName, location string) (*LustreSkuValue, error) {
 	skus := d.dynamicProvisioner.GetSkuValuesForLocation(ctx, location)
 	retrievedSkuValue, ok := skus[skuName]
 	if !ok {

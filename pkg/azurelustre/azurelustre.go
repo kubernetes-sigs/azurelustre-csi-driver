@@ -86,10 +86,10 @@ var (
 	}
 
 	DefaultSkuValues = map[string]*LustreSkuValue{
-		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768},
-		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128},
-		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128},
-		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128},
+		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768, AvailableZones: []string{"1", "2", "3"}},
+		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
+		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
+		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
 	}
 )
 
@@ -116,6 +116,7 @@ type DriverOptions struct {
 type LustreSkuValue struct {
 	IncrementInTib int64
 	MaximumInTib   int64
+	AvailableZones []string
 }
 
 // Driver implements all interfaces of CSI drivers
