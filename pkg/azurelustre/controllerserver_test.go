@@ -97,7 +97,7 @@ func buildDynamicProvCreateVolumeRequest() *csi.CreateVolumeRequest {
 			"sku-name":                         "AMLFS-Durable-Premium-250",
 			"identities":                       "identity1,identity2",
 			"tags":                             "key1=value1,key2=value2",
-			"zones":                            "zone1",
+			"zone":                             "zone1",
 			"sub-dir":                          "testSubDir",
 			"csi.storage.k8s.io/pvc/name":      "pvc_name",
 			"csi.storage.k8s.io/pvc/namespace": "pvc_namespace",
@@ -161,7 +161,7 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 			"kubernetes.io-created-for-pv-name":  "pv_name",
 			"kubernetes.io-created-for-pvc-namespace": "pvc_namespace",
 		},
-		Zones: []string{"zone1"},
+		Zone: "zone1",
 		SubnetInfo: SubnetProperties{
 			VnetResourceGroup: "test-vnet-rg",
 			VnetName:          "test-vnet-name",
@@ -188,6 +188,27 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 	require.Equal(t, 1, fakeDynamicProvisioner.fakeCallCount["CreateAmlFilesystem"])
 	require.Equal(t, 1, fakeDynamicProvisioner.fakeCallCount["GetSkuValuesForLocation"])
 	assert.Equal(t, expectedAmlfsProperties, fakeDynamicProvisioner.Filesystems[0])
+}
+
+func TestDynamicCreateVolume_Success_ZonesSynonym(t *testing.T) {
+	expectedZone := "zone1"
+
+	d := NewFakeDriver()
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	delete(req.GetParameters(), "zone")
+	req.Parameters["zones"] = expectedZone
+	rep, err := d.CreateVolume(context.Background(), req)
+	require.NoError(t, err)
+	assert.NotEmpty(t, rep.GetVolume())
+	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
+	require.NotEmpty(t, fakeDynamicProvisioner.Filesystems)
+	assert.Equal(t, expectedZone, fakeDynamicProvisioner.Filesystems[0].Zone)
 }
 
 func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
@@ -1036,7 +1057,7 @@ func TestParseAmlfilesystemProperties_Success(t *testing.T) {
 		"sku-name":                    "AMLFS-Durable-Premium-40",
 		"identities":                  "identity1,identity2",
 		"tags":                        "key1=value1,key2=value2",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	expected := &AmlFilesystemProperties{
@@ -1052,7 +1073,7 @@ func TestParseAmlfilesystemProperties_Success(t *testing.T) {
 			"key2":       "value2",
 			createdByTag: azureLustreDriverTag,
 		},
-		Zones: []string{"zone1"},
+		Zone: "zone1",
 		SubnetInfo: SubnetProperties{
 			VnetResourceGroup: "test-vnet-rg",
 			VnetName:          "test-vnet-name",
@@ -1076,7 +1097,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidParameters(t *testing.T) {
 		"maintenance-day-of-week":     "Monday",
 		"maintenance-time-of-day-utc": "12:00",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1088,26 +1109,6 @@ func TestParseAmlfilesystemProperties_Err_InvalidParameters(t *testing.T) {
 	require.ErrorContains(t, err, "invalid-param")
 }
 
-func TestParseAmlfilesystemProperties_Err_OnlySingleZoneIsSupported(t *testing.T) {
-	properties := map[string]string{
-		"resource-group-name":         "test-resource-group",
-		"location":                    "test-location",
-		"vnet-resource-group":         "test-vnet-rg",
-		"vnet-name":                   "test-vnet-name",
-		"subnet-name":                 "test-subnet-name",
-		"maintenance-time-of-day-utc": "12:00",
-		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1,zone2",
-	}
-
-	_, err := parseAmlFilesystemProperties(properties)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "single zone")
-}
-
 func TestParseAmlfilesystemProperties_Err_MissingMaintenanceDayOfWeek(t *testing.T) {
 	properties := map[string]string{
 		"resource-group-name":         "test-resource-group",
@@ -1117,7 +1118,7 @@ func TestParseAmlfilesystemProperties_Err_MissingMaintenanceDayOfWeek(t *testing
 		"subnet-name":                 "test-subnet-name",
 		"maintenance-time-of-day-utc": "12:00",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1138,7 +1139,7 @@ func TestParseAmlfilesystemProperties_Err_EmptyMaintenanceDayOfWeek(t *testing.T
 		"maintenance-day-of-week":     "",
 		"maintenance-time-of-day-utc": "12:00",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1159,7 +1160,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidMaintenanceDayOfWeek(t *testing
 		"maintenance-day-of-week":     "invalid-day-of-week",
 		"maintenance-time-of-day-utc": "12:00",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1179,7 +1180,7 @@ func TestParseAmlfilesystemProperties_Err_MissingTimeOfDay(t *testing.T) {
 		"subnet-name":             "test-subnet-name",
 		"maintenance-day-of-week": "Monday",
 		"sku-name":                "AMLFS-Durable-Premium-40",
-		"zones":                   "zone1",
+		"zone":                    "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1199,7 +1200,7 @@ func TestParseAmlfilesystemProperties_Err_MissingSku(t *testing.T) {
 		"subnet-name":                 "test-subnet-name",
 		"maintenance-day-of-week":     "Monday",
 		"maintenance-time-of-day-utc": "12:00",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1220,7 +1221,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidTimeOfDay(t *testing.T) {
 		"maintenance-day-of-week":     "Monday",
 		"maintenance-time-of-day-utc": "11",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 	}
 
 	_, err := parseAmlFilesystemProperties(properties)
@@ -1231,7 +1232,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidTimeOfDay(t *testing.T) {
 	require.ErrorContains(t, err, "maintenance-time-of-day-utc must be in the form HH:MM")
 }
 
-func TestParseAmlfilesystemProperties_Err_MissingZones(t *testing.T) {
+func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
 	properties := map[string]string{
 		"resource-group-name":         "test-resource-group",
 		"location":                    "test-location",
@@ -1248,7 +1249,7 @@ func TestParseAmlfilesystemProperties_Err_MissingZones(t *testing.T) {
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "zones must be provided")
+	require.ErrorContains(t, err, "zone must be provided")
 }
 
 func TestParseAmlfilesystemProperties_Err_InvalidTags(t *testing.T) {
@@ -1261,7 +1262,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidTags(t *testing.T) {
 		"maintenance-day-of-week":     "Monday",
 		"maintenance-time-of-day-utc": "12:00",
 		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zones":                       "zone1",
+		"zone":                        "zone1",
 		"tags":                        "key1:value1,=value2",
 	}
 
@@ -1300,7 +1301,7 @@ func TestParseAmlfilesystemProperties_Err_ReservedTags(t *testing.T) {
 			"maintenance-day-of-week":     "Monday",
 			"maintenance-time-of-day-utc": "12:00",
 			"sku-name":                    "AMLFS-Durable-Premium-40",
-			"zones":                       "zone1",
+			"zone":                        "zone1",
 		}
 
 		t.Run(tC.reservedTag, func(t *testing.T) {

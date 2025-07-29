@@ -556,6 +556,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success(t *testing.T) {
 	expectedMaintenanceDayOfWeek := armstoragecache.MaintenanceDayOfWeekTypeSaturday
 	expectedTimeOfDayUTC := "12:00"
 	expectedStorageCapacityTiB := float32(48)
+	expectedZone := "zone1"
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -572,6 +573,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success(t *testing.T) {
 		SKUName:              expectedSku,
 		StorageCapacityTiB:   expectedStorageCapacityTiB,
 		SubnetInfo:           buildExpectedSubnetInfo(),
+		Zone:                 expectedZone,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, expectedMgsAddress, mgsIPAddress)
@@ -581,7 +583,8 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success(t *testing.T) {
 	assert.Equal(t, expectedAmlFilesystemSubnetID, *actualAmlFilesystem.Properties.FilesystemSubnet)
 	assert.Equal(t, expectedSku, *recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].SKU.Name)
 	assert.Nil(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Identity)
-	assert.Empty(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones)
+	assert.Len(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, 1)
+	assert.Equal(t, expectedZone, *recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones[0])
 	assert.Empty(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Tags)
 	expectedCreateCalls := []string{
 		"AmlFilesystemsServerTransport.Get",
@@ -615,8 +618,8 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Tags(t *testing.T) {
 	}
 }
 
-func TestDynamicProvisioner_CreateAmlFilesystem_Success_Zones(t *testing.T) {
-	expectedZones := []string{"zone1"}
+func TestDynamicProvisioner_CreateAmlFilesystem_Success_Zone(t *testing.T) {
+	expectedZone := "zone1"
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -627,15 +630,13 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Zones(t *testing.T) {
 	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
-		Zones:             expectedZones,
+		Zone:              expectedZone,
 		SubnetInfo:        buildExpectedSubnetInfo(),
 	})
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
-	assert.Len(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, len(expectedZones))
-	for zone := range recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones {
-		assert.Equal(t, expectedZones[zone], *recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones[zone])
-	}
+	assert.Len(t, recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones, 1)
+	assert.Equal(t, expectedZone, *recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName].Zones[0])
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Success_Identities(t *testing.T) {

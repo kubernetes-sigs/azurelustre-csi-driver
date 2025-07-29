@@ -18,7 +18,7 @@ parameters:
   # The availability zone where your resource will be created.
   # For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients.
   # The zone must be a single value e.g., "1", "2", or "3".
-  zones: {ZONE}
+  zone: {ZONE}
   #
   # The day of the week for maintenance to be performed on the AMLFS cluster, "Sunday", "Monday", etc.
   maintenance-day-of-week: {MAINTENANCE_DAY}

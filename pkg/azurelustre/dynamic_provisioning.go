@@ -176,10 +176,6 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 	for key, value := range amlFilesystemProperties.Tags {
 		tags[key] = to.Ptr(value)
 	}
-	zones := make([]*string, len(amlFilesystemProperties.Zones))
-	for i, zone := range amlFilesystemProperties.Zones {
-		zones[i] = to.Ptr(zone)
-	}
 	properties := &armstoragecache.AmlFilesystemProperties{
 		FilesystemSubnet: to.Ptr(amlFilesystemProperties.SubnetInfo.SubnetID),
 		MaintenanceWindow: &armstoragecache.AmlFilesystemPropertiesMaintenanceWindow{
@@ -192,7 +188,7 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		Location:   to.Ptr(amlFilesystemProperties.Location),
 		Tags:       tags,
 		Properties: properties,
-		Zones:      zones,
+		Zones:      []*string{to.Ptr(amlFilesystemProperties.Zone)},
 		SKU:        &armstoragecache.SKUName{Name: to.Ptr(amlFilesystemProperties.SKUName)},
 	}
 	if amlFilesystemProperties.Identities != nil {

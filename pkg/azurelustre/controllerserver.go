@@ -45,7 +45,8 @@ const (
 	VolumeContextMaintenanceDayOfWeek       = "maintenance-day-of-week"
 	VolumeContextMaintenanceTimeOfDayUtc    = "maintenance-time-of-day-utc"
 	VolumeContextSkuName                    = "sku-name"
-	VolumeContextZones                      = "zones"
+	VolumeContextZone                       = "zone"
+	VolumeContextZonesSynonym               = "zones"
 	VolumeContextTags                       = "tags"
 	VolumeContextIdentities                 = "identities"
 	VolumeContextInternalDynamicallyCreated = "created-by-dynamic-provisioning"
@@ -81,7 +82,7 @@ type AmlFilesystemProperties struct {
 	TimeOfDayUTC         string
 	StorageCapacityTiB   float32
 	SKUName              string
-	Zones                []string
+	Zone                 string
 }
 
 func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemProperties, error) {
@@ -135,16 +136,8 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 			amlFilesystemProperties.TimeOfDayUTC = propertyValue
 		case VolumeContextSkuName:
 			amlFilesystemProperties.SKUName = propertyValue
-		case VolumeContextZones:
-			zoneList := strings.Split(propertyValue, ",")
-			for _, zone := range zoneList {
-				if len(zone) > 0 {
-					amlFilesystemProperties.Zones = append(amlFilesystemProperties.Zones, zone)
-				}
-			}
-			if len(amlFilesystemProperties.Zones) > 1 {
-				return nil, status.Errorf(codes.InvalidArgument, "CreateVolume %s must only contain a single zone, '%s' provided", VolumeContextZones, propertyValue)
-			}
+		case VolumeContextZone, VolumeContextZonesSynonym:
+			amlFilesystemProperties.Zone = propertyValue
 		case VolumeContextTags:
 			tags, err := util.ConvertTagsToMap(propertyValue)
 			if err != nil {
@@ -167,8 +160,7 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 		case VolumeContextIdentities:
 			amlFilesystemProperties.Identities = strings.Split(propertyValue, ",")
 			// These will be used by the node methods
-		case VolumeContextFSName:
-		case VolumeContextSubDir:
+		case VolumeContextFSName, VolumeContextSubDir:
 			continue
 		default:
 			errorParameters = append(
@@ -205,10 +197,10 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 				VolumeContextMaintenanceTimeOfDayUtc)
 		}
 
-		if len(amlFilesystemProperties.Zones) == 0 {
+		if len(amlFilesystemProperties.Zone) == 0 {
 			return nil, status.Errorf(codes.InvalidArgument,
 				"CreateVolume %s must be provided for dynamically provisioned AMLFS",
-				VolumeContextZones)
+				VolumeContextZone)
 		}
 	}
 
