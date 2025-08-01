@@ -227,7 +227,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
 	require.NotEmpty(t, fakeDynamicProvisioner.Filesystems)
 	assert.Equal(t, d.location, fakeDynamicProvisioner.Filesystems[0].Location)
-	assert.Equal(t, DriverDefaultLocationSkuValues["AMLFS-Durable-Premium-250"].IncrementInTib*util.TiB, rep.GetVolume().GetCapacityBytes())
+	assert.Equal(t, DefaultLocationSkuValues["AMLFS-Durable-Premium-250"].IncrementInTib*util.TiB, rep.GetVolume().GetCapacityBytes())
 }
 
 func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
@@ -457,6 +457,18 @@ func TestCreateVolume_Err_BadSku(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 	require.ErrorContains(t, err, "sku-name must be one of")
+}
+
+func TestCreateVolume_Err_ErrorRetrievingSku(t *testing.T) {
+	d := NewFakeDriver()
+	req := buildDynamicProvCreateVolumeRequest()
+	req.Parameters["location"] = errorLocation
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
+	require.ErrorContains(t, err, errorLocation)
 }
 
 func TestCreateVolume_Err_CapacityAboveSkuMax(t *testing.T) {

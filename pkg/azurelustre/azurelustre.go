@@ -84,13 +84,6 @@ var (
 		csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
 	}
-
-	DefaultSkuValues = map[string]*LustreSkuValue{
-		"AMLFS-Durable-Premium-40":  {IncrementInTib: 48, MaximumInTib: 768, AvailableZones: []string{"1", "2", "3"}},
-		"AMLFS-Durable-Premium-125": {IncrementInTib: 16, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
-		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
-		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: []string{"1", "2", "3"}},
-	}
 )
 
 type lustreVolume struct {
@@ -224,7 +217,6 @@ func NewDriver(options *DriverOptions) *Driver {
 			mgmtClient:           mgmtClient,
 			vnetClient:           vnetClient,
 			skusClient:           skusClient,
-			defaultSkuValues:     DefaultSkuValues,
 		}
 	}
 

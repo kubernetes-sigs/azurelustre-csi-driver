@@ -411,7 +411,10 @@ func (d *Driver) CreateVolume(
 }
 
 func (d *Driver) getSkuValuesForLocation(ctx context.Context, skuName, location string) (*LustreSkuValue, error) {
-	skus := d.dynamicProvisioner.GetSkuValuesForLocation(ctx, location)
+	skus, err := d.dynamicProvisioner.GetSkuValuesForLocation(ctx, location)
+	if err != nil {
+		return nil, err
+	}
 	retrievedSkuValue, ok := skus[skuName]
 	if !ok {
 		validSkuNames := slices.Sorted(maps.Keys(skus))

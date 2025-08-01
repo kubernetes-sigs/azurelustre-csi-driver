@@ -34,7 +34,7 @@ const (
 type DynamicProvisionerInterface interface {
 	DeleteAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) error
 	CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error)
-	GetSkuValuesForLocation(ctx context.Context, location string) map[string]*LustreSkuValue
+	GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error)
 }
 
 type DynamicProvisioner struct {
@@ -43,7 +43,6 @@ type DynamicProvisioner struct {
 	mgmtClient           *armstoragecache.ManagementClient
 	skusClient           *armstoragecache.SKUsClient
 	vnetClient           *armnetwork.VirtualNetworksClient
-	defaultSkuValues     map[string]*LustreSkuValue
 	pollFrequency        time.Duration
 }
 
@@ -305,10 +304,10 @@ func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, 
 	return false, nil
 }
 
-func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, location string) map[string]*LustreSkuValue {
+func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error) {
 	if d.skusClient == nil {
-		klog.Warning("skus client is nil, using defaults")
-		return d.defaultSkuValues
+		klog.Error("skus client is nil")
+		return nil, status.Error(codes.Internal, "skus client is nil")
 	}
 
 	skusPager := d.skusClient.NewListPager(nil)
@@ -320,8 +319,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	for skusPager.More() {
 		page, err := skusPager.NextPage(ctx)
 		if err != nil {
-			klog.Errorf("error getting SKUs for location %s, using defaults: %v", location, err)
-			return d.defaultSkuValues
+			klog.Errorf("error retrieving SKUs for location %s: %v", location, err)
+			return nil, status.Errorf(codes.Internal, "error retrieving SKUs: %v", err)
 		}
 
 		for _, sku := range page.Value {
@@ -332,8 +331,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	}
 
 	if len(amlfsSkus) == 0 {
-		klog.Warning("no AMLFS SKUs found, using defaults")
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
 	for _, sku := range amlfsSkus {
@@ -345,8 +344,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	}
 
 	if len(skusForLocation) == 0 {
-		klog.Warningf("found no AMLFS SKUs for location %s, using defaults", location)
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
 	for _, sku := range skusForLocation {
@@ -369,8 +368,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 			}
 		}
 		if !foundLocation {
-			klog.Warningf("could not find location info for sku %s in location %s", *sku.Name, location)
-			return d.defaultSkuValues
+			klog.Errorf("could not find location info for sku %s in location %s", *sku.Name, location)
+			return nil, status.Errorf(codes.Internal, "could not find location info for sku %s in location %s", *sku.Name, location)
 		}
 		for _, capability := range sku.Capabilities {
 			if *capability.Name == AmlfsSkuCapacityIncrementName {
@@ -400,11 +399,11 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	}
 
 	if len(skuValues) == 0 {
-		klog.Warningf("found no AMLFS SKUs for location %s, using defaults", location)
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
-	return skuValues
+	return skuValues, nil
 }
 
 func (d *DynamicProvisioner) getAmlfsSubnetSize(ctx context.Context, sku string, clusterSize float32) (int, error) {
