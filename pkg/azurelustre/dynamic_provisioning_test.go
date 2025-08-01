@@ -123,7 +123,6 @@ func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *Dynam
 		vnetClient:           newFakeVnetClient(t, recorder),
 		mgmtClient:           newFakeMgmtClient(t, recorder),
 		skusClient:           newFakeSkusClient(t, recorder),
-		defaultSkuValues:     DefaultSkuValues,
 		pollFrequency:        quickPollFrequency,
 	}
 
@@ -1456,13 +1455,14 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Success(t *testing.T) {
 		otherSkuForLocation: {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: expectedZones},
 	}
 
-	skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
 	t.Logf("SKU values: %#v", skuValues)
+	require.NoError(t, err)
 	require.Len(t, skuValues, 2)
 	assert.Equal(t, expectedSkuValues, skuValues)
 }
 
-func TestDynamicProvisioner_GetSkuValuesForLocation_NilClientReturnsDefaults(t *testing.T) {
+func TestDynamicProvisioner_GetSkuValuesForLocation_Err_NilClient(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -1470,11 +1470,15 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_NilClientReturnsDefaults(t *
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.skusClient = nil
 
-	skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
-	t.Log(skuValues)
-	require.Len(t, skuValues, 4)
-	assert.Equal(t, DefaultSkuValues, skuValues)
-	assert.NotContains(t, skuValues, expectedSku)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	t.Log(err)
+	require.Nil(t, skuValues)
+	require.Error(t, err)
+	grpcStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.Internal, grpcStatus.Code())
+	require.ErrorContains(t, err, "skus client is nil")
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
 }
 
 func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.T) {
@@ -1484,8 +1488,9 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.
 	recorder := newMockAmlfsRecorder([]string{noZonesForLocation})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
 	t.Log(skuValues)
+	require.NoError(t, err)
 	require.Len(t, skuValues, 1)
 
 	// Verify the SKU exists but has no zones
@@ -1496,34 +1501,41 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.
 	assert.Empty(t, skuValue.AvailableZones, "expected no zones to be available")
 }
 
-func TestDynamicProvisioner_GetSkuValuesForLocation_ErrorReturnsDefaults(t *testing.T) {
+func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 	testCases := []struct {
 		desc             string
 		failureBehaviors []string
+		expectedError    string
 	}{
 		{
 			desc:             "No AMLFS SKUs",
 			failureBehaviors: []string{noAmlfsSkus},
+			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "No AMLFS SKUs for location",
 			failureBehaviors: []string{noAmlfsSkusForLocation},
+			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "Invalid SKU increment",
 			failureBehaviors: []string{invalidSkuIncrement},
+			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "Invalid SKU maximum",
 			failureBehaviors: []string{invalidSkuMaximum},
+			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "No location info for SKU",
 			failureBehaviors: []string{noLocationInfoForSku},
+			expectedError:    "could not find location info for sku",
 		},
 		{
 			desc:             "Invalid location",
 			failureBehaviors: []string{errorLocation},
+			expectedError:    "error retrieving SKUs",
 		},
 	}
 	for _, tC := range testCases {
@@ -1534,11 +1546,15 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_ErrorReturnsDefaults(t *test
 			recorder := newMockAmlfsRecorder(tC.failureBehaviors)
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-			skuValues := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
-			t.Log(skuValues)
-			require.Len(t, skuValues, 4)
-			assert.Equal(t, DefaultSkuValues, skuValues)
-			assert.NotContains(t, skuValues, expectedSku)
+			skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+			require.Nil(t, skuValues)
+			t.Log(err)
+			require.Error(t, err)
+			grpcStatus, ok := status.FromError(err)
+			require.True(t, ok)
+			assert.Equal(t, codes.Internal, grpcStatus.Code())
+			require.ErrorContains(t, err, tC.expectedError)
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
 		})
 	}
 }
