@@ -78,7 +78,6 @@ kubectl delete -f ${sc_file}
 echo "begin to run azurelustre tests ...."
 cp ${REPO_ROOT_PATH}/test/external-e2e/e2etest_storageclass.yaml /tmp/csi/storageclass.yaml
 ${REPO_ROOT_PATH}/kubernetes/test/bin/ginkgo -p -v -focus="External.Storage.*.azurelustre.csi.azure.com" \
-    -skip="should access to two volumes with the same volume mode and retain data across pod recreation on the same node|should support two pods which have the same volume definition|should access to two volumes with the same volume mode and retain data across pod recreation on different node" \
     ${REPO_ROOT_PATH}/kubernetes/test/bin/e2e.test  -- \
     -storage.testdriver=${REPO_ROOT_PATH}/test/external-e2e/testdriver-azurelustre.yaml \
     --kubeconfig=${KUBECONFIG}
