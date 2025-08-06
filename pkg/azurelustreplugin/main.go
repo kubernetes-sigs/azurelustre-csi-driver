@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"k8s.io/klog/v2"
@@ -47,6 +48,7 @@ func main() {
 			klog.Fatalln(err)
 		}
 		klog.V(2).Info(info)
+		fmt.Println(info) //nolint:forbidigo // Print version info to stdout for access through kubectl exec
 		os.Exit(0)
 	}
 

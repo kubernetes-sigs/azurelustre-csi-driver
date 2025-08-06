@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ const (
 type DynamicProvisionerInterface interface {
 	DeleteAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) error
 	CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error)
-	GetSkuValuesForLocation(ctx context.Context, location string) map[string]*LustreSkuValue
+	GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error)
 }
 
 type DynamicProvisioner struct {
@@ -42,7 +43,6 @@ type DynamicProvisioner struct {
 	mgmtClient           *armstoragecache.ManagementClient
 	skusClient           *armstoragecache.SKUsClient
 	vnetClient           *armnetwork.VirtualNetworksClient
-	defaultSkuValues     map[string]*LustreSkuValue
 	pollFrequency        time.Duration
 }
 
@@ -105,8 +105,10 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 			// Prefer to default to Unknown rather than Internal so provisioner will retry
 			grpcErrorCode = codes.Unknown
 		}
-	} else if httpError.ErrorCode == "InternalExecutionError" || httpError.ErrorCode == "CreateTimeout" {
-		// Special case for CreateTimeout to ensure preserve the reason
+	} else if strings.Contains(httpError.ErrorCode, "Error") ||
+		strings.Contains(httpError.ErrorCode, "Timeout") ||
+		strings.Contains(httpError.ErrorCode, "Fail") {
+		// Special case for 200 status errors to ensure preserve the reason
 		return status.Errorf(codes.DeadlineExceeded, "%s: %v", httpError.ErrorCode, httpError)
 	}
 
@@ -176,10 +178,6 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 	for key, value := range amlFilesystemProperties.Tags {
 		tags[key] = to.Ptr(value)
 	}
-	zones := make([]*string, len(amlFilesystemProperties.Zones))
-	for i, zone := range amlFilesystemProperties.Zones {
-		zones[i] = to.Ptr(zone)
-	}
 	properties := &armstoragecache.AmlFilesystemProperties{
 		FilesystemSubnet: to.Ptr(amlFilesystemProperties.SubnetInfo.SubnetID),
 		MaintenanceWindow: &armstoragecache.AmlFilesystemPropertiesMaintenanceWindow{
@@ -192,8 +190,10 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		Location:   to.Ptr(amlFilesystemProperties.Location),
 		Tags:       tags,
 		Properties: properties,
-		Zones:      zones,
 		SKU:        &armstoragecache.SKUName{Name: to.Ptr(amlFilesystemProperties.SKUName)},
+	}
+	if amlFilesystemProperties.Zone != "" {
+		amlFilesystem.Zones = []*string{to.Ptr(amlFilesystemProperties.Zone)}
 	}
 	if amlFilesystemProperties.Identities != nil {
 		userAssignedIdentities := make(map[string]*armstoragecache.UserAssignedIdentitiesValue, len(amlFilesystemProperties.Identities))
@@ -287,12 +287,12 @@ func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, 
 	err = convertHTTPResponseErrorToGrpcCodeError(err)
 	errCode := status.Code(err)
 
-	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "CreateTimeout") {
+	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "Timeout") {
 		klog.Warningf("AMLFS creation failed due to a creation timeout error, deleting and recreating AMLFS cluster: %v", err)
 		return true, nil
 	}
 
-	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "InternalExecutionError") {
+	if errCode == codes.DeadlineExceeded && (strings.Contains(err.Error(), "Error") || strings.Contains(err.Error(), "Fail")) {
 		currentClusterState, err := d.currentClusterState(ctx, amlFilesystemProperties.ResourceGroupName, amlFilesystemProperties.AmlFilesystemName)
 		if err != nil {
 			klog.Errorf("error getting current cluster state for cluster %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
@@ -306,10 +306,10 @@ func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, 
 	return false, nil
 }
 
-func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, location string) map[string]*LustreSkuValue {
+func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error) {
 	if d.skusClient == nil {
-		klog.Warning("skus client is nil, using defaults")
-		return d.defaultSkuValues
+		klog.Error("skus client is nil")
+		return nil, status.Error(codes.Internal, "skus client is nil")
 	}
 
 	skusPager := d.skusClient.NewListPager(nil)
@@ -321,8 +321,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	for skusPager.More() {
 		page, err := skusPager.NextPage(ctx)
 		if err != nil {
-			klog.Errorf("error getting SKUs for location %s, using defaults: %v", location, err)
-			return d.defaultSkuValues
+			klog.Errorf("error retrieving SKUs for location %s: %v", location, err)
+			return nil, status.Errorf(codes.Internal, "error retrieving SKUs: %v", err)
 		}
 
 		for _, sku := range page.Value {
@@ -333,8 +333,8 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	}
 
 	if len(amlfsSkus) == 0 {
-		klog.Warning("no AMLFS SKUs found, using defaults")
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
 	for _, sku := range amlfsSkus {
@@ -346,13 +346,33 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 	}
 
 	if len(skusForLocation) == 0 {
-		klog.Warningf("found no AMLFS SKUs for location %s, using defaults", location)
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
 	for _, sku := range skusForLocation {
 		var incrementInTib int64
 		var maximumInTib int64
+		availableZones := []string{}
+		foundLocation := false
+		for _, locationInfo := range sku.LocationInfo {
+			if locationInfo.Location != nil && strings.EqualFold(*locationInfo.Location, location) {
+				if locationInfo.Zones != nil {
+					foundLocation = true
+					for _, zone := range locationInfo.Zones {
+						if zone != nil && *zone != "" {
+							availableZones = append(availableZones, *zone)
+						}
+					}
+				} else {
+					klog.Warningf("no zones available for SKU %s in location %s", *sku.Name, location)
+				}
+			}
+		}
+		if !foundLocation {
+			klog.Errorf("could not find location info for sku %s in location %s", *sku.Name, location)
+			return nil, status.Errorf(codes.Internal, "could not find location info for sku %s in location %s", *sku.Name, location)
+		}
 		for _, capability := range sku.Capabilities {
 			if *capability.Name == AmlfsSkuCapacityIncrementName {
 				parsedValue, err := strconv.ParseInt(*capability.Value, 10, 64)
@@ -371,19 +391,21 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 			}
 		}
 		if incrementInTib != 0 && maximumInTib != 0 {
+			sort.Strings(availableZones)
 			skuValues[*sku.Name] = &LustreSkuValue{
 				IncrementInTib: incrementInTib,
 				MaximumInTib:   maximumInTib,
+				AvailableZones: availableZones,
 			}
 		}
 	}
 
 	if len(skuValues) == 0 {
-		klog.Warningf("found no AMLFS SKUs for location %s, using defaults", location)
-		return d.defaultSkuValues
+		klog.Errorf("found no AMLFS SKUs for location %s", location)
+		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
 	}
 
-	return skuValues
+	return skuValues, nil
 }
 
 func (d *DynamicProvisioner) getAmlfsSubnetSize(ctx context.Context, sku string, clusterSize float32) (int, error) {

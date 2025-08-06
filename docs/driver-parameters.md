@@ -4,9 +4,13 @@ These are the parameters to be passed into the custom StorageClass that users mu
 
 For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/use-csi-driver-kubernetes).
 
-## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
+## Dynamic Provisioning (Create an AMLFS Cluster through AKS) - Public Preview
 
-### Permissions
+> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
+
+### Permissions For Kubelet Identity
+
+See [Use a managed identity in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity) for information about configuring your kubelet identity.
 
 The kubelet identity attached to the cluster will require the following permission actions (at the Subscription scope):
 
@@ -37,7 +41,7 @@ Microsoft.ManagedIdentity/userAssignedIdentities/assign/action
 Name | Meaning | Available Value | Mandatory | Default value
 --- | --- | --- | --- | ---
 sku-name | SKU name for the Azure Managed Lustre file system. The SKU determines the throughput of the AMLFS cluster. | The SKU value must be one of the following: `AMLFS-Durable-Premium-40`, `AMLFS-Durable-Premium-125`, `AMLFS-Durable-Premium-250`, `AMLFS-Durable-Premium-500`. | Yes | This value must be provided.
-zones | The availability zone where your resource will be created. For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients. | The zone must be a single value e.g., `"1"`, `"2"`, or `"3"`. | Yes | This value must be provided.
+zone | The availability zone where your resource will be created. For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients. | The zone must be a single value e.g., `"1"`, `"2"`, or `"3"`. | Yes | This value must be provided.
 maintenance-day-of-week | The day of the week for maintenance to be performed on the AMLFS cluster. | `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday` | Yes | This value must be provided.
 maintenance-time-of-day-utc | The time (in UTC) when the maintenance window can begin on the AMLFS cluster. | Time value can only be in 24-hour format i.e., HH:MM | Yes | This value must be provided.
 location | Azure region in which the AMLFS cluster will be created. The region name should only have lower-case letters or numbers. | `eastus2`, `westus`, etc. | No | If empty, the driver will use the same region name as the current AKS cluster.

@@ -28,7 +28,7 @@ This driver allows Kubernetes to access Azure Lustre file system.
 
 - [Install CSI driver in AKS cluster](./docs/install-csi-driver.md)
 - [Deploy workload with Static Provisioning](./docs/static-provisioning.md)
-- [Deploy workload with Dynamic Provisioning](./docs/dynamic-provisioning.md)
+- [Deploy workload with Dynamic Provisioning (Public Preview)](./docs/dynamic-provisioning.md)
 
 &nbsp;
 

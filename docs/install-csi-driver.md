@@ -4,7 +4,9 @@ This document explains how to install Azure Lustre CSI driver on a kubernetes cl
 
 ## Specific instructions for Dynamic Provisioning Branch
 
-### Install with kubectl (dynamic provisioning preview)
+### Install with kubectl (dynamic provisioning - public preview)
+
+> **Note**: Dynamic provisioning functionality is currently in public preview. This preview version is provided without a service level agreement and is not recommended for production workloads. Some features may not be supported or may have constrained capabilities.
 
 - Option 1: Remote install
 
