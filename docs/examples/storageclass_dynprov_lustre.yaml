@@ -1,0 +1,88 @@
+---
+# Dynamic provisioning functionality is currently in public preview.
+# Some features may not be supported or may have constrained capabilities.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  # The name of the StorageClass.
+  name: dynprov.azurelustre.csi.azure.com
+parameters:
+  # See the driver-parameters.md file for a full description of parameters.
+  #
+  # SKU name for the Azure Managed Lustre file system. The SKU determines the throughput of the AMLFS cluster.
+  # This value must be one of:
+  # "AMLFS-Durable-Premium-40"
+  # "AMLFS-Durable-Premium-125"
+  # "AMLFS-Durable-Premium-250"
+  # "AMLFS-Durable-Premium-500"
+  sku-name: {SKU_NAME}
+  #
+  # The availability zone where your resource will be created.
+  # For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients.
+  # The zone must be a single value e.g., "1", "2", or "3".
+  zone: {ZONE}
+  #
+  # The day of the week for maintenance to be performed on the AMLFS cluster, "Sunday", "Monday", etc.
+  maintenance-day-of-week: {MAINTENANCE_DAY}
+  #
+  # The time (in UTC) when the maintenance window can begin on the AMLFS cluster. Time value can only be in 24-hour format i.e., HH:MM
+  maintenance-time-of-day-utc: {MAINTENANCE_TIME_OF_DAY}
+  #
+  # Optional parameters:
+  #
+  # Azure region in which the AMLFS cluster will be created. The region name should only have lower-case letters or numbers.
+  # If empty, the driver will use the same region name as the current AKS cluster.
+  # location: {LOCATION}
+  #
+  # The name of the resource group in which to create the AMLFS cluster. This resource group must already exist.
+  # If empty, the driver will use the AKS infrastructure resource group.
+  # resource-group-name: {RESOURCE_GROUP_NAME}
+  #
+  # The name of the resource group containing the virtual network to be connected to the AMLFS cluster. This resource group must already exist.
+  # vnet-resource-group: {EXISTING_VNET_RG}
+  #
+  # The name of the virtual network to be connected to the AMLFS cluster. This virtual network must already exist. Set up any virtual network peerings beforehand.
+  # vnet-name: {EXISTING_VNET_NAME}
+  #
+  # The name of the subnet within the virtual network to be connected to the AMLFS cluster. This subnet must already exist.
+  # subnet-name: {EXISTING_SUBNET_NAME}
+  #
+  # User-assigned identities to assign to the AMLFS cluster. These identities must already exist. This must be the resource identifier for the identity, e.g., `"/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/myResourceGroup/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myManagedIdentity"`.
+  # identities: {IDENTITIES}
+  #
+  # Tags to apply to the AMLFS cluster resource. These tags do not affect AMLFS cluster functionality. Tag format: `"key1=val1,key2=val2"`.
+  # tags: {TAGS}
+  #
+  # The subdirectory within the AMLFS cluster's root directory where each pod will actually be mounted within the AMLFS filesystem.
+  # This subdirectory does not need to exist beforehand. This must be a valid Linux file path.
+  # It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`.
+  # sub-dir: {SUBDIRECTORY}
+  #
+provisioner: azurelustre.csi.azure.com
+# The Azure Managed Lustre cluster is removed after PVC deletion if reclaimPolicy is set to the default value "Delete".
+# To keep the cluster after PVC deletion, set reclaimPolicy to "Retain".
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+mountOptions:
+  - noatime
+  - flock
+---
+# This creates a ResourceQuota for the Azure Managed Lustre dynamic provisioner to limit the number of PVCs that can be created for this storage class.
+# This is optional and can be removed in production, but it is recommended to set a quota to prevent the accidental creation of too many Azure Managed
+# Lustre clusters, especially while learning or testing. This limit applies only to this storage class, so Azure Managed Lustre clusters could still
+# be created using additional storage classes.
+#
+# In this example, the quota is set to 1 PVC per storage class. This means that only one PVC (and therefore only one Azure Managed Lustre cluster)
+# can be created for this storage class at a time, but the value could be increased according to your needs.
+#
+# There may also be a quota set on the Azure subscription to limit the number of AMLFS clusters that can be created by a single identity. This quota
+# would have to be increased for your Azure subscription if you needed to create more Azure Managed clusters at once. Setting this quota can allow for
+# more fine-grained control over the number of AMLFS clusters that can be created.
+#
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: pvc-lustre-dynprov-quota
+spec:
+  hard:
+    dynprov.azurelustre.csi.azure.com.storageclass.storage.k8s.io/persistentvolumeclaims: "1"

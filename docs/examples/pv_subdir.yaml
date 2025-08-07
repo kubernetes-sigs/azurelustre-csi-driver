@@ -14,8 +14,6 @@ spec:
   csi:
     driver: azurelustre.csi.azure.com
     volumeAttributes:
-      # The file system name of the existing Lustre
-      fs-name: ${EXISTING_LUSTRE_FS_NAME}
       # The IP address of the existing Lustre
       mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
       # The subdirectory to create and mount per pod (cannot use pvc / pv metadata in static volumes)

@@ -23,6 +23,10 @@
 azurelustreplugin
 !pkg/azurelustreplugin
 
+# E2E test binaries
+/kubectl
+/kubernetes/**
+
 # Emacs save files
 *~
 \#*\#

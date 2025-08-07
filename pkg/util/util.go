@@ -144,14 +144,54 @@ func ConvertTagsToMap(tags string) (map[string]string, error) {
 	for _, tag := range s {
 		kv := strings.Split(tag, tagKeyValueDelimiter)
 		if len(kv) != 2 {
-			return nil, fmt.Errorf("tags '%s' are invalid, the format should like: 'key1=value1,key2=value2'", tags)
+			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
 		key := strings.TrimSpace(kv[0])
 		if key == "" {
-			return nil, fmt.Errorf("tags '%s' are invalid, the format should like: 'key1=value1,key2=value2'", tags)
+			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
 		value := strings.TrimSpace(kv[1])
 		m[key] = value
 	}
 	return m, nil
+}
+
+// ReplaceWithMap replaces placeholders in the input string with corresponding values from the replaceMap.
+func ReplaceWithMap(str string, m map[string]string) string {
+	for k, v := range m {
+		if k != "" {
+			str = strings.ReplaceAll(str, k, v)
+		}
+	}
+
+	return str
+}
+
+// SetKeyValueInMap set key/value pair in map
+// key in the map is case insensitive, if key already exists, overwrite existing value
+func SetKeyValueInMap(m map[string]string, key, value string) {
+	if m == nil {
+		return
+	}
+	for k := range m {
+		if strings.EqualFold(k, key) {
+			m[k] = value
+			return
+		}
+	}
+	m[key] = value
+}
+
+// GetValueInMap get value from map by key
+// key in the map is case insensitive
+func GetValueInMap(m map[string]string, key string) string {
+	if m == nil {
+		return ""
+	}
+	for k, v := range m {
+		if strings.EqualFold(k, key) {
+			return v
+		}
+	}
+	return ""
 }
