@@ -35,8 +35,7 @@ curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee
 echo "deb [arch=amd64,arm64,armhf] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | tee /etc/apt/sources.list.d/amlfs.list
 apt-get update
 
-# This should match the version of Go that is used to build the CSI driver
-apt install -y msft-golang=${MSFT_GOLANG_PKG_VER}
+apt install -y msft-golang
 
 go version
 
