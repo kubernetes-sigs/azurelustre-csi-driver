@@ -151,6 +151,10 @@ spec:
               name: host-sbin
             - mountPath: /bin
               name: host-bin
+            - name: entrypoint
+              mountPath: /app/entrypoint.sh
+              subPath: entrypoint.sh
+              readOnly: true
           resources:
             limits:
               cpu: 1
@@ -211,3 +215,7 @@ spec:
             path: /bin
             type: Directory
           name: host-bin
+        - name: entrypoint
+          configMap:
+            name: entrypoint
+            defaultMode: 0755

@@ -62,6 +62,8 @@ fi
 echo
 echo "Installing Azure Lustre CSI Driver branch: $branch, repo: $repo ..."
 
+kubectl create configmap entrypoint --from-file=pkg/azurelustreplugin/entrypoint.sh -nkube-system --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl apply -f "$repo/rbac-csi-azurelustre-controller.yaml"
 kubectl apply -f "$repo/rbac-csi-azurelustre-node.yaml"
 kubectl apply -f "$repo/csi-azurelustre-driver.yaml"

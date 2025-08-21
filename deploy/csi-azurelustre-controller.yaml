@@ -103,6 +103,10 @@ spec:
               name: azure-cred
             - mountPath: /etc/host-os-release
               name: host-os-release
+            - name: entrypoint
+              mountPath: /app/entrypoint.sh
+              subPath: entrypoint.sh
+              readOnly: true
           resources:
             limits:
               cpu: 1
@@ -121,3 +125,7 @@ spec:
           hostPath:
             path: /etc/os-release
             type: File
+        - name: entrypoint
+          configMap:
+            name: entrypoint
+            defaultMode: 0755
