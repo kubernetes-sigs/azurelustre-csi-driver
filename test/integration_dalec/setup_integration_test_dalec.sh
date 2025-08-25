@@ -3,7 +3,7 @@
 set -euox pipefail
 
 # Ensure required variables are set
-: "${IMAGE_NAME:?Required variable IMAGE_NAME is not set}" # Ex: upstream.azurecr.io/oss/v2/kubernetes-csi/azurelustre-csi:v0.2.0
+: "${IMAGE_NAME:?Required variable IMAGE_NAME is not set}" # Ex: upstream.azurecr.io/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0
 
 echo "IMAGE_NAME: ${IMAGE_NAME}"
 
