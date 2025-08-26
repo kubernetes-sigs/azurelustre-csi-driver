@@ -469,9 +469,9 @@ func (d *DynamicProvisioner) CheckSubnetCapacity(ctx context.Context, subnetInfo
 	}
 
 	if requiredSubnetIPSize > availableIPs {
-		klog.Warningf("There is not enough room in the %s subnetID to fit a %s SKU cluster: %v needed, %v available", subnetInfo.SubnetID, sku, requiredSubnetIPSize, availableIPs)
+		klog.Warningf("There is not enough room in the %s subnet to fit a %s SKU cluster: %v needed, %v available", subnetInfo.SubnetID, sku, requiredSubnetIPSize, availableIPs)
 		return false, nil
 	}
-	klog.V(2).Infof("There is enough room in the %s subnetID to fit a %s SKU cluster: %v needed, %v available", subnetInfo.SubnetID, sku, requiredSubnetIPSize, availableIPs)
+	klog.V(2).Infof("There is enough room in the %s subnet to fit a %s SKU cluster: %v needed, %v available", subnetInfo.SubnetID, sku, requiredSubnetIPSize, availableIPs)
 	return true, nil
 }
