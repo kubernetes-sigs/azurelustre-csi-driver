@@ -54,4 +54,4 @@ linters-settings:
   unparam:
     check-exported: true
 run:
-  timeout: 30m0s
+  timeout: 30m

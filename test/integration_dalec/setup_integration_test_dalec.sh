@@ -3,11 +3,9 @@
 set -euox pipefail
 
 # Ensure required variables are set
-: "${IMAGE_NAME:?Required variable IMAGE_NAME is not set}" # Ex: upstream.azurecr.io/oss/v2/kubernetes-csi/azurelustre-csi:v0.2.0
-: "${MSFT_GOLANG_PKG_VER:?Required variable MSFT_GOLANG_PKG_VER is not set}" # Ex: 1.23.7-ubuntu22.04u1
+: "${IMAGE_NAME:?Required variable IMAGE_NAME is not set}" # Ex: upstream.azurecr.io/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0
 
 echo "IMAGE_NAME: ${IMAGE_NAME}"
-echo "MSFT_GOLANG_PKG_VER: ${MSFT_GOLANG_PKG_VER}"
 
 # Create a configmap for the integration test script
 kubectl delete configmap integration-dalec-script --ignore-not-found

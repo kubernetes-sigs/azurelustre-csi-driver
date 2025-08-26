@@ -5,8 +5,6 @@ metadata:
   # The name of the StorageClass.
   name: subdir.azurelustre.csi.azure.com
 parameters:
-  # The file system name of the existing Lustre, "lustrefs" in common case
-  fs-name: ${EXISTING_LUSTRE_FS_NAME}
   # The IP address of the existing Lustre
   mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
   # The subdirectory to create and mount per pod

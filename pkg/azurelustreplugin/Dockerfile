@@ -21,8 +21,8 @@ RUN chmod +x "/app/entrypoint.sh"
 
 RUN apt-get update && \
   apt-get upgrade -y && \
-  apt-get install ca-certificates \
-    gpg curl ca-certificates iproute2 kmod libc-dev-bin libc6 libc6-dev  \
+  apt-get install -y \
+   gpg curl ca-certificates iproute2 kmod libc-dev-bin libc6 libc6-dev  \
    libcrypt-dev libgdbm-compat4 libgdbm6 libkmod2     \
    libmysqlclient21 libnetsnmptrapd40 libnl-3-200 libnl-genl-3-200 libnsl-dev libpci-dev libpci3    \
    libperl5.34 libsensors-config libsensors-dev libsensors5 libsnmp-base libsnmp-dev libsnmp40      \
@@ -36,7 +36,6 @@ RUN apt-get update && \
   /var/log/* \
   /tmp/* \
   /var/tmp/*
-
 
 WORKDIR "/app"
 

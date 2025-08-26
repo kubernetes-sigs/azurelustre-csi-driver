@@ -18,7 +18,7 @@ set -euo pipefail
 
 if [[ -z "$(command -v golangci-lint)" ]]; then
   echo "Cannot find golangci-lint. Installing golangci-lint..."
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.60.3
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.64.8
   export PATH=$PATH:$(go env GOPATH)/bin
 fi
 

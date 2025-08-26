@@ -5,12 +5,18 @@ metadata:
   # The name of the StorageClass.
   name: sc.azurelustre.csi.azure.com
 parameters:
-  # The file system name of the existing Lustre, "lustrefs" in common case
-  fs-name: ${EXISTING_LUSTRE_FS_NAME}
+  # See the driver-parameters.md file for a full description of parameters.
+  #
   # The IP address of the existing Lustre
   mgs-ip-address: ${EXISTING_LUSTRE_IP_ADDRESS}
+  #
+  # The subdirectory within the AMLFS cluster's root directory which is where each pod will actually be mounted within the AMLFS filesystem.
+  # This subdirectory does not need to exist beforehand. This must be a valid Linux file path.
+  # It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`.
+  # sub-dir: {SUBDIRECTORY}
+  #
 provisioner: azurelustre.csi.azure.com
-# Azure Lustre Cluster is removed after PVC deletion if reclaimPolicy is the default value "Delete".
+# Azure Managed Lustre cluster is removed after PVC deletion if reclaimPolicy is the default value "Delete".
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 mountOptions:

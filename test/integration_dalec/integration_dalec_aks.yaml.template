@@ -7,11 +7,8 @@ spec:
   containers:
     - name: integration-dalec
       image: ${IMAGE_NAME}
-      imagePullPolicy: Always
+      imagePullPolicy: IfNotPresent
       command: ["bash", "/test/run_integration_test.sh"]
-      env:
-        - name: MSFT_GOLANG_PKG_VER
-          value: "${MSFT_GOLANG_PKG_VER}"
       volumeMounts:
         - name: script-volume
           mountPath: /test/run_integration_test.sh

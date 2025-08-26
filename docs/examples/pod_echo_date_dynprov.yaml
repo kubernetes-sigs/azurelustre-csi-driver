@@ -1,0 +1,24 @@
+---
+kind: Pod
+# Dynamic provisioning functionality is currently in public preview.
+# Some features may not be supported or may have constrained capabilities.
+apiVersion: v1
+metadata:
+  name: lustre-echo-date-dynprov
+spec:
+  nodeSelector:
+    "kubernetes.io/os": linux
+  containers:
+    - image: mcr.microsoft.com/azurelinux/base/core:3.0
+      name: lustre-echo-date
+      command:
+        - "/bin/sh"
+        - "-c"
+        - while true; do echo $(date) >> /mnt/lustre/outfile; tail -1 /mnt/lustre/outfile; sleep 1; done
+      volumeMounts:
+        - name: lustre-dynprov
+          mountPath: "/mnt/lustre"
+  volumes:
+    - name: lustre-dynprov
+      persistentVolumeClaim:
+        claimName: pvc-lustre-dynprov

@@ -36,7 +36,7 @@ spec:
             - "-v=2"
             - "--csi-address=$(ADDRESS)"
             - "--leader-election"
-            - "--timeout=60s"
+            - "--timeout=15m"
             - "--extra-create-metadata=true"
           env:
             - name: ADDRESS
@@ -68,11 +68,12 @@ spec:
               cpu: 10m
               memory: 20Mi
         - name: azurelustre
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.2.0
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0
           imagePullPolicy: IfNotPresent
           args:
             - "-v=5"
             - "--endpoint=$(CSI_ENDPOINT)"
+            - "--enable-azurelustre-mock-dyn-prov=false"
           ports:
             - containerPort: 29762
               name: healthz

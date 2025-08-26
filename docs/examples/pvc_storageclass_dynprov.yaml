@@ -1,0 +1,17 @@
+---
+# Dynamic provisioning functionality is currently in public preview.
+# Some features may not be supported or may have constrained capabilities.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # The name of the PVC
+  name: pvc-lustre-dynprov
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      # The real storage capacity in the claim
+      storage: 48Ti
+  # This field must be the same as the storage class name in StorageClass
+  storageClassName: dynprov.azurelustre.csi.azure.com
