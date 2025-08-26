@@ -61,7 +61,7 @@ const (
 
 var (
 	timeRegexp             = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):[0-5][0-9]$`)
-	amlFilesystemNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,78}[a-zA-Z0-9]$`)
+	amlFilesystemNameRegex = regexp.MustCompile(fmt.Sprintf(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,%d}[a-zA-Z0-9]$`, amlFilesystemNameMaxLength-2))
 )
 
 type SubnetProperties struct {

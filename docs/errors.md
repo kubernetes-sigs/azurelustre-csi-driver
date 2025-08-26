@@ -172,7 +172,7 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 - This should return output such as:
 
 ```text
-There is not enough room in the /subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet> subnetID to fit a AMLFS-Durable-Premium-40 SKU cluster: 10 needed, 3 available
+There is not enough room in the /subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet> subnet to fit a AMLFS-Durable-Premium-40 SKU cluster: 10 needed, 3 available
 ```
 
 - Verify subnet details in Azure portal
