@@ -33,6 +33,7 @@ var (
 	enableAzureLustreMockMount   = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
 	enableAzureLustreMockDynProv = flag.Bool("enable-azurelustre-mock-dyn-prov", true, "Whether enable mock dynamic provisioning(only for testing)")
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
+	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
 )
 
 func main() {
@@ -63,6 +64,7 @@ func handle() {
 		EnableAzureLustreMockMount:   *enableAzureLustreMockMount,
 		EnableAzureLustreMockDynProv: *enableAzureLustreMockDynProv,
 		WorkingMountDir:              *workingMountDir,
+		RemoveNotReadyTaint:          *removeNotReadyTaint,
 	}
 	driver := azurelustre.NewDriver(&driverOptions)
 	if driver == nil {
