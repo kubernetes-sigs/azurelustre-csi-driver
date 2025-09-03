@@ -4,6 +4,29 @@ These are the parameters to be passed into the custom StorageClass that users mu
 
 For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/use-csi-driver-kubernetes).
 
+## CSI Driver Configuration Parameters
+
+These parameters control the behavior of the Azure Lustre CSI driver itself and are typically configured during driver installation rather than in StorageClass definitions.
+
+### Node Startup Taint Management
+
+Name | Meaning | Available Value | Default Value | Configuration Method
+--- | --- | --- | --- | ---
+remove-not-ready-taint | Controls whether the CSI driver automatically removes startup taints from nodes when the driver becomes ready. This ensures pods are only scheduled to nodes where the CSI driver is fully operational and Lustre filesystem capacity is available. Nodes should have a taint of the form: `azurelustre.csi.azure.com/agent-not-ready:NoSchedule` | `true`, `false` | `true` | Command-line flag `--remove-not-ready-taint` in driver deployment
+
+#### Startup Taint Details
+
+When enabled (default), the Azure Lustre CSI driver will:
+
+1. **Monitor Node Readiness**: Check if the CSI driver is fully initialized on the node
+2. **Remove Blocking Taint**: Automatically remove the `azurelustre.csi.azure.com/agent-not-ready:NoSchedule` taint when ready
+
+This mechanism prevents pods requiring Azure Lustre storage from being scheduled to nodes where:
+
+- Lustre kernel modules are not yet loaded
+- CSI driver components are not fully initialized  
+- Network connectivity to Lustre filesystems is not established
+
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS) - Public Preview
 
 > **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.

@@ -18,15 +18,23 @@ package azurelustre
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
@@ -46,6 +54,8 @@ const (
 	subnetTemplate           = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s"
 
 	amlFilesystemNameMaxLength = 80
+
+	AgentNotReadyNodeTaintKeySuffix = "/agent-not-ready"
 
 	podNameKey            = "csi.storage.k8s.io/pod.name"
 	podNamespaceKey       = "csi.storage.k8s.io/pod.namespace"
@@ -103,6 +113,7 @@ type DriverOptions struct {
 	EnableAzureLustreMockMount   bool
 	EnableAzureLustreMockDynProv bool
 	WorkingMountDir              string
+	RemoveNotReadyTaint          bool
 }
 
 // LustreSkuValue describes the increment and maximum size of a given Lustre sku
@@ -122,7 +133,7 @@ type Driver struct {
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockDynProv bool
-	mounter                      *mount.SafeFormatAndMount // TODO_JUSJIN: check any other alternatives
+	mounter                      *mount.SafeFormatAndMount
 	forceMounter                 *mount.MounterForceUnmounter
 	volLockMap                   *util.LockMap
 	// Directory to temporarily mount to for subdirectory creation
@@ -136,6 +147,13 @@ type Driver struct {
 	resourceGroup      string
 	location           string
 	dynamicProvisioner DynamicProvisionerInterface
+
+	removeNotReadyTaint bool
+	kubeClient          kubernetes.Interface
+	// taintRemovalInitialDelay is the initial delay for node taint removal
+	taintRemovalInitialDelay time.Duration
+	// taintRemovalBackoff is the exponential backoff configuration for node taint removal
+	taintRemovalBackoff wait.Backoff
 }
 
 // NewDriver Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
@@ -147,6 +165,7 @@ func NewDriver(options *DriverOptions) *Driver {
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
 		workingMountDir:              options.WorkingMountDir,
+		removeNotReadyTaint:          options.RemoveNotReadyTaint,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -191,7 +210,18 @@ func NewDriver(options *DriverOptions) *Driver {
 		d.cloud = az
 		d.resourceGroup = config.ResourceGroup
 		d.location = config.Location
-
+		// Get kubernetes client for taint removal functionality
+		kubeClient, err := getKubeClient()
+		if err != nil {
+			klog.Warningf("failed to get kubernetes client: %v", err)
+		}
+		d.kubeClient = kubeClient
+		d.taintRemovalInitialDelay = 1 * time.Second
+		d.taintRemovalBackoff = wait.Backoff{
+			Duration: 500 * time.Millisecond,
+			Factor:   2,
+			Steps:    10, // Max delay = 0.5 * 2^9 = ~4 minutes
+		}
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			klog.Warningf("failed to obtain a credential: %v", err)
@@ -278,6 +308,14 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 	d.AddVolumeCapabilityAccessModes(volumeCapabilities)
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
+	// Remove taint from node to indicate driver startup success
+	// This is done at the last possible moment to prevent race conditions or false positive removals
+	if d.kubeClient != nil && d.removeNotReadyTaint && d.NodeID != "" {
+		time.AfterFunc(d.taintRemovalInitialDelay, func() {
+			removeTaintInBackground(d.kubeClient, d.NodeID, d.Name, d.taintRemovalBackoff, removeNotReadyTaint)
+		})
+	}
+
 	s := csicommon.NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
 	s.Start(endpoint, d, d, d, testBool)
@@ -316,4 +354,93 @@ func getLustreVolFromID(id string) (*lustreVolume, error) {
 	}
 
 	return vol, nil
+}
+
+// getKubeClient creates a kubernetes client from the in-cluster config
+func getKubeClient() (kubernetes.Interface, error) {
+	// Use in-cluster config since this driver is designed for AKS environments
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+	}
+	return kubernetes.NewForConfig(config)
+}
+
+// JSONPatch represents a JSON patch operation
+type JSONPatch struct {
+	OP    string      `json:"op"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+// removeTaintInBackground removes the taint from the node in a goroutine with retry logic
+func removeTaintInBackground(k8sClient kubernetes.Interface, nodeName, driverName string, backoff wait.Backoff, removalFunc func(kubernetes.Interface, string, string) error) {
+	klog.V(2).Infof("starting background node taint removal for node %s", nodeName)
+	go func() {
+		backoffErr := wait.ExponentialBackoff(backoff, func() (bool, error) {
+			err := removalFunc(k8sClient, nodeName, driverName)
+			if err != nil {
+				klog.ErrorS(err, "unexpected failure when attempting to remove node taint(s)")
+				return false, nil
+			}
+			return true, nil
+		})
+
+		if backoffErr != nil {
+			klog.ErrorS(backoffErr, "retries exhausted, giving up attempting to remove node taint(s)")
+		}
+	}()
+}
+
+// removeNotReadyTaint removes the taint azurelustre.csi.azure.com/agent-not-ready from the local node
+// This taint can be optionally applied by users to prevent startup race conditions such as
+// https://github.com/kubernetes/kubernetes/issues/95911
+func removeNotReadyTaint(clientset kubernetes.Interface, nodeName, driverName string) error {
+	ctx := context.Background()
+	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	taintKeyToRemove := driverName + AgentNotReadyNodeTaintKeySuffix
+	klog.V(2).Infof("removing taint with key %s from local node %s", taintKeyToRemove, nodeName)
+	var taintsToKeep []corev1.Taint
+	for _, taint := range node.Spec.Taints {
+		klog.V(5).Infof("checking taint key %s, value %s, effect %s", taint.Key, taint.Value, taint.Effect)
+		if taint.Key != taintKeyToRemove {
+			taintsToKeep = append(taintsToKeep, taint)
+		} else {
+			klog.V(2).Infof("queued taint for removal with key %s, effect %s", taint.Key, taint.Effect)
+		}
+	}
+
+	if len(taintsToKeep) == len(node.Spec.Taints) {
+		klog.V(2).Infof("no taints to remove on node, skipping taint removal")
+		return nil
+	}
+
+	patchRemoveTaints := []JSONPatch{
+		{
+			OP:    "test",
+			Path:  "/spec/taints",
+			Value: node.Spec.Taints,
+		},
+		{
+			OP:    "replace",
+			Path:  "/spec/taints",
+			Value: taintsToKeep,
+		},
+	}
+
+	patch, err := json.Marshal(patchRemoveTaints)
+	if err != nil {
+		return err
+	}
+
+	_, err = clientset.CoreV1().Nodes().Patch(ctx, nodeName, k8stypes.JSONPatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return err
+	}
+	klog.V(2).Infof("removed taint with key %s from local node %s successfully", taintKeyToRemove, nodeName)
+	return nil
 }

@@ -27,8 +27,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
@@ -411,5 +417,153 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, tc.testFunc)
+	}
+}
+
+func TestRemoveNotReadyTaint(t *testing.T) {
+	expectedNotReadyTaint := DefaultDriverName + AgentNotReadyNodeTaintKeySuffix
+	testCases := []struct {
+		name           string
+		nodeName       string
+		nodeExists     bool
+		initialTaints  []corev1.Taint
+		expectedError  bool
+		expectedTaints []string
+	}{
+		{
+			name:       "Other taints are ignored",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    "other-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{"other-taint"},
+		},
+		{
+			name:       "Removes agent-not-ready taint",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    expectedNotReadyTaint,
+					Value:  "NotReady",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{},
+		},
+		{
+			name:       "Leaves other taints when removing agent-not-ready taint",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    expectedNotReadyTaint,
+					Value:  "NotReady",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "other-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{"other-taint"},
+		},
+		{
+			name:           "Handles node with no taints",
+			nodeName:       "test-node",
+			nodeExists:     true,
+			initialTaints:  []corev1.Taint{},
+			expectedError:  false,
+			expectedTaints: []string{},
+		},
+		{
+			name:           "Handles node that doesn't exist",
+			nodeName:       "nonexistent-node",
+			nodeExists:     false,
+			initialTaints:  []corev1.Taint{},
+			expectedError:  true,
+			expectedTaints: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// Create fake kubernetes client
+			fakeClient := kubefake.NewSimpleClientset()
+
+			// Create node if it should exist
+			if tc.nodeExists {
+				node := &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.nodeName,
+					},
+					Spec: corev1.NodeSpec{
+						Taints: tc.initialTaints,
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				}
+				_, err := fakeClient.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+				require.NoError(t, err)
+
+				// Create CSINode for taint removal function
+				csiNode := &storagev1.CSINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.nodeName,
+					},
+					Spec: storagev1.CSINodeSpec{
+						Drivers: []storagev1.CSINodeDriver{
+							{
+								Name: DefaultDriverName,
+							},
+						},
+					},
+				}
+				_, err = fakeClient.StorageV1().CSINodes().Create(ctx, csiNode, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+
+			// Create driver with fake client
+			d := NewFakeDriver()
+			d.NodeID = tc.nodeName
+			d.kubeClient = fakeClient
+			d.removeNotReadyTaint = true
+
+			// Test removeNotReadyTaint function
+			err := removeNotReadyTaint(fakeClient, tc.nodeName, DefaultDriverName)
+
+			if tc.expectedError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+
+				// Verify taint was removed if it existed
+				if tc.nodeExists {
+					node, err := fakeClient.CoreV1().Nodes().Get(ctx, tc.nodeName, metav1.GetOptions{})
+					require.NoError(t, err)
+
+					actualTaints := make([]string, len(node.Spec.Taints))
+					for i, taint := range node.Spec.Taints {
+						actualTaints[i] = taint.Key
+					}
+					assert.Equal(t, tc.expectedTaints, actualTaints)
+				}
+			}
+		})
 	}
 }

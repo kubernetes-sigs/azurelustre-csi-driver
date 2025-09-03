@@ -121,3 +121,23 @@ The CSI driver deployment includes automated **exec-based readiness probes** for
 
 **Important**: The enhanced validation ensures the driver reports ready only when LNet is fully functional for Lustre operations. Wait for all CSI driver node pods to pass enhanced readiness checks before creating PersistentVolumes or mounting Lustre filesystems.
 
+## Startup Taints
+
+When the CSI driver starts on each node, it automatically removes the following taint if present:
+
+- **Taint Key**: `azurelustre.csi.azure.com/agent-not-ready`
+- **Taint Effect**: `NoSchedule`
+
+This ensures that:
+
+1. **Node Readiness**: Pods requiring Azure Lustre storage are only scheduled to nodes where the CSI driver is fully initialized
+2. **Lustre Client Ready**: The node has successfully loaded Lustre kernel modules and networking components
+
+### Configuring Startup Taint Behavior
+
+The startup taint functionality is enabled by default but can be configured during installation:
+
+- **Default Behavior**: Startup taint removal is **enabled** by default
+- **Disable Taint Removal**: To disable, set `--remove-not-ready-taint=false` in the driver deployment
+
+For most AKS users, the default behavior provides optimal pod scheduling and should not be changed
