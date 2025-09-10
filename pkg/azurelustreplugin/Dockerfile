@@ -16,8 +16,9 @@ FROM ubuntu:22.04
 
 COPY "./_output/azurelustreplugin" "/app/azurelustreplugin"
 COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
+COPY "./pkg/azurelustreplugin/readinessProbe.sh" "/app/readinessProbe.sh"
 
-RUN chmod +x "/app/entrypoint.sh"
+RUN chmod +x "/app/entrypoint.sh" && chmod +x "/app/readinessProbe.sh"
 
 RUN apt-get update && \
   apt-get upgrade -y && \

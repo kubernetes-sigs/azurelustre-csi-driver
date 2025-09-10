@@ -110,6 +110,22 @@ spec:
             initialDelaySeconds: 60
             timeoutSeconds: 10
             periodSeconds: 30
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
