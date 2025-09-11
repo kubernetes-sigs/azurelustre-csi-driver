@@ -85,7 +85,7 @@ spec:
               memory: 20Mi
         - name: azurelustre
           image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           lifecycle:
             preStop:
               exec:
