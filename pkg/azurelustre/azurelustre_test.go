@@ -131,14 +131,107 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 }
 
 func TestNewDriver(t *testing.T) {
+	fakeConfigFile := "fake-cred-file.json"
+	fakeConfigContent := `{
+    "tenantId": "fake-tenant-id",
+    "subscriptionId": "fake-subscription-id",
+    "aadClientId": "fake-client-id",
+    "aadClientSecret": "fake-client-secret",
+    "resourceGroup": "fake-resource-group",
+    "location": "fake-location",
+}`
+
+	if err := os.WriteFile(fakeConfigFile, []byte(fakeConfigContent), 0o600); err != nil {
+		t.Error(err)
+	}
+
+	defer func() {
+		if err := os.Remove(fakeConfigFile); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
-		DriverName:                   DefaultDriverName,
+		DriverName:                   fakeDriverName,
 		EnableAzureLustreMockMount:   false,
 		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
 	}
 	d := NewDriver(&driverOptions)
 	assert.NotNil(t, d)
+	assert.NotNil(t, d.cloud)
+	assert.NotNil(t, d.dynamicProvisioner)
+	assert.Equal(t, "fake-resource-group", d.resourceGroup)
+	assert.Equal(t, "fake-location", d.location)
+	assert.Equal(t, fakeNodeID, d.NodeID)
+	assert.Equal(t, fakeDriverName, d.Name)
+	assert.Equal(t, "fake-subscription-id", d.cloud.SubscriptionID)
+	assert.Equal(t, "fake-tenant-id", d.cloud.TenantID)
+	assert.Equal(t, "fake-client-id", d.cloud.AADClientID)
+	assert.Equal(t, "fake-client-secret", d.cloud.AADClientSecret)
+	assert.Equal(t, "fake-location", d.cloud.Location)
+	assert.Equal(t, "fake-resource-group", d.cloud.ResourceGroup)
+	assert.Equal(t, "/tmp", d.workingMountDir)
+	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
+	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
+	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+}
+
+func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
+	fakeConfigFile := "fake-cred-file.json"
+
+	if err := os.Remove(fakeConfigFile); err != nil && !os.IsNotExist(err) {
+		t.Error(err)
+	}
+
+	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+
+	driverOptions := DriverOptions{
+		NodeID:                       fakeNodeID,
+		DriverName:                   fakeDriverName,
+		EnableAzureLustreMockMount:   false,
+		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
+	}
+	d := NewDriver(&driverOptions)
+	assert.NotNil(t, d)
+	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
+}
+
+func TestNewDriverInvalidConfigFileContents(t *testing.T) {
+	invalidConfigFile := "fake-cred-file.json"
+	invalidConfigContent := `;;;....invalid########`
+
+	if err := os.WriteFile(invalidConfigFile, []byte(invalidConfigContent), 0o600); err != nil {
+		t.Error(err)
+	}
+
+	defer func() {
+		if err := os.Remove(invalidConfigFile); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	t.Setenv(DefaultAzureConfigFileEnv, invalidConfigFile)
+
+	driverOptions := DriverOptions{
+		NodeID:                       fakeNodeID,
+		DriverName:                   fakeDriverName,
+		EnableAzureLustreMockMount:   false,
+		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
+	}
+	d := NewDriver(&driverOptions)
+	assert.NotNil(t, d)
+	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
 }
 
 func TestIsCorruptedDir(t *testing.T) {
