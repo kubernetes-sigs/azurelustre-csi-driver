@@ -53,6 +53,9 @@ const (
 	volumeIDTemplate         = "%s#%s#%s#%s#%s#%s"
 	subnetTemplate           = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/%s"
 
+	DefaultAzureConfigFileEnv  = "AZURE_CONFIG_FILE"
+	DefaultConfigFilePathLinux = "/etc/kubernetes/azure.json"
+
 	amlFilesystemNameMaxLength = 80
 
 	AgentNotReadyNodeTaintKeySuffix = "/agent-not-ready"
@@ -177,15 +180,21 @@ func NewDriver(options *DriverOptions) *Driver {
 
 	ctx := context.Background()
 
-	// Will need to change if we ever support non-AKS clusters
-	AKSConfigFile := "/etc/kubernetes/azure.json"
-
 	az := &azure.Cloud{}
+
+	credFile, ok := os.LookupEnv(DefaultAzureConfigFileEnv)
+	if ok && strings.TrimSpace(credFile) != "" {
+		klog.V(2).Infof("%s env var set as %v", DefaultAzureConfigFileEnv, credFile)
+	} else {
+		credFile = DefaultConfigFilePathLinux
+		klog.V(2).Infof("use default %s env var: %v", DefaultAzureConfigFileEnv, credFile)
+	}
+
 	config, err := configloader.Load[azure.Config](ctx, nil, &configloader.FileLoaderConfig{
-		FilePath: AKSConfigFile,
+		FilePath: credFile,
 	})
 	if err != nil {
-		klog.V(2).Infof("failed to get cloud config from file %s: %v", AKSConfigFile, err)
+		klog.V(2).Infof("failed to get cloud config from file %s: %v", credFile, err)
 	}
 
 	if config == nil {
@@ -374,6 +383,7 @@ type JSONPatch struct {
 }
 
 // removeTaintInBackground removes the taint from the node in a goroutine with retry logic
+// TODO: We could test this properly with synctest when we move to go 1.25
 func removeTaintInBackground(k8sClient kubernetes.Interface, nodeName, driverName string, backoff wait.Backoff, removalFunc func(kubernetes.Interface, string, string) error) {
 	klog.V(2).Infof("starting background node taint removal for node %s", nodeName)
 	go func() {
