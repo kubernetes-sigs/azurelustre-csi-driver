@@ -64,6 +64,9 @@ function add_net_interfaces() {
   done
 }
 
+# Update CA certificates to ensure HTTPS connections work
+update-ca-certificates
+
 installClientPackages=${AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT:-yes}
 echo "installClientPackages: ${installClientPackages}"
 
