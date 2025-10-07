@@ -36,7 +36,9 @@ RUN apt-get update && \
   /var/lib/apt/lists/* \
   /var/log/* \
   /tmp/* \
-  /var/tmp/*
+  /var/tmp/* && \
+  update-ca-certificates
+
 
 WORKDIR "/app"
 
