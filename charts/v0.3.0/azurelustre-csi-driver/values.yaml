@@ -1,0 +1,114 @@
+# Default values for azurelustre-csi-driver.
+image:
+  repository: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi
+  tag: v0.3.0
+  pullPolicy: IfNotPresent
+
+sidecars:
+  provisioner:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner
+    tag: v5.1.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 300Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    extraArgs: ["-v=2", "--leader-election", "--timeout=15m", "--extra-create-metadata=true"]
+  livenessProbe:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe
+    tag: v2.14.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    controller:
+      healthPort: 29762
+    node:
+      healthPort: 29763
+  nodeDriverRegistrar:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar
+    tag: v2.12.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    extraArgs: ["--v=2"]
+
+controller:
+  enabled: true
+  replicas: 2
+  resources:
+    limits:
+      cpu: 1
+      memory: 200Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/controlplane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  priorityClassName: system-cluster-critical
+  extraArgs: ["-v=5", "--enable-azurelustre-mock-dyn-prov=false"]
+
+node:
+  resources:
+    limits:
+      cpu: 1
+      memory: 200Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: "Exists"
+  priorityClassName: system-node-critical
+  lustreClient:
+    install: true
+    version: 2.15.5
+    shaSuffix: 41-gc010524
+  extraArgs: ["-v=5"]
+
+rbac:
+  create: true
+
+serviceAccount:
+  controller:
+    name: ""
+  node:
+    name: ""
+
+csidriver:
+  create: true
+  name: azurelustre.csi.azure.com
+  fsGroupPolicy: File
+  attachRequired: false
+  podInfoOnMount: true
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+podAnnotations: {}
+podLabels: {}
+paths:
+  kubelet: /var/lib/kubelet
+  kubernetes: /etc/kubernetes
+  dev: /dev
+  osRelease: /etc/os-release

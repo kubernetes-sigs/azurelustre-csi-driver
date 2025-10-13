@@ -1,0 +1,102 @@
+{{- if .Values.controller.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: controller
+        {{- include "azurelustre.labels" . | nindent 8 }}
+    spec:
+      hostNetwork: true
+      serviceAccountName: {{ include "azurelustre.serviceAccountNameController" . }}
+      nodeSelector:
+{{ toYaml .Values.controller.nodeSelector | indent 8 }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      tolerations:
+{{ toYaml .Values.controller.tolerations | indent 8 }}
+      containers:
+        - name: csi-provisioner
+          image: {{ .Values.sidecars.provisioner.repository }}:{{ .Values.sidecars.provisioner.tag }}
+          args:
+{{- range $arg := .Values.sidecars.provisioner.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+            - --csi-address=$(ADDRESS)
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+{{ toYaml .Values.sidecars.provisioner.resources | indent 12 }}
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port={{ .Values.sidecars.livenessProbe.controller.healthPort }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+{{ toYaml .Values.sidecars.livenessProbe.resources | indent 12 }}
+        - name: azurelustre
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+{{- range $arg := .Values.controller.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+            - --endpoint=$(CSI_ENDPOINT)
+          ports:
+            - containerPort: {{ .Values.sidecars.livenessProbe.controller.healthPort }}
+              name: healthz
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
+              value: "no"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: {{ .Values.paths.kubernetes }}/
+              name: azure-cred
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+          resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: azure-cred
+          hostPath:
+            path: {{ .Values.paths.kubernetes }}/
+            type: DirectoryOrCreate
+        - name: host-os-release
+          hostPath:
+            path: {{ .Values.paths.osRelease }}
+            type: File
+{{- end }}
