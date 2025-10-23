@@ -448,6 +448,75 @@ Check for solutions in [Resolving Common Errors](errors.md)
 
 ---
 
+## Pod Scheduling and Node Readiness Issues
+
+### Pods Stuck in Pending Status with Taint-Related Errors
+
+**Symptoms:**
+
+- Pods requiring Azure Lustre storage remain in `Pending` status
+- Pod events show taint-related scheduling failures
+- Error messages mentioning `azurelustre.csi.azure.com/agent-not-ready` taint
+
+**Check pod scheduling status:**
+
+```sh
+kubectl describe pod <pod-name>
+```
+
+Look for events such as:
+
+- `Warning  FailedScheduling  ... node(s) had taint {azurelustre.csi.azure.com/agent-not-ready: }, that the pod didn't tolerate`
+- `0/X nodes are available: X node(s) had taint {azurelustre.csi.azure.com/agent-not-ready}`
+
+**Check node taints:**
+
+```sh
+kubectl describe nodes | grep -A5 -B5 "azurelustre.csi.azure.com/agent-not-ready"
+```
+
+**Check CSI driver readiness on nodes:**
+
+```sh
+# Check if CSI driver pods are running on all nodes
+kubectl get pods -n kube-system -l app=csi-azurelustre-node -o wide
+
+# Check CSI driver logs for startup issues
+kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre --tail=100 | grep -i "taint\|ready\|error"
+```
+
+**Common causes and solutions:**
+
+1. **CSI Driver Still Starting**: Wait for CSI driver pods to reach `Running` status
+
+   ```sh
+   kubectl wait --for=condition=ready pod -l app=csi-azurelustre-node -n kube-system --timeout=300s
+   ```
+
+2. **Lustre Module Loading Issues**: Check if Lustre kernel modules are properly loaded
+
+   ```sh
+   kubectl exec -n kube-system <csi-azurelustre-node-pod> -c azurelustre -- lsmod | grep lustre
+   ```
+
+3. **Manual Taint Removal** (Emergency only - not recommended for production):
+
+   ```sh
+   kubectl taint nodes <node-name> azurelustre.csi.azure.com/agent-not-ready:NoSchedule-
+   ```
+
+**Verify taint removal functionality:**
+
+Check that startup taint removal is enabled in the CSI driver:
+
+```sh
+kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i "remove.*taint"
+```
+
+Expected log output should show taint removal activity when the driver becomes ready.
+
+---
+
 ## Get Azure Lustre Driver Version
 
 ```sh

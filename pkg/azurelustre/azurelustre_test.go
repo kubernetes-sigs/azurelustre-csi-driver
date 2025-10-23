@@ -27,8 +27,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
@@ -125,14 +131,107 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 }
 
 func TestNewDriver(t *testing.T) {
+	fakeConfigFile := "fake-cred-file.json"
+	fakeConfigContent := `{
+    "tenantId": "fake-tenant-id",
+    "subscriptionId": "fake-subscription-id",
+    "aadClientId": "fake-client-id",
+    "aadClientSecret": "fake-client-secret",
+    "resourceGroup": "fake-resource-group",
+    "location": "fake-location",
+}`
+
+	if err := os.WriteFile(fakeConfigFile, []byte(fakeConfigContent), 0o600); err != nil {
+		t.Error(err)
+	}
+
+	defer func() {
+		if err := os.Remove(fakeConfigFile); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
-		DriverName:                   DefaultDriverName,
+		DriverName:                   fakeDriverName,
 		EnableAzureLustreMockMount:   false,
 		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
 	}
 	d := NewDriver(&driverOptions)
 	assert.NotNil(t, d)
+	assert.NotNil(t, d.cloud)
+	assert.NotNil(t, d.dynamicProvisioner)
+	assert.Equal(t, "fake-resource-group", d.resourceGroup)
+	assert.Equal(t, "fake-location", d.location)
+	assert.Equal(t, fakeNodeID, d.NodeID)
+	assert.Equal(t, fakeDriverName, d.Name)
+	assert.Equal(t, "fake-subscription-id", d.cloud.SubscriptionID)
+	assert.Equal(t, "fake-tenant-id", d.cloud.TenantID)
+	assert.Equal(t, "fake-client-id", d.cloud.AADClientID)
+	assert.Equal(t, "fake-client-secret", d.cloud.AADClientSecret)
+	assert.Equal(t, "fake-location", d.cloud.Location)
+	assert.Equal(t, "fake-resource-group", d.cloud.ResourceGroup)
+	assert.Equal(t, "/tmp", d.workingMountDir)
+	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
+	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
+	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+}
+
+func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
+	fakeConfigFile := "fake-cred-file.json"
+
+	if err := os.Remove(fakeConfigFile); err != nil && !os.IsNotExist(err) {
+		t.Error(err)
+	}
+
+	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+
+	driverOptions := DriverOptions{
+		NodeID:                       fakeNodeID,
+		DriverName:                   fakeDriverName,
+		EnableAzureLustreMockMount:   false,
+		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
+	}
+	d := NewDriver(&driverOptions)
+	assert.NotNil(t, d)
+	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
+}
+
+func TestNewDriverInvalidConfigFileContents(t *testing.T) {
+	invalidConfigFile := "fake-cred-file.json"
+	invalidConfigContent := `;;;....invalid########`
+
+	if err := os.WriteFile(invalidConfigFile, []byte(invalidConfigContent), 0o600); err != nil {
+		t.Error(err)
+	}
+
+	defer func() {
+		if err := os.Remove(invalidConfigFile); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	t.Setenv(DefaultAzureConfigFileEnv, invalidConfigFile)
+
+	driverOptions := DriverOptions{
+		NodeID:                       fakeNodeID,
+		DriverName:                   fakeDriverName,
+		EnableAzureLustreMockMount:   false,
+		EnableAzureLustreMockDynProv: true,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
+	}
+	d := NewDriver(&driverOptions)
+	assert.NotNil(t, d)
+	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
 }
 
 func TestIsCorruptedDir(t *testing.T) {
@@ -411,5 +510,153 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, tc.testFunc)
+	}
+}
+
+func TestRemoveNotReadyTaint(t *testing.T) {
+	expectedNotReadyTaint := DefaultDriverName + AgentNotReadyNodeTaintKeySuffix
+	testCases := []struct {
+		name           string
+		nodeName       string
+		nodeExists     bool
+		initialTaints  []corev1.Taint
+		expectedError  bool
+		expectedTaints []string
+	}{
+		{
+			name:       "Other taints are ignored",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    "other-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{"other-taint"},
+		},
+		{
+			name:       "Removes agent-not-ready taint",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    expectedNotReadyTaint,
+					Value:  "NotReady",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{},
+		},
+		{
+			name:       "Leaves other taints when removing agent-not-ready taint",
+			nodeName:   "test-node",
+			nodeExists: true,
+			initialTaints: []corev1.Taint{
+				{
+					Key:    expectedNotReadyTaint,
+					Value:  "NotReady",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "other-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectedError:  false,
+			expectedTaints: []string{"other-taint"},
+		},
+		{
+			name:           "Handles node with no taints",
+			nodeName:       "test-node",
+			nodeExists:     true,
+			initialTaints:  []corev1.Taint{},
+			expectedError:  false,
+			expectedTaints: []string{},
+		},
+		{
+			name:           "Handles node that doesn't exist",
+			nodeName:       "nonexistent-node",
+			nodeExists:     false,
+			initialTaints:  []corev1.Taint{},
+			expectedError:  true,
+			expectedTaints: []string{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			// Create fake kubernetes client
+			fakeClient := kubefake.NewSimpleClientset()
+
+			// Create node if it should exist
+			if tc.nodeExists {
+				node := &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.nodeName,
+					},
+					Spec: corev1.NodeSpec{
+						Taints: tc.initialTaints,
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+					},
+				}
+				_, err := fakeClient.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+				require.NoError(t, err)
+
+				// Create CSINode for taint removal function
+				csiNode := &storagev1.CSINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tc.nodeName,
+					},
+					Spec: storagev1.CSINodeSpec{
+						Drivers: []storagev1.CSINodeDriver{
+							{
+								Name: DefaultDriverName,
+							},
+						},
+					},
+				}
+				_, err = fakeClient.StorageV1().CSINodes().Create(ctx, csiNode, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+
+			// Create driver with fake client
+			d := NewFakeDriver()
+			d.NodeID = tc.nodeName
+			d.kubeClient = fakeClient
+			d.removeNotReadyTaint = true
+
+			// Test removeNotReadyTaint function
+			err := removeNotReadyTaint(fakeClient, tc.nodeName, DefaultDriverName)
+
+			if tc.expectedError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+
+				// Verify taint was removed if it existed
+				if tc.nodeExists {
+					node, err := fakeClient.CoreV1().Nodes().Get(ctx, tc.nodeName, metav1.GetOptions{})
+					require.NoError(t, err)
+
+					actualTaints := make([]string, len(node.Spec.Taints))
+					for i, taint := range node.Spec.Taints {
+						actualTaints[i] = taint.Key
+					}
+					assert.Equal(t, tc.expectedTaints, actualTaints)
+				}
+			}
+		})
 	}
 }

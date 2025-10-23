@@ -11,6 +11,9 @@ This document describes common errors that can occur during volume creation and 
     - [Error: Resource not found](#error-resource-not-found)
     - [Error: Cannot create AMLFS cluster, not enough IP addresses available](#error-cannot-create-amlfs-cluster-not-enough-ip-addresses-available)
     - [Error: Reached Azure Subscription Quota Limit for AMLFS Clusters](#error-reached-azure-subscription-quota-limit-for-amlfs-clusters)
+- [Pod Scheduling Errors](#pod-scheduling-errors)
+  - [Node Readiness and Taint Errors](#node-readiness-and-taint-errors)
+    - [Error: Node had taint azurelustre.csi.azure.com/agent-not-ready](#error-node-had-taint-azurelustrecsiazurecomagent-not-ready)
 - [Volume Mounting Errors](#volume-mounting-errors)
   - [Node Mount Errors](#node-mount-errors)
     - [Error: Could not mount target](#error-could-not-mount-target)
@@ -31,7 +34,7 @@ This document describes common errors that can occur during volume creation and 
     - [Controller Logs](#controller-logs)
     - [Node Logs](#node-logs)
     - [Comprehensive Log Collection](#comprehensive-log-collection)
-  
+
 ---
 
 ## Volume Creation Errors
@@ -208,6 +211,87 @@ There is not enough room in the /subscriptions/<sub-id>/resourceGroups/<rg>/prov
 
 - Delete any unneeded AMLFS clusters to free up quota
 - Request an increase in this quota for your subscription if more are still needed
+
+---
+
+## Pod Scheduling Errors
+
+### Node Readiness and Taint Errors
+
+#### Error: Node had taint azurelustre.csi.azure.com/agent-not-ready
+
+**Symptoms:**
+
+- Pods requiring Azure Lustre storage remain stuck in `Pending` status
+- Pod events show taint-related scheduling failures:
+  - `Warning  FailedScheduling  ... node(s) had taint {azurelustre.csi.azure.com/agent-not-ready: }, that the pod didn't tolerate`
+  - `0/X nodes are available: X node(s) had taint {azurelustre.csi.azure.com/agent-not-ready}`
+- Kubectl describe pod shows scheduling failures due to taints
+
+**Possible Causes:**
+
+- CSI driver is still initializing on nodes
+- Lustre kernel modules are not yet loaded
+- CSI driver failed to start properly on affected nodes
+- Node is not ready to handle Azure Lustre volume allocations
+- CSI driver startup taint removal is disabled
+
+**Debugging Steps:**
+
+```bash
+# Check pod scheduling status
+kubectl describe pod <pod-name> | grep -A10 Events
+
+# Check which nodes have the taint
+kubectl describe nodes | grep -A5 -B5 "azurelustre.csi.azure.com/agent-not-ready"
+
+# Verify CSI driver pod status on nodes
+kubectl get pods -n kube-system -l app=csi-azurelustre-node -o wide
+
+# Check CSI driver startup logs
+kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre --tail=100 | grep -i "taint\|ready\|error"
+
+# Verify taint removal is enabled (should be true by default)
+kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i "remove.*taint"
+```
+
+**Resolution:**
+
+1. **Wait for CSI Driver Readiness** (most common case):
+
+   ```bash
+   # Wait for CSI driver pods to reach Running status
+   kubectl wait --for=condition=ready pod -l app=csi-azurelustre-node -n kube-system --timeout=300s
+   ```
+
+   The taint should be automatically removed once the CSI driver is fully operational.
+
+2. **Check Lustre Module Loading**:
+
+   ```bash
+   # Verify Lustre modules are loaded on nodes
+   kubectl exec -n kube-system <csi-azurelustre-node-pod> -c azurelustre -- lsmod | grep lustre
+   ```
+
+3. **Verify CSI Driver Configuration**:
+
+   ```bash
+   # Check if taint removal is enabled (default: true)
+   kubectl get deployment csi-azurelustre-node -n kube-system -o yaml | grep "remove-not-ready-taint"
+   ```
+
+4. **Emergency Manual Taint Removal** (not recommended for production):
+
+   ```bash
+   # Only use if CSI driver is confirmed working but taint persists
+   kubectl taint nodes <node-name> azurelustre.csi.azure.com/agent-not-ready:NoSchedule-
+   ```
+
+**Prevention:**
+
+- Ensure CSI driver has sufficient time to initialize during cluster updates
+- Monitor CSI driver health during node scaling operations
+- Use pod disruption budgets to prevent scheduling issues during maintenance
 
 ---
 
