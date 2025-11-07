@@ -4,9 +4,7 @@
 
 ## Volume Provisioning Issues
 
-### Dynamic Provisioning (AMLFS Cluster Creation) - Public Preview
-
-> **Note**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
+### Dynamic Provisioning (AMLFS Cluster Creation)
 
 **Symptoms:**
 
