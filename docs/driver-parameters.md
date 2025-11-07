@@ -27,9 +27,7 @@ This mechanism prevents pods requiring Azure Lustre storage from being scheduled
 - CSI driver components are not fully initialized  
 - Network connectivity to Lustre filesystems is not established
 
-## Dynamic Provisioning (Create an AMLFS Cluster through AKS) - Public Preview
-
-> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
+## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
 ### Permissions For Kubelet Identity
 
