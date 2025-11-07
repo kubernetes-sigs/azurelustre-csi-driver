@@ -1,7 +1,5 @@
 ---
 kind: Pod
-# Dynamic provisioning functionality is currently in public preview.
-# Some features may not be supported or may have constrained capabilities.
 apiVersion: v1
 metadata:
   name: lustre-echo-date-dynprov

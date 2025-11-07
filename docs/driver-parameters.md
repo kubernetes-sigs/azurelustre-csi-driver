@@ -4,9 +4,7 @@ These are the parameters to be passed into the custom StorageClass that users mu
 
 For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/use-csi-driver-kubernetes).
 
-## Dynamic Provisioning (Create an AMLFS Cluster through AKS) - Public Preview
-
-> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
+## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
 ### Permissions For Kubelet Identity
 

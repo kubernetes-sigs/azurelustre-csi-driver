@@ -38,8 +38,6 @@ This document describes common errors that can occur during volume creation and 
 
 ### Dynamic Provisioning Errors
 
-> **Note**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
-
 #### Authentication and Authorization Errors
 
 **Symptoms:**

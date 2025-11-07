@@ -1,6 +1,4 @@
 ---
-# Dynamic provisioning functionality is currently in public preview.
-# Some features may not be supported or may have constrained capabilities.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:

@@ -1,6 +1,4 @@
-# Dynamic Provisioning (Public Preview)
-
-> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
+# Dynamic Provisioning
 
 This document explains how to deploy your workload to a dynamically provisioned Azure Managed Lustre cluster
 using the Lustre CSI driver.
