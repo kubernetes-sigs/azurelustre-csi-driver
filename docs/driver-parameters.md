@@ -29,8 +29,6 @@ This mechanism prevents pods requiring Azure Lustre storage from being scheduled
 
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
-> **Public Preview Notice**: Dynamic provisioning functionality is currently in public preview. Some features may not be supported or may have constrained capabilities.
-
 ### Permissions For Kubelet Identity
 
 See [Use a managed identity in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity) for information about configuring your kubelet identity.
