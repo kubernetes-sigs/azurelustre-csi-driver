@@ -17,12 +17,12 @@ limitations under the License.
 package csicommon
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
 )
