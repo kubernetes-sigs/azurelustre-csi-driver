@@ -1,0 +1,10 @@
+apiVersion: v1
+appVersion: v0.3.0
+description: Azure Lustre CSI Driver Helm chart
+keywords:
+- storage
+- csi
+- azure
+- lustre
+name: azurelustre-csi-driver
+version: 0.3.0
