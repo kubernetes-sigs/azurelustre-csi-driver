@@ -15,11 +15,12 @@ The kubelet identity attached to the cluster will require the following permissi
 ```text
 Microsoft.Network/virtualNetworks/subnets/read
 Microsoft.Network/virtualNetworks/subnets/join/action
-Microsoft.StorageCache/getRequiredAmlFSSubnetsSize/action
+Microsoft.StorageCache/getRequiredAmlFSSubnetsSize/*
 Microsoft.StorageCache/checkAmlFSSubnets/action
 Microsoft.StorageCache/amlFilesystems/read
 Microsoft.StorageCache/amlFilesystems/write
 Microsoft.StorageCache/amlFilesystems/delete
+Microsoft.ManagedIdentity/userAssignedIdentities/assign/action
 ```
 
 Alternatively, users can grant the identity the following broader roles:
