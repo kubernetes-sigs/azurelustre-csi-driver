@@ -727,8 +727,7 @@ func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lu
 		case VolumeContextInternalDynamicallyCreated:
 			if v == "t" {
 				createdByDynamicProvisioning = true
-			}
-			if v != "" && v != "f" {
+			} else if v != "" && v != "f" {
 				klog.Warningf("invalid value for %s, should be 't' or 'f': %s", VolumeContextInternalDynamicallyCreated, v)
 			}
 		case VolumeContextResourceGroupName:
