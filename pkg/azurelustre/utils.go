@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package csicommon
+package azurelustre
 
 import (
 	"context"
@@ -41,18 +41,6 @@ func NewVolumeCapabilityAccessMode(mode csi.VolumeCapability_AccessMode_Mode) *c
 	return &csi.VolumeCapability_AccessMode{Mode: mode}
 }
 
-func NewDefaultNodeServer(d *CSIDriver) *DefaultNodeServer {
-	return &DefaultNodeServer{
-		Driver: d,
-	}
-}
-
-func NewDefaultIdentityServer(d *CSIDriver) *DefaultIdentityServer {
-	return &DefaultIdentityServer{
-		Driver: d,
-	}
-}
-
 func NewControllerServiceCapability(capability csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
 	return &csi.ControllerServiceCapability{
 		Type: &csi.ControllerServiceCapability_Rpc{
@@ -71,27 +59,6 @@ func NewNodeServiceCapability(capability csi.NodeServiceCapability_RPC_Type) *cs
 			},
 		},
 	}
-}
-
-func RunNodePublishServer(endpoint string, d *CSIDriver, ns csi.NodeServer, testMode bool) {
-	ids := NewDefaultIdentityServer(d)
-	s := NewNonBlockingGRPCServer()
-	s.Start(endpoint, ids, nil, ns, testMode)
-	s.Wait()
-}
-
-func RunControllerPublishServer(endpoint string, d *CSIDriver, cs csi.ControllerServer, testMode bool) {
-	ids := NewDefaultIdentityServer(d)
-	s := NewNonBlockingGRPCServer()
-	s.Start(endpoint, ids, cs, nil, testMode)
-	s.Wait()
-}
-
-func RunControllerandNodePublishServer(endpoint string, d *CSIDriver, cs csi.ControllerServer, ns csi.NodeServer, testMode bool) {
-	ids := NewDefaultIdentityServer(d)
-	s := NewNonBlockingGRPCServer()
-	s.Start(endpoint, ids, cs, ns, testMode)
-	s.Wait()
 }
 
 func getLogLevel(method string) int32 {
