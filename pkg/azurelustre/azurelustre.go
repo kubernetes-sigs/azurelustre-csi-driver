@@ -38,7 +38,6 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
@@ -328,7 +327,7 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 
 	d.removeNotReadyTaintIfNeeded()
 
-	s := csicommon.NewNonBlockingGRPCServer()
+	s := NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
 	s.Start(endpoint, d, d, d, testBool)
 	s.Wait()
