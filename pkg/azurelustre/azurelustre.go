@@ -130,9 +130,9 @@ type LustreSkuValue struct {
 // Driver implements all interfaces of CSI drivers
 type Driver struct {
 	csicommon.CSIDriver
-	csicommon.DefaultIdentityServer
-	csicommon.DefaultNodeServer
 	csi.UnimplementedControllerServer
+	csi.UnimplementedNodeServer
+	csi.UnimplementedIdentityServer
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
@@ -174,9 +174,6 @@ func NewDriver(options *DriverOptions) *Driver {
 	d.Name = options.DriverName
 	d.Version = driverVersion
 	d.NodeID = options.NodeID
-
-	d.DefaultIdentityServer.Driver = &d.CSIDriver
-	d.DefaultNodeServer.Driver = &d.CSIDriver
 
 	ctx := context.Background()
 
