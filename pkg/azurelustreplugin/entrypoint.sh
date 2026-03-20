@@ -203,7 +203,10 @@ fi
 
 echo "$(date -u) Entering Lustre CSI driver"
 
-echo Executing: "$1 ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}"
-$1 ${2-} ${3-} ${4-} ${5-} ${6-} ${7-} ${8-} ${9-}
+if [[ $# -eq 0 ]]; then
+  echo "$(date -u) Error: No command provided to execute. Usage: entrypoint.sh <csi-driver-binary> [args...]"
+  exit 1
+fi
 
-echo "$(date -u) Exiting Lustre CSI driver"
+echo "Executing: $*"
+exec "$@"
