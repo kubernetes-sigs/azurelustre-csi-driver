@@ -51,10 +51,8 @@ jobs:
           export PATH=$PATH:$HOME/.local/bin
           make container
 
-      - name: Install goveralls
-        run: go install github.com/mattn/goveralls@b03136803f261ccad7d5a40b19b25870a394578f  # v0.0.12
-
-      - name: Get code coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: goveralls -coverprofile=profile.cov -service=github
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b  # v2.3.6
+        with:
+          file: profile.cov
+          format: golang
