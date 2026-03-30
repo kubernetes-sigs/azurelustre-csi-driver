@@ -18,7 +18,7 @@ set -euo pipefail
 
 echo "Verifying gofmt"
 
-diff=$(find . -name "*.go" | grep -v "\/vendor\/" | xargs gofmt -s -d 2>&1 || true)
+diff=$(find . -name "*.go" -not -path "*/vendor/*" -print0 | xargs -0 -r gofmt -s -d 2>&1 || true)
 if [[ -n "${diff}" ]]; then
   echo "${diff}"
   echo
