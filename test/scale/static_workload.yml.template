@@ -47,7 +47,7 @@ spec:
         app: csi-scale-test
     spec:
       containers:
-        - image: busybox
+        - image: mcr.microsoft.com/azurelinux/busybox:1.36
           name: lustre-echo-date
           command:
             - "/bin/sh"
