@@ -4,6 +4,12 @@ kind: ServiceAccount
 metadata:
   name: csi-azurelustre-node-sa
   namespace: kube-system
+  labels:
+    azure.workload.identity/use: "true"
+  # To use workload identity, uncomment and set the client-id annotation:
+  # annotations:
+  #   azure.workload.identity/client-id: "<AZURE_CLIENT_ID>"
+  #   azure.workload.identity/tenant-id: "<AZURE_TENANT_ID>"  # optional, if cross-tenant
 
 ---
 kind: ClusterRole

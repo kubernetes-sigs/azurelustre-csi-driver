@@ -18,6 +18,7 @@ spec:
       labels:
         app: csi-azurelustre-node
         flavor: noble
+        azure.workload.identity/use: "true"
     spec:
       hostNetwork: true
       dnsPolicy: Default
@@ -35,6 +36,9 @@ spec:
                     values:
                       - virtual-kubelet
       priorityClassName: system-node-critical
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - operator: "Exists"
       containers:
@@ -55,6 +59,10 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
         - name: node-driver-registrar
           image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.13.0
           args:
@@ -86,6 +94,10 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
         - name: azurelustre
           image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble
           imagePullPolicy: Always
