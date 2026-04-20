@@ -2,7 +2,7 @@
 
 Testing the Azure Lustre CSI driver using the [`sanity`](https://github.com/kubernetes-csi/csi-test/tree/master/pkg/sanity) package test suite.
 
-# Run Integration Tests Locally
+## Run Integration Tests Locally
 
 ## Prerequisite
 
