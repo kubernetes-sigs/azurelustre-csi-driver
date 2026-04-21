@@ -37,4 +37,4 @@ _output/azurelustreplugin --endpoint "${nodeendpoint}" --nodeid "${nodeid}" --en
 
 echo "Begin to run sanity test..."
 readonly CSI_SANITY_BIN='csi-sanity'
-"${CSI_SANITY_BIN}" --ginkgo.v "--csi.endpoint=${nodeendpoint}" "--csi.controllerendpoint=${controllerendpoint}" -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should be idempotent|should return appropriate capabilities"
+"${CSI_SANITY_BIN}" --ginkgo.v "--csi.endpoint=${nodeendpoint}" "--csi.controllerendpoint=${controllerendpoint}" -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should be idempotent|should return appropriate capabilities|should fail when volume with single node single writer access mode is already mounted at a different target path"

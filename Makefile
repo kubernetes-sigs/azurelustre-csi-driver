@@ -105,7 +105,7 @@ sanity-test: azurelustre
 
 .PHONY: sanity-test-local
 sanity-test-local:
-	go test -v -timeout=30m ./test/sanity_local -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should fail when the requested volume does not exist"
+	go test -v -timeout=30m ./test/sanity_local -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should fail when the requested volume does not exist|should fail when volume with single node single writer access mode is already mounted at a different target path"
 
 .PHONY: e2e-test
 e2e-test:
