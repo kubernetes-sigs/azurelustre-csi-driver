@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -755,6 +756,15 @@ func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lu
 			"Context mgs-ip-address must be provided",
 		)
 	}
+	mgsAddress, err := netip.ParseAddr(mgsIPAddress)
+	if err != nil || !mgsAddress.Is4() {
+		return nil, status.Errorf(
+			codes.InvalidArgument,
+			"Context mgs-ip-address %q must be a valid IPv4 address",
+			mgsIPAddress,
+		)
+	}
+	mgsIPAddress = mgsAddress.String()
 
 	vol := &lustreVolume{
 		name:                         volumeName,

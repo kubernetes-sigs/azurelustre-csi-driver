@@ -18,7 +18,6 @@ package azurelustre
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -831,10 +830,7 @@ func TestMakeDir(t *testing.T) {
 
 	// Failed case
 	err = makeDir("./azurelustre.go")
-	var e *os.PathError
-	if !errors.As(err, &e) {
-		t.Errorf("Unexpected Error: %v", err)
-	}
+	require.ErrorAs(t, err, new(*os.PathError))
 
 	// Remove the directory created
 	err = os.RemoveAll(targetTest)
@@ -1292,6 +1288,46 @@ func TestNewLustreVolume(t *testing.T) {
 				"sub-dir":        "/",
 			},
 			expectedErr: status.Error(codes.InvalidArgument, "Context sub-dir must not be empty or root if provided"),
+		},
+		{
+			desc:    "MGS address cannot be a hostname",
+			id:      "vol_1#lustrefs#mgs.example.com#",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address": "mgs.example.com",
+				"fs-name":        "lustrefs",
+			},
+			expectedErr: status.Error(codes.InvalidArgument, `Context mgs-ip-address "mgs.example.com" must be a valid IPv4 address`),
+		},
+		{
+			desc:    "MGS address cannot be an option",
+			id:      "vol_1#lustrefs#--help#",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address": "--help",
+				"fs-name":        "lustrefs",
+			},
+			expectedErr: status.Error(codes.InvalidArgument, `Context mgs-ip-address "--help" must be a valid IPv4 address`),
+		},
+		{
+			desc:    "MGS address cannot contain whitespace",
+			id:      "vol_1#lustrefs#1.1.1.1 #",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address": "1.1.1.1 ",
+				"fs-name":        "lustrefs",
+			},
+			expectedErr: status.Error(codes.InvalidArgument, `Context mgs-ip-address "1.1.1.1 " must be a valid IPv4 address`),
+		},
+		{
+			desc:    "MGS address cannot be IPv6",
+			id:      "vol_1#lustrefs#2001:db8::1#",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address": "2001:db8::1",
+				"fs-name":        "lustrefs",
+			},
+			expectedErr: status.Error(codes.InvalidArgument, `Context mgs-ip-address "2001:db8::1" must be a valid IPv4 address`),
 		},
 	}
 
