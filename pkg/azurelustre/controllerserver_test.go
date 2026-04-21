@@ -49,6 +49,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 	capabilitiesWanted := controllerServiceCapabilities
 	slices.Sort(capabilitiesWanted)
 	assert.Equal(t, capabilitiesWanted, capabilitiesSupported)
+	assert.Contains(t, capabilitiesSupported, csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER)
 }
 
 func buildCreateVolumeRequest() *csi.CreateVolumeRequest {
@@ -723,7 +724,8 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 	req.VolumeCapabilities = []*csi.VolumeCapability{}
 	t.Logf("Unsupported access modes: %s", capabilitiesNotSupported)
 	for _, capabilityNotSupported := range capabilitiesNotSupported {
-		req.VolumeCapabilities = append(req.VolumeCapabilities,
+		req.VolumeCapabilities = append(
+			req.VolumeCapabilities,
 			&csi.VolumeCapability{
 				AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{},

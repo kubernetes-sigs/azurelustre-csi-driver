@@ -28,5 +28,5 @@ DriverInfo:
     singleNodeVolume: false
     topology: false
     multiplePVsSameID: true
-    readWriteOncePod: true
+    readWriteOncePod: false
     capReadOnlyMany: true
