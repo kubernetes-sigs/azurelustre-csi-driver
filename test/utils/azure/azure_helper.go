@@ -58,9 +58,9 @@ func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string
 		managedBy = group.ManagedBy
 	}
 	// Tags for correlating resource groups with prow jobs on testgrid
-	tags["buildID"] = stringPointer(os.Getenv("BUILD_ID"))
-	tags["jobName"] = stringPointer(os.Getenv("JOB_NAME"))
-	tags["creationTimestamp"] = stringPointer(time.Now().UTC().Format(time.RFC3339))
+	tags["buildID"] = new(os.Getenv("BUILD_ID"))
+	tags["jobName"] = new(os.Getenv("JOB_NAME"))
+	tags["creationTimestamp"] = new(time.Now().UTC().Format(time.RFC3339))
 
 	response, err := az.groupsClient.CreateOrUpdate(ctx, name, armresources.ResourceGroup{
 		Name:      &name,
@@ -104,8 +104,4 @@ func getClient(env azure.Environment, subscriptionID string, credential *azident
 	}
 
 	return c
-}
-
-func stringPointer(s string) *string {
-	return &s
 }

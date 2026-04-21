@@ -30,7 +30,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	azfake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	networkfake "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6/fake"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
@@ -175,51 +174,51 @@ func newFakeSkusClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecac
 
 func newResourceSku(resourceType, skuName, location, increment, maximum string, zones []string) *armstoragecache.ResourceSKU {
 	resourceSku := &armstoragecache.ResourceSKU{
-		ResourceType: to.Ptr(resourceType),
+		ResourceType: new(resourceType),
 	}
 	if resourceType == AmlfsSkuResourceType {
-		resourceSku.Name = to.Ptr(skuName)
-		resourceSku.Locations = []*string{to.Ptr(location)}
+		resourceSku.Name = new(skuName)
+		resourceSku.Locations = []*string{new(location)}
 		resourceSku.LocationInfo = []*armstoragecache.ResourceSKULocationInfo{
 			{
-				Location: to.Ptr(location),
+				Location: new(location),
 			},
 		}
 		if zones != nil {
 			zonePointers := make([]*string, 0, len(zones))
 			for _, zone := range zones {
-				zonePointers = append(zonePointers, to.Ptr(zone))
+				zonePointers = append(zonePointers, new(zone))
 			}
 			resourceSku.LocationInfo[0].Zones = zonePointers
 		}
 		resourceSku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{
 			{
-				Name:  to.Ptr("OSS capacity increment (TiB)"),
-				Value: to.Ptr(increment),
+				Name:  new("OSS capacity increment (TiB)"),
+				Value: new(increment),
 			},
 			{
-				Name:  to.Ptr("bandwidth increment (MB/s/TiB)"),
-				Value: to.Ptr("500"),
+				Name:  new("bandwidth increment (MB/s/TiB)"),
+				Value: new("500"),
 			},
 			{
-				Name:  to.Ptr("durable"),
-				Value: to.Ptr("True"),
+				Name:  new("durable"),
+				Value: new("True"),
 			},
 			{
-				Name:  to.Ptr("MDS capacity increment (TiB)"),
-				Value: to.Ptr("1024"),
+				Name:  new("MDS capacity increment (TiB)"),
+				Value: new("1024"),
 			},
 			{
-				Name:  to.Ptr("default maximum capacity (TiB)"),
-				Value: to.Ptr(maximum),
+				Name:  new("default maximum capacity (TiB)"),
+				Value: new(maximum),
 			},
 			{
-				Name:  to.Ptr("large cluster maximum capacity (TiB)"),
-				Value: to.Ptr("1024"),
+				Name:  new("large cluster maximum capacity (TiB)"),
+				Value: new("1024"),
 			},
 			{
-				Name:  to.Ptr("large cluster XL maximum capacity (TiB)"),
-				Value: to.Ptr("1024"),
+				Name:  new("large cluster XL maximum capacity (TiB)"),
+				Value: new("1024"),
 			},
 		}
 	}
@@ -395,9 +394,9 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 				VirtualNetworkListUsageResult: armnetwork.VirtualNetworkListUsageResult{
 					Value: []*armnetwork.VirtualNetworkUsage{
 						{
-							ID:           to.Ptr(string(caseMismatchAmlFilesystemSubnetID)),
-							CurrentValue: to.Ptr(float64(expectedUsedIPCount)),
-							Limit:        to.Ptr(float64(expectedTotalIPCount)),
+							ID:           new(string(caseMismatchAmlFilesystemSubnetID)),
+							CurrentValue: new(float64(expectedUsedIPCount)),
+							Limit:        new(float64(expectedTotalIPCount)),
 						},
 					},
 				},
@@ -413,9 +412,9 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 			VirtualNetworkListUsageResult: armnetwork.VirtualNetworkListUsageResult{
 				Value: []*armnetwork.VirtualNetworkUsage{
 					{
-						ID:           to.Ptr(string("other-" + expectedAmlFilesystemName)),
-						CurrentValue: to.Ptr(float64(usedIPCount)),
-						Limit:        to.Ptr(float64(expectedTotalIPCount)),
+						ID:           new(string("other-" + expectedAmlFilesystemName)),
+						CurrentValue: new(float64(usedIPCount)),
+						Limit:        new(float64(expectedTotalIPCount)),
 					},
 				},
 			},
@@ -424,14 +423,14 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 			VirtualNetworkListUsageResult: armnetwork.VirtualNetworkListUsageResult{
 				Value: []*armnetwork.VirtualNetworkUsage{
 					{
-						ID:           to.Ptr(string("another" + expectedAmlFilesystemSubnetID)),
-						CurrentValue: to.Ptr(float64(usedIPCount)),
-						Limit:        to.Ptr(float64(expectedTotalIPCount)),
+						ID:           new(string("another" + expectedAmlFilesystemSubnetID)),
+						CurrentValue: new(float64(usedIPCount)),
+						Limit:        new(float64(expectedTotalIPCount)),
 					},
 					{
-						ID:           to.Ptr(string(expectedAmlFilesystemSubnetID)),
-						CurrentValue: to.Ptr(float64(usedIPCount)),
-						Limit:        to.Ptr(float64(expectedTotalIPCount)),
+						ID:           new(string(expectedAmlFilesystemSubnetID)),
+						CurrentValue: new(float64(usedIPCount)),
+						Limit:        new(float64(expectedTotalIPCount)),
 					},
 				},
 			},
@@ -472,7 +471,7 @@ func newFakeManagementServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.Ma
 		}
 		resp.SetResponse(http.StatusOK, armstoragecache.ManagementClientGetRequiredAmlFSSubnetsSizeResponse{
 			RequiredAmlFilesystemSubnetsSize: armstoragecache.RequiredAmlFilesystemSubnetsSize{
-				FilesystemSubnetSize: to.Ptr(int32(expectedAmlFilesystemSubnetSize)),
+				FilesystemSubnetSize: new(int32(expectedAmlFilesystemSubnetSize)),
 			},
 		}, nil)
 		return resp, errResp
@@ -578,11 +577,11 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 
 	fakeAmlfsServer.BeginCreateOrUpdate = func(_ context.Context, _, amlFilesystemName string, amlFilesystem armstoragecache.AmlFilesystem, _ *armstoragecache.AmlFilesystemsClientBeginCreateOrUpdateOptions) (azfake.PollerResponder[armstoragecache.AmlFilesystemsClientCreateOrUpdateResponse], azfake.ErrorResponder) {
 		recorder.recordFakeCall()
-		amlFilesystem.Name = to.Ptr(amlFilesystemName)
+		amlFilesystem.Name = new(amlFilesystemName)
 		amlFilesystem.Properties.ClientInfo = &armstoragecache.AmlFilesystemClientInfo{
 			ContainerStorageInterface: (*armstoragecache.AmlFilesystemContainerStorageInterface)(nil),
 			LustreVersion:             (*string)(nil),
-			MgsAddress:                to.Ptr(expectedMgsAddress),
+			MgsAddress:                new(expectedMgsAddress),
 			MountCommand:              (*string)(nil),
 		}
 
@@ -657,14 +656,14 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			errResp.SetError(errors.New("ResourceNotFound"))
 			return resp, errResp
 		}
-		amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeSucceeded)
+		amlFilesystem.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeSucceeded)
 
 		nextFailureBehavior := getNextFailureBehavior(recorder)
 		switch nextFailureBehavior {
 		case clusterIsDeleting:
-			amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeDeleting)
+			amlFilesystem.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeDeleting)
 		case clusterIsFailed:
-			amlFilesystem.Properties.ProvisioningState = to.Ptr(armstoragecache.AmlFilesystemProvisioningStateTypeFailed)
+			amlFilesystem.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeFailed)
 		}
 
 		if amlFilesystemName == clusterGetRetryCheckFailureName {
