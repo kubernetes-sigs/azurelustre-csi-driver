@@ -90,7 +90,7 @@ func (d *Driver) NodePublishVolume(
 
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
-	mountOptions, readOnly := getMountOptions(req, userMountFlags)
+	mountOptions, readOnly := getMountOptions(req, userMountFlags, d.lustreCapabilities.SupportsUniqueFsid())
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
 		interpolatedSubDir := interpolateSubDirVariables(context, vol)
@@ -207,13 +207,17 @@ func interpolateSubDirVariables(context map[string]string, vol *lustreVolume) st
 	return interpolatedSubDir
 }
 
-func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string) ([]string, bool) {
+func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string, supportsUniqueFsid bool) ([]string, bool) {
 	readOnly := false
 	mountOptions := []string{}
 	if req.GetReadonly() {
 		readOnly = true
 		mountOptions = append(mountOptions, "ro")
 	}
+
+	userRequestedUniqueFsid := false
+	userDisabledUniqueFsid := false
+
 	for _, userMountFlag := range userMountFlags {
 		if userMountFlag == "ro" {
 			readOnly = true
@@ -222,8 +226,34 @@ func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string)
 				continue
 			}
 		}
+		// Handle unique_fsid user overrides:
+		// - "unique_fsid": user explicitly wants it (don't add a duplicate)
+		// - "no_unique_fsid": user explicitly disables it (strip this sentinel,
+		//   don't auto-add unique_fsid)
+		if userMountFlag == "unique_fsid" {
+			userRequestedUniqueFsid = true
+		}
+		if userMountFlag == "no_unique_fsid" {
+			userDisabledUniqueFsid = true
+			continue // strip sentinel — not a real mount option
+		}
 		mountOptions = append(mountOptions, userMountFlag)
 	}
+
+	// Warn if user explicitly requested unique_fsid on an unsupported Lustre version
+	if userRequestedUniqueFsid && !supportsUniqueFsid {
+		klog.Warningf("user requested unique_fsid mount option but Lustre module may not support it (requires >= %d.%d.%d); mount may fail",
+			uniqueFsidMinMajor, uniqueFsidMinMinor, uniqueFsidMinPatch)
+	}
+
+	// Auto-inject unique_fsid when:
+	// 1. User didn't explicitly disable it (no_unique_fsid)
+	// 2. User didn't already request it (avoid duplicates)
+	// 3. The loaded Lustre module supports it (>= 2.15.8)
+	if !userDisabledUniqueFsid && !userRequestedUniqueFsid && supportsUniqueFsid {
+		mountOptions = append(mountOptions, "unique_fsid")
+	}
+
 	return mountOptions, readOnly
 }
 
@@ -383,10 +413,16 @@ func unmountVolumeAtPath(d *Driver, targetPath string) error {
 // calling GetDeviceMountRefs(deviceMountPath) around line 947.
 //
 // All Lustre mounts on a system, no matter where in the lustrefs they are
-// mounted to, all have '/' as the root and they all have the same major and
-// minor device numbers, so as far as this check is concerned, every lustre
-// mount is the same device, even though individual Lustre mount points can
-// be unmounted without affecting others and should not be a concern.
+// mounted to, historically all have '/' as the root and they all have the same
+// major and minor device numbers. This causes kubelet to treat every Lustre
+// mount as the same device, blocking unmount of one volume while another
+// volume's mount exists on the same node.
+//
+// The unique_fsid mount option (Lustre >= 2.15.8) fixes this at the kernel
+// level by assigning unique device numbers per mount. When unique_fsid is
+// available and enabled (the default for >= 2.15.8), this staging limitation
+// no longer applies. However, NodeStageVolume remains unimplemented until
+// the CSI driver is validated with per-volume staging end-to-end.
 //
 // With a single Lustre volume mount, this works fine. It stages to a
 // globalpath dir, pods can bind mount into that, and when the last pod is
