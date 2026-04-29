@@ -19,7 +19,7 @@ Starting with v0.4.0, the driver ships separate images per Ubuntu distribution: 
 | Driver version | Image | Supported k8s version | Lustre client version |
 | -------------- | ----- | --------------------- | --------------------- |
 | main branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble | 1.21+ | 2.15.7 (jammy) / 2.16.1 (noble) |
-| development branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble | 1.21+ | 2.15.8 (jammy) / 2.16.1 (noble) |
+| development branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble | 1.21+ | 2.15.8¹ (jammy) / 2.16.1 (noble) |
 | v0.4.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble | 1.21+ | 2.15.7 |
 | v0.3.1 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.1 | 1.21+ | 2.15.7 |
 | v0.3.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0 | 1.21+ | 2.15.5 |
@@ -29,6 +29,8 @@ Starting with v0.4.0, the driver ships separate images per Ubuntu distribution: 
 | v0.1.15 | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.15 | 1.21+ | 2.15.4 |
 | v0.1.14 | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.14 | 1.21+ | 2.15.3 |
 | v0.1.11 | mcr.microsoft.com/oss/kubernetes-csi/azurelustre-csi:v0.1.11 | 1.21+ | 2.15.1 |
+
+¹ Lustre 2.15.8 introduces the `unique_fsid` mount option, automatically enabled by the driver. This gives each volume mount its own filesystem ID, allowing Kubernetes to properly manage multiple Lustre volumes on a single node. See [driver-parameters.md](docs/driver-parameters.md#unique-filesystem-id-unique_fsid) for details.
 
 &nbsp;
 
