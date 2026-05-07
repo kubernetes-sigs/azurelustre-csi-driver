@@ -1,11 +1,12 @@
+---
 name: Linux Tests
 
 # Controls when the workflow will run
 on:
   pull_request:
-    branches: [ main, development ]
+    branches: [main, development]
   push:
-    branches: [ main, development ]
+    branches: [main, development]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -22,38 +23,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      with:
-        persist-credentials: false
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
-    - name: Set up Go 1.x
-      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
-      with:
-        go-version-file: 'go.mod'
-      id: go
+      - name: Set up Go 1.x
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+        with:
+          go-version-file: 'go.mod'
+        id: go
 
-    - name: Run unit test
-      run: |
+      - name: Run unit test
+        run: |
 
-        export PATH=$PATH:$HOME/.local/bin
-        sudo apt-get update
-        make verify
+          export PATH=$PATH:$HOME/.local/bin
+          sudo apt-get update
+          make verify
 
-    - name: Run build test
-      run: |
-        export PATH=$PATH:$HOME/.local/bin
-        make
+      - name: Run build test
+        run: |
+          export PATH=$PATH:$HOME/.local/bin
+          make
 
-    - name: Make container test
-      run: |
-        export PATH=$PATH:$HOME/.local/bin
-        make container
+      - name: Make container test
+        run: |
+          export PATH=$PATH:$HOME/.local/bin
+          make container
 
-    - name: Install goveralls
-      run: go install github.com/mattn/goveralls@b03136803f261ccad7d5a40b19b25870a394578f  # v0.0.12
+      - name: Install goveralls
+        run: go install github.com/mattn/goveralls@b03136803f261ccad7d5a40b19b25870a394578f  # v0.0.12
 
-    - name: Get code coverage
-      env:
-        COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: goveralls -coverprofile=profile.cov -service=github
+      - name: Get code coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goveralls -coverprofile=profile.cov -service=github

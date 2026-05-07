@@ -34,8 +34,46 @@ $ make verify
 
 - Build container image and push to ACR
 
+Set up a personal ACR if you don't have one (one-time):
+
 ```console
-$ REGISTRY="<acr-name>.azurecr.io" make build-push-latest
+$ az group create --name <alias>-csi-infra --location <region> --subscription <subscription>
+$ az acr create --name <alias>csiacr --resource-group <alias>-csi-infra --sku Basic --tags owner=<alias>
+```
+
+Log in before pushing:
+
+```console
+$ az acr login --name <alias>csiacr
+```
+
+Build and push images:
+
+```console
+$ REGISTRY="<alias>csiacr.azurecr.io" make build-push-latest
+```
+
+This pushes flavor-suffixed tags (e.g., `latest-jammy`, `latest-noble`), not just an
+unsuffixed `:latest`.
+
+To build for ARM64 (noble only — jammy doesn't support ARM64):
+
+```console
+$ sudo apt install gcc-aarch64-linux-gnu                         # one-time: install cross-compiler
+$ docker run --privileged --rm tonistiigi/binfmt --install arm64 # one-time: enable arm64 emulation for Docker
+$ REGISTRY="<alias>csiacr.azurecr.io" make build-push-latest ARCH=arm64
+```
+
+> **Note:** The `azurelustre-csi-integration` repository on team ACRs (e.g.,
+> `tip5csiacr`) is reserved for CI builds. Don't push to it manually.
+
+Optionally, set up a purge task to avoid storage costs from old images:
+
+```console
+$ az acr task create --name purge-old-images \
+    --registry <alias>csiacr --resource-group <alias>-csi-infra \
+    --cmd "acr purge --filter 'azurelustre-csi:.*' --ago 30d --untagged" \
+    --schedule "0 4 * * 0" --context /dev/null
 ```
 
 &nbsp;

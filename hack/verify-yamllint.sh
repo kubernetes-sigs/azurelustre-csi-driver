@@ -29,12 +29,12 @@ deployDirNum=`find ./deploy/ -maxdepth 1 -type f -name '*.yaml' ! -name 'kustomi
 #   exit 1
 # fi
 
-for path in $(find docs deploy -name '*.yaml')
+for path in $(find docs deploy test .github/workflows -name '*.yaml' -o -name '*.yml') .golangci.yaml .yamllint.yaml
 do
     echo "checking yamllint under path: $path ..."
-    yamllint -f parsable $path | grep -v "line too long" > $LOG
+    yamllint -f parsable $path > $LOG
     cat $LOG
-    linecount=`cat $LOG | grep -v "line too long" | wc -l`
+    linecount=`cat $LOG | wc -l`
     if [ $linecount -gt 0 ]; then
         echo "yaml files under $path are not linted, failed with: "
         cat $LOG

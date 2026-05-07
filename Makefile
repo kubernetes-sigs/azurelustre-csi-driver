@@ -15,49 +15,29 @@
 PKG = sigs.k8s.io/azurelustre-csi-driver
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= azurelustre.azurecr.io
-REGISTRY_NAME ?= $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
-TARGET ?= csi
-IMAGE_NAME ?= azurelustre-$(TARGET)
+IMAGE_NAME = azurelustre-csi
 IMAGE_VERSION ?= latest
-CLOUD ?= AzurePublicCloud
-# Use a custom version for E2E tests if we are in Prow
-ifdef CI
-ifndef PUBLISH
-override IMAGE_VERSION := e2e-$(GIT_COMMIT)
-endif
-endif
 IMAGE_TAG ?= $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
-IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
+LATEST_TAG ?= latest
+IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG)
+COMMIT_TAG ?= $(LATEST_TAG)-$(GIT_COMMIT)
+IMAGE_TAG_COMMIT = $(REGISTRY)/$(IMAGE_NAME):$(COMMIT_TAG)
 BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS ?= "-X ${PKG}/pkg/azurelustre.driverVersion=${IMAGE_VERSION} -X ${PKG}/pkg/azurelustre.gitCommit=${GIT_COMMIT} -X ${PKG}/pkg/azurelustre.buildDate=${BUILD_DATE} -s -w -extldflags '-static'"
-E2E_HELM_OPTIONS ?= --set image.azurelustre.pullPolicy=Always --set image.azurelustre.repository=$(REGISTRY)/$(IMAGE_NAME) --set image.azurelustre.tag=$(IMAGE_VERSION) --set driver.userAgentSuffix="e2e-test"
-ifdef ENABLE_AZURELUSTRE
-override E2E_HELM_OPTIONS := $(E2E_HELM_OPTIONS) --set controller.logLevel=6 --set node.logLevel=6
-endif
-E2E_HELM_OPTIONS += ${EXTRA_HELM_OPTIONS}
 GINKGO_FLAGS = -ginkgo.v
 GO111MODULE = on
 GOPATH ?= $(shell go env GOPATH)
 GOBIN ?= $(GOPATH)/bin
 CGO_ENABLED ?= 1
-DOCKER_CLI_EXPERIMENTAL = enabled
-export GOPATH GOBIN GO111MODULE DOCKER_CLI_EXPERIMENTAL CGO_ENABLED
+export GOPATH GOBIN GO111MODULE CGO_ENABLED
 
-# The current context of image building
-# The architecture of the image
 ARCH ?= amd64
-# Output type of docker buildx build
-OUTPUT_TYPE ?= registry
 
-ALL_ARCH.linux = amd64 #arm64
-ALL_OS_ARCH = $(foreach arch, ${ALL_ARCH.linux}, linux-$(arch))
-
-ifeq ($(TARGET), csi)
-build_lustre_source_code = azurelustre
-dockerfile = ./pkg/azurelustreplugin/Dockerfile
-else
-build_lustre_source_code = $()
-dockerfile = ./pkg/driverinstaller/Dockerfile_$(TARGET)
+# Cross-compilation: set the C compiler for arm64 builds so CGO_ENABLED=1
+# works on amd64 hosts (required for GOEXPERIMENT=systemcrypto / FIPS).
+ifeq ($(ARCH),arm64)
+  CC := aarch64-linux-gnu-gcc
+  export CC
 endif
 
 all: azurelustre
@@ -81,10 +61,6 @@ sanity-test: azurelustre
 sanity-test-local:
 	go test -v -timeout=30m ./test/sanity_local -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should fail when the requested volume does not exist"
 
-.PHONY: integration-test
-integration-test: azurelustre
-	go test -v -timeout=30m ./test/integration
-
 .PHONY: e2e-test
 e2e-test:
 	if [ ! -z "$(EXTERNAL_E2E_TEST_AZURELUSTRE)" ]; then \
@@ -92,24 +68,6 @@ e2e-test:
 	else \
 		go test -v -timeout=0 ./test/e2e ${GINKGO_FLAGS};\
 	fi
-
-.PHONY: e2e-bootstrap
-e2e-bootstrap: install-helm
-	# Only build and push the image if it does not exist in the registry
-	docker pull $(IMAGE_TAG) || make azurelustre-container push
-	helm install azurelustre-csi-driver ./charts/latest/azurelustre-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
-		--set controller.runOnMaster=true \
-		--set controller.replicas=1 \
-		--set cloud=$(CLOUD) \
-		$(E2E_HELM_OPTIONS)
-
-.PHONY: install-helm
-install-helm:
-	curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
-
-.PHONY: e2e-teardown
-e2e-teardown:
-	helm delete azurelustre-csi-driver --namespace kube-system
 
 #
 # Azure Lustre: Code build
@@ -129,57 +87,64 @@ azurelustre-dalec:
 #
 # Azure Lustre: Docker build
 #
+# Jammy is amd64-only. Noble supports amd64 and arm64.
+.PHONY: docker-build
+docker-build:
+ifeq ($(ARCH),amd64)
+	docker build --platform=linux/amd64 -t $(IMAGE_TAG)-jammy --build-arg srcImage=ubuntu:22.04 --output=type=docker -f ./pkg/azurelustreplugin/Dockerfile .
+endif
+	docker build --platform=linux/$(ARCH) -t $(IMAGE_TAG)-noble --build-arg srcImage=ubuntu:24.04 --output=type=docker -f ./pkg/azurelustreplugin/Dockerfile .
 .PHONY: quickcontainer
-quickcontainer: quicklustre
-	docker build -t $(IMAGE_TAG)-jammy --build-arg srcImage=ubuntu:22.04 --output=type=docker -f $(dockerfile) .
-	docker build -t $(IMAGE_TAG)-noble --build-arg srcImage=ubuntu:24.04 --output=type=docker -f $(dockerfile) .
+quickcontainer: quicklustre docker-build
 .PHONY: container
-container: $(build_lustre_source_code)
-	docker build -t $(IMAGE_TAG)-jammy --build-arg srcImage=ubuntu:22.04 --output=type=docker -f $(dockerfile) .
-	docker build -t $(IMAGE_TAG)-noble --build-arg srcImage=ubuntu:24.04 --output=type=docker -f $(dockerfile) .
-
-.PHONY: container-linux
-container-linux:
-	docker buildx build --pull --output=type=$(OUTPUT_TYPE) --platform="linux/$(ARCH)" \
-		-t $(IMAGE_TAG)-linux-$(ARCH) --build-arg ARCH=$(ARCH) -f $(dockerfile) .
-
-.PHONY: azurelustre-container
-azurelustre-container:
-	docker buildx rm container-builder || true
-	docker buildx create --use --name=container-builder
-
-	# enable qemu for arm64 build
-	# docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	for arch in $(ALL_ARCH.linux); do \
-		ARCH=$${arch} $(MAKE) azurelustre; \
-		ARCH=$${arch} $(MAKE) container-linux; \
-	done
+container: azurelustre docker-build
 
 #
-# Azure Lustre: Docker push
+# Azure Lustre: Docker tag & push
 #
 .PHONY: push
 push:
-ifdef CI
-	docker manifest create --amend $(IMAGE_TAG) $(foreach osarch, $(ALL_OS_ARCH), $(IMAGE_TAG)-${osarch})
-	docker manifest push --purge $(IMAGE_TAG)
-	docker manifest inspect $(IMAGE_TAG)
-else
+ifeq ($(ARCH),amd64)
 	docker push $(IMAGE_TAG)-jammy
-	docker push $(IMAGE_TAG)-noble
 endif
+	docker push $(IMAGE_TAG)-noble
+
+.PHONY: tag-latest
+tag-latest:
+ifeq ($(ARCH),amd64)
+	docker tag $(IMAGE_TAG)-jammy $(IMAGE_TAG_LATEST)-jammy
+endif
+	docker tag $(IMAGE_TAG)-noble $(IMAGE_TAG_LATEST)-noble
 
 .PHONY: push-latest
-push-latest:
-ifdef CI
-	docker manifest create --amend $(IMAGE_TAG_LATEST) $(foreach osarch, $(ALL_OS_ARCH), $(IMAGE_TAG)-${osarch})
-	docker manifest push --purge $(IMAGE_TAG_LATEST)
-	docker manifest inspect $(IMAGE_TAG_LATEST)
-else
-	docker tag $(IMAGE_TAG)-jammy $(IMAGE_TAG_LATEST)-jammy
-	docker tag $(IMAGE_TAG)-noble $(IMAGE_TAG_LATEST)-noble
+push-latest: tag-latest
+ifeq ($(ARCH),amd64)
 	docker push $(IMAGE_TAG_LATEST)-jammy
+endif
 	docker push $(IMAGE_TAG_LATEST)-noble
+
+.PHONY: tag-commit
+tag-commit: tag-latest
+ifeq ($(ARCH),amd64)
+	docker tag $(IMAGE_TAG_LATEST)-jammy $(IMAGE_TAG_COMMIT)-jammy
+endif
+	docker tag $(IMAGE_TAG_LATEST)-noble $(IMAGE_TAG_COMMIT)-noble
+
+.PHONY: push-commit
+push-commit: tag-commit
+ifeq ($(ARCH),amd64)
+	docker push $(IMAGE_TAG_COMMIT)-jammy
+endif
+	docker push $(IMAGE_TAG_COMMIT)-noble
+
+# Print the list of image flavors built for the current ARCH.
+# Used by CI pipelines to discover flavors without parsing Makefile variables.
+.PHONY: print-flavors
+print-flavors:
+ifeq ($(ARCH),amd64)
+	@echo jammy noble
+else
+	@echo noble
 endif
 
 .PHONY: build-push
@@ -191,22 +156,14 @@ build-push-quick: quickcontainer push
 .PHONY: build-push-latest
 build-push-latest: container push-latest
 
+.PHONY: build-push-latest-commit
+build-push-latest-commit: container push-latest push-commit
+
 .PHONY: build-push-quick-latest
 build-push-quick-latest: quickcontainer push-latest
-
-#
-# IOR: docker build & publish
-#
-.PHONY: ior
-ior:
-	docker build -t $(REGISTRY)/ior:latest --output=type=docker -f ./test/ior/Dockerfile .
-	# docker build -t $(REGISTRY)/ior:latest -f ./test/ior/Dockerfile .
-
-.PHONY: push-ior
-push-ior:
-	docker push $(REGISTRY)/ior:latest
 
 .PHONY: clean
 clean:
 	go clean -r -x
 	-rm -rf _output
+	-rm -f profile.cov
