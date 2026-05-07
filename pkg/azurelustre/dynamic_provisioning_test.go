@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -938,25 +939,29 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Err_Timeout(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
 
-	recorder := newMockAmlfsRecorder([]string{})
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
-	cancel()
+		recorder := newMockAmlfsRecorder([]string{})
+		dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+		// Use 1.5x the poll frequency so the deadline expires between poll ticks
+		// rather than coinciding with one. Aligning with a tick creates a select
+		// race between time.After and ctx.Done in the SDK's Delay helper.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*quickPollFrequency/2)
+		defer cancel()
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(ctx, &AmlFilesystemProperties{
-		ResourceGroupName: expectedResourceGroupName,
-		AmlFilesystemName: expectedAmlFilesystemName,
-		SubnetInfo:        buildExpectedSubnetInfo(),
+		_, err := dynamicProvisioner.CreateAmlFilesystem(ctx, &AmlFilesystemProperties{
+			ResourceGroupName: expectedResourceGroupName,
+			AmlFilesystemName: expectedAmlFilesystemName,
+			SubnetInfo:        buildExpectedSubnetInfo(),
+		})
+		require.Error(t, err)
+		grpcStatus, ok := status.FromError(err)
+		require.True(t, ok, "error should be a gRPC status, got: %v", err)
+		assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
+		require.ErrorContains(t, err, "context deadline exceeded")
 	})
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	require.True(t, ok)
-	assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
-	require.ErrorContains(t, err, "context deadline exceeded")
-	assert.Empty(t, recorder.recordedAmlfsConfigurations)
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForClusterCreateTimeout(t *testing.T) {
@@ -1245,20 +1250,32 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_NilCLient(t *testing.T) {
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_Err_Timeout(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
 
-	recorder := newMockAmlfsRecorder([]string{})
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
+		recorder := newMockAmlfsRecorder([]string{})
+		dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
-	cancel()
-	err := dynamicProvisioner.DeleteAmlFilesystem(ctx, expectedResourceGroupName, expectedAmlFilesystemName)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	require.True(t, ok)
-	assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
-	require.ErrorContains(t, err, "context deadline exceeded")
+		_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+			ResourceGroupName: expectedResourceGroupName,
+			AmlFilesystemName: expectedAmlFilesystemName,
+			SubnetInfo:        buildExpectedSubnetInfo(),
+		})
+		require.NoError(t, err)
+
+		// Use 1.5x the poll frequency so the deadline expires between poll ticks
+		// rather than coinciding with one. Aligning with a tick creates a select
+		// race between time.After and ctx.Done in the SDK's Delay helper.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*quickPollFrequency/2)
+		defer cancel()
+		err = dynamicProvisioner.DeleteAmlFilesystem(ctx, expectedResourceGroupName, expectedAmlFilesystemName)
+		require.Error(t, err)
+		grpcStatus, ok := status.FromError(err)
+		require.True(t, ok, "error should be a gRPC status, got: %v", err)
+		assert.Equal(t, codes.DeadlineExceeded, grpcStatus.Code())
+		require.ErrorContains(t, err, "context deadline exceeded")
+	})
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_Err_ImmediateFailure(t *testing.T) {
