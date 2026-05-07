@@ -16,3 +16,38 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "development"
+    labels:
+      - "dependencies"
+      - "go"
+    ignore:
+      # k8s.io staging modules use replace directives in go.mod that
+      # dependabot cannot update. Bumping require without updating
+      # replace produces a broken build. Handle these manually with
+      # hack/update-k8s-deps.sh instead.
+      - dependency-name: "k8s.io/*"
+    groups:
+      azure-sdk:
+        patterns:
+          - "github.com/Azure/azure-sdk-for-go/*"
+          - "github.com/Azure/go-autorest/*"
+      csi-libs:
+        patterns:
+          - "github.com/kubernetes-csi/*"
+          - "github.com/container-storage-interface/*"
+      golang-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "github.com/Azure/azure-sdk-for-go/*"
+          - "github.com/Azure/go-autorest/*"
+          - "github.com/kubernetes-csi/*"
+          - "github.com/container-storage-interface/*"
