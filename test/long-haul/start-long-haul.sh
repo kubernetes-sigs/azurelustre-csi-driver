@@ -67,10 +67,44 @@ fi
 
 if [[ -z "${SKIP_CLEANUP:-}" ]]; then
 	print_logs_case "Executing cleanup"
-	sleep 180
+
+	# Clean up resources left behind by test suites.
+	# The sample workload (from fault-test / update-test) may still be running.
+	# Wrap pre-cleanup steps with `|| true` so the cleanup job below always runs;
+	# it's the last-resort full sweep and must not be skipped on a partial failure.
+	print_logs_info "Stopping sample workload if still running"
+	stop_sample_workload || true
+
+	# Clean up external-e2e StorageClass if it still exists.
+	# (External-e2e PVC is deleted by external-e2e/run.sh's EXIT trap.)
+	print_logs_info "Cleaning up external e2e test resources"
+	kubectl delete sc testazurelustre.csi.azure.com --ignore-not-found --wait=true || true
+
+	# Wait for any test PVs to be cleaned up, scoped to the StorageClasses
+	# this suite is known to provision against (sample workload, cleanup job,
+	# external-e2e). Scoping prevents this cleanup from waiting on unrelated
+	# Azure Lustre PVs in shared clusters.
+	# `|| true` on each substitution guards against transient apiserver errors
+	# aborting cleanup under errexit.
+	print_logs_info "Waiting for test PVs to be deleted"
+	test_scs="azurelustre-longhaulsample-sc azurelustre-longhaulcleanup-sc testazurelustre.csi.azure.com"
+	for sc in ${test_scs}; do
+		for pv in $(kubectl get pv -o jsonpath="{.items[?(@.spec.storageClassName==\"${sc}\")].metadata.name}" || true); do
+			kubectl wait --for=delete "pv/${pv}" --timeout=300s || true
+		done
+	done
+
 	kubectl apply -f ./cleanup/cleanupjob.yaml
-	kubectl wait --for=condition=complete job/cleanup
+	# Capture the wait status so the worker Job/PVC gets deleted even when
+	# the cleanup job times out, then re-report the failure so we don't
+	# silently swallow a cleanup that never completed.
+	cleanup_status=0
+	kubectl wait --for=condition=complete job/cleanup --timeout=600s || cleanup_status=$?
 	kubectl delete -f ./cleanup/cleanupjob.yaml
+	if [[ "${cleanup_status}" -ne 0 ]]; then
+		print_logs_error "cleanup job did not complete within 600s"
+		exit 1
+	fi
 else
 	print_logs_case "Skipping cleanup (SKIP_CLEANUP is set)"
 fi
