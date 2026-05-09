@@ -230,5 +230,8 @@ reset_all() {
     stop_sample_workload
     reset_csi_driver
 
+    # Clear node labels left by fault-test.sh. Harmless if unset.
+    kubectl label nodes --all node4faulttest- || true
+
     print_logs_title "RESET ALL End"
 }

@@ -20,6 +20,15 @@ set -o nounset
 
 source ./utils.sh
 
+# Run reset_all on script exit (success or failure) to ensure the cluster is
+# left in a clean state: stops the sample workload and reinstalls the CSI
+# driver, which clears any DaemonSet nodeSelector patches and orphaned pods
+# left behind by the fault injection steps below. The ERR trap continues to
+# fire first (capturing debug output) before the shell exits and runs EXIT.
+# `|| true` keeps a partial cleanup failure (e.g. apiserver hiccup during
+# `stop_sample_workload`) from masking the original error or aborting the
+# rest of the trap under `set -o errexit`.
+trap 'reset_all || true' EXIT
 trap print_debug ERR
 
 print_logs_title "Reset AKS environment and start sample workload"
@@ -178,4 +187,3 @@ else
     print_logs_info "workload pod $workloadPodName has been deleted successfully from node $workloadNodeName"
 fi
 
-reset_all
