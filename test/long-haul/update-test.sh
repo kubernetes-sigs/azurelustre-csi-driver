@@ -62,6 +62,8 @@ if [[ "$kubernetesUpgrades" != "null" ]]; then
 	if [[ ! -z "$latestKubernetesVersion" ]]; then
 		print_logs_info "Upgrading Kubernetes control-plane to version $latestKubernetesVersion"
 		az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
+		print_logs_info "Waiting for control-plane upgrade to fully complete"
+		az aks wait --resource-group "${ResourceGroup}" --name "${ClusterName}" --updated --interval 30 --timeout 1800
 	fi
 else
 	echo "Kubernetes control-plane version is the latest"
@@ -69,9 +71,13 @@ fi
 
 print_logs_info "Upgrading node pool to the latest node image"
 az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only -y
+print_logs_info "Waiting for node image upgrade to fully complete"
+az aks nodepool wait --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}" --updated --interval 30 --timeout 1800
 
 print_logs_info "Upgrading node pool to the latest"
 az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName -y
+print_logs_info "Waiting for node pool upgrade to fully complete"
+az aks nodepool wait --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}" --updated --interval 30 --timeout 1800
 
 print_logs_title "Print versions after"
 print_versions
