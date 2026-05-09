@@ -37,17 +37,33 @@ print_logs_info "Connecting to AKS Cluster=$ClusterName, ResourceGroup=$Resource
 az configure --defaults group=$ResourceGroup
 az aks get-credentials --resource-group $ResourceGroup --name $ClusterName
 
-print_logs_case "Executing fault test"
-./fault-test.sh
+if [[ -z "${SKIP_FAULT_TEST:-}" ]]; then
+	print_logs_case "Executing fault test"
+	./fault-test.sh
+else
+	print_logs_case "Skipping fault test (SKIP_FAULT_TEST is set)"
+fi
 
-print_logs_case "Executing update test"
-./update-test.sh
+if [[ -z "${SKIP_UPDATE_TEST:-}" ]]; then
+	print_logs_case "Executing update test"
+	./update-test.sh
+else
+	print_logs_case "Skipping update test (SKIP_UPDATE_TEST is set)"
+fi
 
-print_logs_case "Executing perf/scale test"
-./perf-scale-test.sh
+if [[ -z "${SKIP_PERF_SCALE_TEST:-}" ]]; then
+	print_logs_case "Executing perf/scale test"
+	./perf-scale-test.sh
+else
+	print_logs_case "Skipping perf/scale test (SKIP_PERF_SCALE_TEST is set)"
+fi
 
-print_logs_case "Executing external e2e test"
-./external-e2e.sh
+if [[ -z "${SKIP_EXTERNAL_E2E_TEST:-}" ]]; then
+	print_logs_case "Executing external e2e test"
+	./external-e2e.sh
+else
+	print_logs_case "Skipping external e2e test (SKIP_EXTERNAL_E2E_TEST is set)"
+fi
 
 print_logs_case "Executing cleanup"
 sleep 180
