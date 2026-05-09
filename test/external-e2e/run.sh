@@ -41,9 +41,45 @@ cat ${sc_file}
 
 clean_up_and_print_logs() {
     echo "clean up"
-    sleep 180
-    kubectl delete -f ${claim_file} --ignore-not-found
-    kubectl delete -f ${sc_file} --ignore-not-found
+
+    # Delete test PVC (from reclaim policy test) and wait for it to be gone
+    kubectl delete -f ${claim_file} --ignore-not-found --wait=true --timeout=300s || true
+
+    # Collect the set of PVs created by this test (filtered by the test
+    # StorageClass) so we can scope VolumeAttachment + PV cleanup to just
+    # those, rather than every Azure Lustre PV in the cluster (which would
+    # also nuke the long-haul sample workload PV if it's running).
+    # `|| true` on the substitution guards against transient apiserver
+    # errors aborting the trap under errexit.
+    test_pvs=$(kubectl get pv -o jsonpath='{.items[?(@.spec.storageClassName=="testazurelustre.csi.azure.com")].metadata.name}' || true)
+
+    # Clean up VolumeAttachments for our test PVs BEFORE attempting PV
+    # deletion -- VolumeAttachments block PV detach/delete, so a stuck VA
+    # would hang each subsequent `kubectl delete pv` for its full timeout.
+    # Skip entirely if no test PVs exist (avoids an empty-string false match
+    # in the substring check below, where empty va_pv against empty test_pvs
+    # would otherwise match the literal "  " pattern).
+    if [[ -n "${test_pvs}" ]]; then
+        for va in $(kubectl get volumeattachment -o jsonpath='{.items[?(@.spec.attacher=="azurelustre.csi.azure.com")].metadata.name}' || true); do
+            va_pv=$(kubectl get volumeattachment "${va}" -o jsonpath='{.spec.source.persistentVolumeName}' || true)
+            if [[ -n "${va_pv}" && " ${test_pvs} " == *" ${va_pv} "* ]]; then
+                echo "Deleting leftover VolumeAttachment: ${va} (PV ${va_pv})"
+                kubectl delete volumeattachment "${va}" --ignore-not-found --timeout=120s || true
+            fi
+        done
+    fi
+
+    # Wait for any PVs created by this test to be cleaned up. These are
+    # cluster-scoped and may linger after PVC deletion if the reclaim
+    # policy is Retain, or if PV deletion is slow.
+    for pv in ${test_pvs}; do
+        echo "Waiting for PV deletion: ${pv}"
+        kubectl delete "pv/${pv}" --ignore-not-found --wait=true --timeout=300s || true
+    done
+
+    # Delete StorageClass used by the tests
+    kubectl delete -f ${sc_file} --ignore-not-found --wait=true || true
+
     echo "print out driver logs ..."
     bash ${REPO_ROOT_PATH}/utils/azurelustre_log.sh
 }
