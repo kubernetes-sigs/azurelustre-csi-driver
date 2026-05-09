@@ -63,9 +63,10 @@ reset_csi_driver () {
     kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node-jammy.yaml
     kubectl apply -f $REPO_ROOT_PATH/deploy/csi-azurelustre-node-noble.yaml
 
-    kubectl wait pod -n kube-system --for=condition=Ready --selector='app in (csi-azurelustre-controller,csi-azurelustre-node)' --timeout=600s
-
-    sleep 60
+    # Wait for new generation of pods to roll out (avoids racing on stale pod snapshots)
+    kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
+    kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
+    kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
 }
 
 get_worker_node_num () {
@@ -169,7 +170,6 @@ start_sample_workload () {
         print_logs_error "Failed to start sample workload"
         print_debug
     fi
-    sleep 15
 }
 
 stop_sample_workload () {
@@ -225,7 +225,6 @@ print_debug() {
 }
 
 reset_all() {
-    sleep 15
     print_logs_title "RESET ALL Start"
 
     stop_sample_workload
