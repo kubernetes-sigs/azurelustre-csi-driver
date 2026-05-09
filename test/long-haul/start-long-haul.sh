@@ -65,10 +65,14 @@ else
 	print_logs_case "Skipping external e2e test (SKIP_EXTERNAL_E2E_TEST is set)"
 fi
 
-print_logs_case "Executing cleanup"
-sleep 180
-kubectl apply -f ./cleanup/cleanupjob.yaml
-kubectl wait --for=condition=complete job/cleanup
-kubectl delete -f ./cleanup/cleanupjob.yaml
+if [[ -z "${SKIP_CLEANUP:-}" ]]; then
+	print_logs_case "Executing cleanup"
+	sleep 180
+	kubectl apply -f ./cleanup/cleanupjob.yaml
+	kubectl wait --for=condition=complete job/cleanup
+	kubectl delete -f ./cleanup/cleanupjob.yaml
+else
+	print_logs_case "Skipping cleanup (SKIP_CLEANUP is set)"
+fi
 
 print_logs_case "Test suites executed successfully"
