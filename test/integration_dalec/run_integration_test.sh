@@ -54,7 +54,18 @@ nohup 2>&1 /app/azurelustreplugin --v=5 \
               --enable-azurelustre-mock-mount \
 	      --nodeid=integrationtestnode >csi.log &
 
-sleep 5
+# Wait for the CSI socket to be created
+for _ in $(seq 1 30); do
+    if [[ -S /csi/csi.sock ]]; then
+        break
+    fi
+    sleep 1
+done
+
+if [[ ! -S /csi/csi.sock ]]; then
+    echo "ERROR: CSI socket /csi/csi.sock did not appear within 30s" >&2
+    exit 1
+fi
 
 echo "====: $(date -u) Exiting integration test"
 export X_CSI_DEBUG=true
@@ -64,7 +75,6 @@ value="$(csc controller new --endpoint "${endpoint}" \
                             "${volname}" \
                             --req-bytes "${volsize}" \
                             --params fs-name=lustrefs,mgs-ip-address="${lustre_fs_ip}")"
-sleep 5
 
 volumeid="$(echo "$value" | awk '{print $1}' | sed 's/"//g')"
 echo "====: $(date -u) Volume ID is $volumeid"
@@ -74,17 +84,15 @@ csc controller validate-volume-capabilities --endpoint "${endpoint}" \
                                             --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                                             "$volumeid"
 
-echo "====: $(date -u) stats test:"
-csc node stats --endpoint "${endpoint}" "${volumeid}:${target_path}"
-sleep 2
-
 echo "====: $(date -u) Node publish volume test:"  # Requires routng to amlfs
 csc node publish --endpoint "${endpoint}" \
                  --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                  --target-path "${target_path}" \
                  --vol-context "fs-name=lustrefs,mgs-ip-address=${lustre_fs_ip}" \
                  "${volumeid}"
-sleep 3
+
+echo "====: $(date -u) stats test:"
+csc node stats --endpoint "${endpoint}" "${volumeid}:${target_path}"
 
 echo "====: $(date -u) Node unpublish volume test:"  # Requires routng to amlfs
 csc node unpublish --endpoint "${endpoint}" \
