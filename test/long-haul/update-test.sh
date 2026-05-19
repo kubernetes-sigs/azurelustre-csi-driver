@@ -23,9 +23,12 @@ source ./utils.sh
 trap print_debug ERR
 
 function print_versions () {
-	# Give extra one minute for daemonset pod to install client modules
-	sleep 90
-	
+	# Wait for CSI driver workloads to be Ready (readiness probe validates that
+	# Lustre client modules are installed and LNet is operational on nodes).
+	kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
+	kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
+	kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
+
 	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
 	currentNodeImageVersion=$(echo $nodepool | jq -r '.nodeImageVersion')
 
@@ -92,7 +95,10 @@ then
 fi
 
 print_logs_title "Start and verify sample workload"
-sleep 60
+# Ensure CSI driver is fully ready after upgrade before starting workload
+kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
+kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
+kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
 
 start_sample_workload
 
