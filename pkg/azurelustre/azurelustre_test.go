@@ -29,6 +29,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -728,4 +729,30 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestAddControllerServiceCapabilities(t *testing.T) {
+	d := NewFakeDriver()
+	cl := []csi.ControllerServiceCapability_RPC_Type{csi.ControllerServiceCapability_RPC_UNKNOWN}
+	d.AddControllerServiceCapabilities(cl)
+	assert.Len(t, d.Cap, 1)
+	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().GetType())
+}
+
+func TestAddNodeServiceCapabilities(t *testing.T) {
+	d := NewFakeDriver()
+
+	nl := []csi.NodeServiceCapability_RPC_Type{csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER}
+	d.AddNodeServiceCapabilities(nl)
+	assert.Len(t, d.NSCap, 1)
+	assert.Equal(t, csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER, d.NSCap[0].GetRpc().GetType())
+}
+
+func TestAddVolumeCapabilityAccessModes(t *testing.T) {
+	d := NewFakeDriver()
+
+	vc := []csi.VolumeCapability_AccessMode_Mode{csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
+	d.AddVolumeCapabilityAccessModes(vc)
+	assert.Len(t, d.VC, 1)
+	assert.Equal(t, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, d.VC[0].GetMode())
 }

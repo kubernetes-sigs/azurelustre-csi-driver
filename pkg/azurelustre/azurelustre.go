@@ -38,7 +38,6 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
@@ -127,12 +126,21 @@ type LustreSkuValue struct {
 	AvailableZones []string
 }
 
+type CSIDriver struct {
+	Name    string
+	NodeID  string
+	Version string
+	Cap     []*csi.ControllerServiceCapability
+	VC      []*csi.VolumeCapability_AccessMode
+	NSCap   []*csi.NodeServiceCapability
+}
+
 // Driver implements all interfaces of CSI drivers
 type Driver struct {
-	csicommon.CSIDriver
-	csicommon.DefaultIdentityServer
-	csicommon.DefaultControllerServer
-	csicommon.DefaultNodeServer
+	CSIDriver
+	csi.UnimplementedControllerServer
+	csi.UnimplementedNodeServer
+	csi.UnimplementedIdentityServer
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
@@ -160,7 +168,7 @@ type Driver struct {
 	taintRemovalBackoff wait.Backoff
 }
 
-// NewDriver Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
+// NewDriver creates a new Driver. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(options *DriverOptions) *Driver {
 	d := Driver{
@@ -174,10 +182,6 @@ func NewDriver(options *DriverOptions) *Driver {
 	d.Name = options.DriverName
 	d.Version = driverVersion
 	d.NodeID = options.NodeID
-
-	d.DefaultControllerServer.Driver = &d.CSIDriver
-	d.DefaultIdentityServer.Driver = &d.CSIDriver
-	d.DefaultNodeServer.Driver = &d.CSIDriver
 
 	ctx := context.Background()
 
@@ -323,10 +327,38 @@ func (d *Driver) Run(endpoint string, testBool bool) {
 
 	d.removeNotReadyTaintIfNeeded()
 
-	s := csicommon.NewNonBlockingGRPCServer()
+	s := NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
 	s.Start(endpoint, d, d, d, testBool)
 	s.Wait()
+}
+
+func (d *Driver) AddControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) {
+	csc := make([]*csi.ControllerServiceCapability, 0, len(cl))
+
+	for _, c := range cl {
+		klog.Infof("Enabling controller service capability: %v", c.String())
+		csc = append(csc, NewControllerServiceCapability(c))
+	}
+	d.Cap = csc
+}
+
+func (d *Driver) AddNodeServiceCapabilities(nl []csi.NodeServiceCapability_RPC_Type) {
+	nsc := make([]*csi.NodeServiceCapability, 0, len(nl))
+	for _, n := range nl {
+		klog.V(2).Infof("Enabling node service capability: %v", n.String())
+		nsc = append(nsc, NewNodeServiceCapability(n))
+	}
+	d.NSCap = nsc
+}
+
+func (d *Driver) AddVolumeCapabilityAccessModes(vc []csi.VolumeCapability_AccessMode_Mode) {
+	vca := make([]*csi.VolumeCapability_AccessMode, 0, len(vc))
+	for _, c := range vc {
+		klog.Infof("Enabling volume access mode: %v", c.String())
+		vca = append(vca, NewVolumeCapabilityAccessMode(c))
+	}
+	d.VC = vca
 }
 
 func IsCorruptedDir(dir string) bool {

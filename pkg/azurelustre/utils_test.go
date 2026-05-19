@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package csicommon
+package azurelustre
 
 import (
 	"bytes"
@@ -84,15 +84,12 @@ func TestParseEndpoint(t *testing.T) {
 func TestLogGRPC(t *testing.T) {
 	// SET UP
 	klog.InitFlags(nil)
-	if e := flag.Set("logtostderr", "false"); e != nil {
-		t.Error(e)
-	}
-	if e := flag.Set("alsologtostderr", "false"); e != nil {
-		t.Error(e)
-	}
-	if e := flag.Set("v", "100"); e != nil {
-		t.Error(e)
-	}
+	err := flag.Set("logtostderr", "false")
+	require.NoError(t, err)
+	err = flag.Set("alsologtostderr", "false")
+	require.NoError(t, err)
+	err = flag.Set("v", "100")
+	require.NoError(t, err)
 	flag.Parse()
 
 	buf := new(bytes.Buffer)
@@ -226,8 +223,6 @@ func TestGetLogLevel(t *testing.T) {
 
 	for _, test := range tests {
 		level := getLogLevel(test.method)
-		if level != test.level {
-			t.Errorf("returned level: (%v), expected level: (%v)", level, test.level)
-		}
+		assert.Equal(t, test.level, level, "returned level for %s", test.method)
 	}
 }

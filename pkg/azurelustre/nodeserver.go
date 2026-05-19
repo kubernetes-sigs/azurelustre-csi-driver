@@ -411,14 +411,14 @@ func unmountVolumeAtPath(d *Driver, targetPath string) error {
 // to the Lustre cluster as you've ever staged, but without any way to see
 // this other than looking at the mounts on the node or in the kubelet logs.
 func (d *Driver) NodeStageVolume(_ context.Context, _ *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
 }
 
 // Staging and Unstaging is not able to be supported with how Lustre is mounted
 //
 // See NodeStageVolume for more details
 func (d *Driver) NodeUnstageVolume(_ context.Context, _ *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
 }
 
 // NodeGetCapabilities return the capabilities of the Node plugin

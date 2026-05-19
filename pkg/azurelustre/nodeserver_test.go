@@ -1149,3 +1149,21 @@ func TestNewLustreVolume(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeStageVolume(t *testing.T) {
+	d := NewFakeDriver()
+	req := csi.NodeStageVolumeRequest{}
+	resp, err := d.NodeStageVolume(context.Background(), &req)
+	assert.Nil(t, resp)
+	require.ErrorContains(t, err, "not implemented")
+	assert.Equal(t, codes.Unimplemented, status.Code(err))
+}
+
+func TestNodeUnstageVolume(t *testing.T) {
+	d := NewFakeDriver()
+	req := csi.NodeUnstageVolumeRequest{}
+	resp, err := d.NodeUnstageVolume(context.Background(), &req)
+	assert.Nil(t, resp)
+	require.ErrorContains(t, err, "not implemented")
+	assert.Equal(t, codes.Unimplemented, status.Code(err))
+}
