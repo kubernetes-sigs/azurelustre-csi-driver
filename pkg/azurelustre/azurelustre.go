@@ -146,6 +146,9 @@ type Driver struct {
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks      *volumeLocks
 	kernelModuleLock sync.Mutex
+	// lustreCapabilities detects and caches Lustre module capabilities
+	// (e.g., unique_fsid support). Lazily initialized on first mount.
+	lustreCapabilities *lustreCapabilities
 
 	cloud              *azure.Cloud
 	resourceGroup      string
@@ -170,6 +173,7 @@ func NewDriver(options *DriverOptions) *Driver {
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
 		workingMountDir:              options.WorkingMountDir,
 		removeNotReadyTaint:          options.RemoveNotReadyTaint,
+		lustreCapabilities:           &lustreCapabilities{},
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion

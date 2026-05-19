@@ -823,6 +823,110 @@ func TestNewSafeMounter(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGetMountOptions(t *testing.T) {
+	volumeCap := csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
+
+	tests := []struct {
+		desc               string
+		readOnly           bool
+		userMountFlags     []string
+		supportsUniqueFsid bool
+		expectOptions      []string
+		expectReadOnly     bool
+	}{
+		{
+			desc:               "auto-inject unique_fsid when supported",
+			userMountFlags:     []string{"noatime", "flock"},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"noatime", "flock", "unique_fsid"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "no unique_fsid when unsupported",
+			userMountFlags:     []string{"noatime", "flock"},
+			supportsUniqueFsid: false,
+			expectOptions:      []string{"noatime", "flock"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "no_unique_fsid suppresses auto-inject",
+			userMountFlags:     []string{"noatime", "no_unique_fsid"},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"noatime"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "no_unique_fsid stripped even when unsupported",
+			userMountFlags:     []string{"no_unique_fsid", "flock"},
+			supportsUniqueFsid: false,
+			expectOptions:      []string{"flock"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "explicit unique_fsid not duplicated",
+			userMountFlags:     []string{"unique_fsid", "noatime"},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"unique_fsid", "noatime"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "explicit unique_fsid preserved when unsupported",
+			userMountFlags:     []string{"unique_fsid"},
+			supportsUniqueFsid: false,
+			expectOptions:      []string{"unique_fsid"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "conflicting flags — unique_fsid wins over no_unique_fsid",
+			userMountFlags:     []string{"unique_fsid", "no_unique_fsid"},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"unique_fsid"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "read-only with unique_fsid",
+			readOnly:           true,
+			userMountFlags:     []string{"noatime"},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"ro", "noatime", "unique_fsid"},
+			expectReadOnly:     true,
+		},
+		{
+			desc:               "empty user flags with unique_fsid",
+			userMountFlags:     []string{},
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"unique_fsid"},
+			expectReadOnly:     false,
+		},
+		{
+			desc:               "nil user flags with unique_fsid",
+			userMountFlags:     nil,
+			supportsUniqueFsid: true,
+			expectOptions:      []string{"unique_fsid"},
+			expectReadOnly:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			req := &csi.NodePublishVolumeRequest{
+				Readonly: tt.readOnly,
+				VolumeCapability: &csi.VolumeCapability{
+					AccessMode: &volumeCap,
+					AccessType: &csi.VolumeCapability_Mount{
+						Mount: &csi.VolumeCapability_MountVolume{
+							MountFlags: tt.userMountFlags,
+						},
+					},
+				},
+			}
+			options, readOnly := getMountOptions(req, tt.userMountFlags, tt.supportsUniqueFsid)
+			assert.Equal(t, tt.expectOptions, options, "mount options mismatch")
+			assert.Equal(t, tt.expectReadOnly, readOnly, "readOnly mismatch")
+		})
+	}
+}
+
 func TestNodeGetVolumeStats(t *testing.T) {
 	nonexistedPath := "/not/a/real/directory"
 	fakePath := "/tmp/fake-volume-path"

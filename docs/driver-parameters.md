@@ -27,6 +27,35 @@ This mechanism prevents pods requiring Azure Lustre storage from being scheduled
 - CSI driver components are not fully initialized
 - Network connectivity to Lustre filesystems is not established
 
+### Unique Filesystem ID (unique_fsid)
+
+Starting with Lustre client version 2.15.8, the CSI driver automatically adds the `unique_fsid` mount option to all Lustre mounts. This gives each mount its own filesystem ID, allowing Kubernetes to properly distinguish multiple mounts of the same Lustre filesystem on a single node.
+
+**Why this matters:** Without `unique_fsid`, all Lustre mounts of the same filesystem share the same device number (`st_dev`). Kubernetes identifies mounts by `(st_dev, fsroot)`, so it treats all mounts as a single device. This can cause unmount failures when multiple volumes are mounted on the same node, and limits the ability to scale pod density.
+
+**Behavior:**
+
+- **Automatic:** The driver detects the installed Lustre module version at first mount. If the version is >= 2.15.8, `unique_fsid` is added automatically. No user action is required.
+- **Conservative:** If the Lustre version cannot be determined, `unique_fsid` is not added. Existing behavior is preserved.
+- **Opt-out:** To disable auto-injection, add `no_unique_fsid` to the `mountOptions` in your PersistentVolume or StorageClass definition. This is a CSI-driver-level flag that is stripped before reaching the kernel.
+
+**Example — disabling unique_fsid:**
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+spec:
+  mountOptions:
+    - noatime
+    - flock
+    - no_unique_fsid  # Suppresses automatic unique_fsid injection
+  csi:
+    driver: azurelustre.csi.azure.com
+    ...
+```
+
+> **Note:** If the Lustre kernel module is upgraded on a node (e.g., from 2.15.7 to 2.15.8), the CSI driver DaemonSet pod must be restarted for the driver to detect the new version.
+
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
 ### Permissions For Kubelet Identity
