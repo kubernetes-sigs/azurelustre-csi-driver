@@ -33,6 +33,8 @@ This mechanism prevents pods requiring Azure Lustre storage from being scheduled
 
 See [Use a managed identity in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity) for information about configuring your kubelet identity.
 
+Alternatively, you can use [Workload Identity](workload-identity.md) for authentication, which is recommended for AKS clusters and is required for AKS extension support.
+
 The kubelet identity attached to the cluster will require the following permission actions (at the Subscription scope):
 
 ```text
