@@ -1,0 +1,10 @@
+Azure Lustre CSI Driver (latest) installed.
+
+To verify:
+  kubectl -n kube-system get pods -l app.kubernetes.io/instance={{ .Release.Name }} -o wide
+
+CSIDriver object:
+  kubectl get csidriver {{ .Values.csidriver.name }} -o yaml
+
+Uninstall:
+  helm uninstall {{ .Release.Name }} -n kube-system

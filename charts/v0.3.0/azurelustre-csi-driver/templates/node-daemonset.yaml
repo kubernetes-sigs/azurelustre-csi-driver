@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: node
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: node
+        {{- include "azurelustre.labels" . | nindent 8 }}
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      serviceAccountName: {{ include "azurelustre.serviceAccountNameNode" . }}
+      nodeSelector:
+{{ toYaml .Values.node.nodeSelector | indent 8 }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+      priorityClassName: {{ .Values.node.priorityClassName }}
+      tolerations:
+{{ toYaml .Values.node.tolerations | indent 8 }}
+      containers:
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port={{ .Values.sidecars.livenessProbe.node.healthPort }}
+            - --v=2
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+{{ toYaml .Values.sidecars.livenessProbe.resources | indent 12 }}
+        - name: node-driver-registrar
+          image: {{ .Values.sidecars.nodeDriverRegistrar.repository }}:{{ .Values.sidecars.nodeDriverRegistrar.tag }}
+          args:
+            - --csi-address=$(ADDRESS)
+            - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+{{- range $arg := .Values.sidecars.nodeDriverRegistrar.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+          livenessProbe:
+            exec:
+              command:
+                - /csi-node-driver-registrar
+                - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+                - --mode=kubelet-registration-probe
+            initialDelaySeconds: 30
+            timeoutSeconds: 15
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/azurelustre.csi.azure.com/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+{{ toYaml .Values.sidecars.nodeDriverRegistrar.resources | indent 12 }}
+        - name: azurelustre
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "lustre_rmmod"]
+          args:
+{{- range $arg := .Values.node.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+            - --endpoint=$(CSI_ENDPOINT)
+            - --nodeid=$(KUBE_NODE_NAME)
+          ports:
+            - containerPort: {{ .Values.sidecars.livenessProbe.node.healthPort }}
+              name: healthz
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
+              value: {{ ternary "yes" "no" .Values.node.lustreClient.install | quote }}
+            - name: LUSTRE_VERSION
+              value: {{ .Values.node.lustreClient.version | quote }}
+            - name: CLIENT_SHA_SUFFIX
+              value: {{ .Values.node.lustreClient.shaSuffix | quote }}
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: {{ .Values.paths.kubelet }}/
+              name: mountpoint-dir
+              mountPropagation: Bidirectional
+            - mountPath: {{ .Values.paths.kubernetes }}/
+              name: azure-cred
+            - mountPath: {{ .Values.paths.dev }}
+              name: host-dev
+          resources:
+{{ toYaml .Values.node.resources | indent 12 }}
+      volumes:
+        - hostPath:
+            path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
+            type: DirectoryOrCreate
+          name: socket-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+          name: registration-dir
+        - hostPath:
+            path: {{ .Values.paths.kubelet }}/
+            type: Directory
+          name: mountpoint-dir
+        - hostPath:
+            path: {{ .Values.paths.kubernetes }}/
+            type: DirectoryOrCreate
+          name: azure-cred
+        - hostPath:
+            path: {{ .Values.paths.dev }}
+            type: Directory
+          name: host-dev
