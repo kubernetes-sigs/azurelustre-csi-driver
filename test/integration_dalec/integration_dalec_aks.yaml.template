@@ -5,7 +5,7 @@ metadata:
   name: azurelustre-integration-dalec
 spec:
   containers:
-    - name: integration-dalec
+    - name: azurelustre-integration-dalec
       image: ${IMAGE_NAME}
       imagePullPolicy: IfNotPresent
       command: ["bash", "/test/run_integration_test.sh"]

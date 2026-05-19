@@ -583,7 +583,7 @@ kubectl get storageclass <storageclass> -o yaml | grep location
 
 ---
 
-#### Error: CreateVolume Parameter maintenance-time-of-day-utc must be in HH:MM format
+#### Error: CreateVolume Parameter maintenance-time-of-day-utc must be in HH\:MM format
 
 **Symptoms:**
 

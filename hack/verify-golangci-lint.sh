@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 The Kubernetes Authors.
 #
@@ -17,12 +17,13 @@
 set -euo pipefail
 
 if [[ "$(golangci-lint version --short 2>/dev/null)" != "2."* ]]; then
-  echo "Cannot find golangci-lint. Installing golangci-lint..."
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.7.2
-  export PATH=$PATH:$(go env GOPATH)/bin
+  echo "golangci-lint not found or not v2.x. Installing golangci-lint..."
+  gopath=$(go env GOPATH)
+  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "${gopath}/bin" v2.7.2
+  export PATH=${PATH}:"${gopath}/bin"
 fi
 
-echo "Verifying golint"
+echo "Verifying golangci-lint"
 
 golangci-lint run --timeout=10m
 
