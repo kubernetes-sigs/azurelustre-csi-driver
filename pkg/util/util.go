@@ -17,10 +17,13 @@ limitations under the License.
 package util
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -85,6 +88,26 @@ func MakeDir(pathname string) error {
 		}
 	}
 	return nil
+}
+
+type CommandRunnerInterface interface {
+	RunWithTimeout(ctx context.Context, timeout time.Duration, cmd string, args ...string) (string, error)
+}
+
+type DefaultCommandRunner struct {
+	CommandRunnerInterface
+}
+
+func (r *DefaultCommandRunner) RunWithTimeout(ctx context.Context, timeout time.Duration, cmd string, args ...string) (string, error) {
+	cmdTimeout, cmdCancel := context.WithTimeout(ctx, timeout)
+	defer cmdCancel()
+
+	command := exec.CommandContext(cmdTimeout, cmd, args...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return string(output), err
+	}
+	return string(output), nil
 }
 
 // LockMap used to lock on entries

@@ -31,12 +31,41 @@ import (
 	"k8s.io/kubernetes/pkg/volume"
 	mount "k8s.io/mount-utils"
 	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	azcache "sigs.k8s.io/cloud-provider-azure/pkg/cache"
 	"sigs.k8s.io/cloud-provider-azure/pkg/metrics"
 )
 
+// pingCluster used as the getter function for pingCache. Pings the MGS IP address to see if it's reachable.
+// Allows the ping to timeout after 5 seconds to avoid long delays
+func (d *Driver) pingCluster(ctx context.Context, mgsIPAddress string) (interface{}, error) {
+	pingAddr := fmt.Sprintf("%s@tcp", mgsIPAddress)
+	_, err := d.commandRunner.RunWithTimeout(ctx, 5*time.Second, "lnetctl", "ping", pingAddr)
+	if err != nil {
+		klog.Warningf("lnetctl ping to %s failed with error: %v", pingAddr, err)
+		return false, nil
+	}
+	return true, nil
+}
+
+// getCachedClusterPing checks whether the MGS IP address is reachable by looking it up in the pingCache.
+// If not found or expired, it will ping the MGS IP address and update the cache.
+func (d *Driver) getCachedClusterPing(ctx context.Context, mgsIPAddress string) error {
+	cacheData, err := d.pingCache.Get(ctx, mgsIPAddress, azcache.CacheReadTypeDefault)
+	if err != nil {
+		return status.Errorf(codes.Internal, "error getting pingCache value for MGS IP %q: %v", mgsIPAddress, err)
+	}
+	if pinged, ok := cacheData.(bool); !ok {
+		return status.Error(codes.Internal, "type assertion failed for pingCache value")
+	} else if !pinged {
+		return status.Errorf(codes.InvalidArgument,
+			"MGS IP address %q didn't respond to lnetctl ping: Is the cluster IP address correct and the network configured correctly?", mgsIPAddress)
+	}
+	return nil
+}
+
 // NodePublishVolume mount the volume from staging to target path
 func (d *Driver) NodePublishVolume(
-	_ context.Context,
+	ctx context.Context,
 	req *csi.NodePublishVolumeRequest,
 ) (*csi.NodePublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
@@ -64,13 +93,13 @@ func (d *Driver) NodePublishVolume(
 			"Target path not provided")
 	}
 
-	context := req.GetVolumeContext()
-	if context == nil {
+	volumeContext := req.GetVolumeContext()
+	if volumeContext == nil {
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume context must be provided")
 	}
 
-	vol, err := getVolume(volumeID, context)
+	vol, err := getVolume(volumeID, volumeContext)
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +117,20 @@ func (d *Driver) NodePublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
+	if !d.enableAzureLustreMockMount {
+		klog.V(2).Infof("NodePublishVolume: ensuring MGS IP address %s responds to ping before attempting mount", vol.mgsIPAddress)
+		if err := d.getCachedClusterPing(ctx, vol.mgsIPAddress); err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("NodePublishVolume: ping to MGS IP address %s successful", vol.mgsIPAddress)
+	}
+
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
 	mountOptions, readOnly := getMountOptions(req, userMountFlags)
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		interpolatedSubDir := interpolateSubDirVariables(context, vol)
+		interpolatedSubDir := interpolateSubDirVariables(volumeContext, vol)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(

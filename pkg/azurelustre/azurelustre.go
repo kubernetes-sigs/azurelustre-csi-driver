@@ -41,6 +41,7 @@ import (
 	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
+	azcache "sigs.k8s.io/cloud-provider-azure/pkg/cache"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
@@ -151,6 +152,8 @@ type Driver struct {
 	resourceGroup      string
 	location           string
 	dynamicProvisioner DynamicProvisionerInterface
+	commandRunner      util.CommandRunnerInterface
+	pingCache          azcache.Resource
 
 	removeNotReadyTaint bool
 	kubeClient          kubernetes.Interface
@@ -170,6 +173,7 @@ func NewDriver(options *DriverOptions) *Driver {
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
 		workingMountDir:              options.WorkingMountDir,
 		removeNotReadyTaint:          options.RemoveNotReadyTaint,
+		commandRunner:                &util.DefaultCommandRunner{},
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -261,6 +265,10 @@ func NewDriver(options *DriverOptions) *Driver {
 			vnetClient:           vnetClient,
 			skusClient:           skusClient,
 		}
+	}
+
+	if d.pingCache, err = azcache.NewTimedCache(20*time.Second, d.pingCluster, false); err != nil {
+		klog.Fatalf("%v", err)
 	}
 
 	return &d

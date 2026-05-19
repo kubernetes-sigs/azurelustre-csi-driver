@@ -39,6 +39,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	azcache "sigs.k8s.io/cloud-provider-azure/pkg/cache"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
@@ -56,6 +58,7 @@ const (
 	clusterRequestFailureName = "testShouldFail"
 	driverDefaultLocation     = "defaultFakeLocation"
 	emptyZonesLocation        = "emptyZonesLocation"
+	fakeCacheTTL              = 1 * time.Second
 )
 
 func NewFakeDriver() *Driver {
@@ -72,8 +75,37 @@ func NewFakeDriver() *Driver {
 	driver.location = driverDefaultLocation
 	driver.resourceGroup = "defaultFakeResourceGroup"
 	driver.dynamicProvisioner = &FakeDynamicProvisioner{}
+	driver.commandRunner = NewFakeCommandRunner(false)
+
+	getter := func(_ context.Context, _ string) (interface{}, error) {
+		return true, nil
+	}
+
+	driver.pingCache, _ = azcache.NewTimedCache(fakeCacheTTL, getter, false) //nolint:errcheck // TimedCache never returns error here
+	driver.pingCache.Set("key", nil)
 
 	return driver
+}
+
+type FakeCommandRunner struct {
+	util.CommandRunnerInterface
+	CalledCommands []string
+	cmdShouldFail  bool
+}
+
+func NewFakeCommandRunner(shouldFail bool) *FakeCommandRunner {
+	return &FakeCommandRunner{
+		CalledCommands: []string{},
+		cmdShouldFail:  shouldFail,
+	}
+}
+
+func (f *FakeCommandRunner) RunWithTimeout(_ context.Context, _ time.Duration, cmd string, args ...string) (string, error) {
+	f.CalledCommands = append(f.CalledCommands, fmt.Sprintf("%s %s", cmd, strings.Join(args, " ")))
+	if f.cmdShouldFail {
+		return "", errors.New("error occurred calling command: " + cmd)
+	}
+	return "fake command output", nil
 }
 
 type FakeDynamicProvisioner struct {

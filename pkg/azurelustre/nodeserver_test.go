@@ -521,11 +521,25 @@ func TestNodePublishVolume(t *testing.T) {
 				d.volumeLocks.Release(lockKey)
 			},
 		},
+		{
+			desc: "Error failed ping to MGS",
+			setup: func(d *Driver) {
+				d.pingCache.Set("1.1.1.1", false)
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+			},
+			expectedErr:          status.Error(codes.InvalidArgument, "MGS IP address \"1.1.1.1\" didn't respond to lnetctl ping: Is the cluster IP address correct and the network configured correctly?"),
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
 	}
 
-	d := NewFakeDriver()
-
 	for i := range tests {
+		d := NewFakeDriver()
 		test := &tests[i]
 
 		fakeMounter := &fakeMounter{}
