@@ -57,6 +57,56 @@ spec:
       priorityClassName: {{ .Values.node.priorityClassName }}
       tolerations:
         {{- toYaml .Values.node.tolerations | nindent 8 }}
+      initContainers:
+        - name: lustre-loader
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-azurelinux3
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -d /sys/module/lnet"
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: loader
+            - name: LUSTRE_VERSION
+              value: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
+            - name: CLIENT_SHA_SUFFIX
+              value: {{ .Values.node.azurelinux3.lustreClient.shaSuffix | quote }}
+          volumeMounts:
+            - mountPath: {{ .Values.paths.dev }}
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            {{- toYaml .Values.node.azurelinux3.resources | nindent 12 }}
       containers:
         - name: liveness-probe
           image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
@@ -111,10 +161,6 @@ spec:
         - name: azurelustre
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-azurelinux3
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "lustre_rmmod"]
           args:
 {{- range $arg := .Values.node.extraArgs }}
             - {{ $arg | quote }}
@@ -134,26 +180,20 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           readinessProbe:
-            failureThreshold: 5
             exec:
               command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
-            timeoutSeconds: 10
-            periodSeconds: 30
-          startupProbe:
-            failureThreshold: 120
-            exec:
-              command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
+                - /bin/sh
+                - -c
+                - "test -S /csi/csi.sock"
+            initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 5
+            failureThreshold: 3
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: {{ ternary "yes" "no" .Values.node.lustreClient.install | quote }}
+            - name: AZURELUSTRE_CSI_ROLE
+              value: driver
             - name: LUSTRE_VERSION
               value: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
             - name: CLIENT_SHA_SUFFIX

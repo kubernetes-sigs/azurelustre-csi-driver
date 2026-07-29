@@ -160,10 +160,12 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: controller
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: "no"
+            - name: AZURE_TOKEN_CREDENTIALS
+              value: ManagedIdentityCredential
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

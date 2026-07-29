@@ -103,10 +103,17 @@ Production images are built through DALEC (see below).
 Production images are built through [DALEC](https://github.com/Azure/dalec-build-defs),
 not from the Dockerfiles in this repo. The Dockerfiles
 (`pkg/azurelustreplugin/Dockerfile`) are only for local development and testing;
-released images come from hand-authored DALEC specs under
-`specs/kubernetes-csi-azurelustre/` in the dalec-build-defs repo — one spec per
-version, per OS flavor, with no template/matrix generation for this project.
-Each spec pins a `COMMIT` from this repo and builds with `make azurelustre-dalec`.
+released images come from generated DALEC specs under
+`specs/kubernetes-csi-azurelustre/` in the dalec-build-defs repo. The project has
+separate templates for Azure Linux 3, Ubuntu Jammy, and Ubuntu Noble, with a
+`matrix.yml` that controls generation. Each generated spec pins the commit for
+an upstream CSI tag and builds with `make azurelustre-dalec`.
+
+Stable and prerelease tags trigger separate generated-spec PRs. For example,
+`v0.5.0-rc.1` is represented as `0.5.0~rc.1` in the DALEC spec and produces
+images tagged `v0.5.0-rc.1-<flavor>`. Generated-spec PRs require human review.
+The project also opts into Go module vulnerability scanning; its CVE remediation
+PRs require human review as well.
 
 For local iteration, build and run the image from the Dockerfile with
 `make container`. The DALEC images are produced during the release process — see

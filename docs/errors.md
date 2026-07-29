@@ -17,6 +17,7 @@ This document describes common errors that can occur during volume creation and 
 - [Volume Mounting Errors](#volume-mounting-errors)
   - [Node Mount Errors](#node-mount-errors)
     - [Error: Could not mount target](#error-could-not-mount-target)
+    - [Error: MGS IP address is not reachable](#error-mgs-ip-address-is-not-reachable)
     - [Error: Context sub-dir must be strict subpath](#error-context-sub-dir-must-be-strict-subpath)
 - [Configuration Errors](#configuration-errors)
   - [StorageClass Parameter Errors](#storageclass-parameter-errors)
@@ -52,6 +53,7 @@ This document describes common errors that can occur during volume creation and 
 
 - Insufficient Azure RBAC permissions for kubelet identity
 - Incorrect identity configuration
+- Workload identity is enabled on the cluster but the controller ServiceAccount is missing its `azure.workload.identity/client-id` annotation, or the federated credential subject does not match the controller ServiceAccount
 
 **Debugging Steps:**
 
@@ -67,6 +69,7 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 - Assign required RBAC roles to kubelet identity:
   - See [Permissions For Kubelet Identity](driver-parameters.md#Permissions%20For%20Kubelet%20Identity)
+- If using workload identity, ensure the controller ServiceAccount has the `azure.workload.identity/client-id` annotation and that the federated credential subject matches the controller ServiceAccount. The subject must be `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`. A partial injection (federated token file and tenant present but no client ID) produces `AADSTS70025`-style failures. See [Workload Identity](workload-identity.md).
 
 ---
 
@@ -229,7 +232,8 @@ There is not enough room in the /subscriptions/<sub-id>/resourceGroups/<rg>/prov
 **Possible Causes:**
 
 - CSI driver is still initializing on nodes
-- Lustre kernel modules are not yet loaded
+- Lustre kernel modules are not yet loaded (the `lustre-loader` startup sidecar is still bringing up LNet)
+- The `azurelustre` driver is still installing its userspace tools, so its CSI socket is not yet serving
 - CSI driver failed to start properly on affected nodes
 - Node is not ready to handle Azure Lustre volume allocations
 - CSI driver startup taint removal is disabled
@@ -246,7 +250,14 @@ kubectl describe nodes | grep -A5 -B5 "azurelustre.csi.azure.com/agent-not-ready
 # Verify CSI driver pod status on nodes
 kubectl get pods -n kube-system -l app=csi-azurelustre-node -o wide
 
-# Check CSI driver startup logs
+# Node pods are 4/4 when ready. If below 4/4, find which container is not ready:
+# the lustre-loader sidecar (LNet) and/or the azurelustre driver (CSI socket).
+kubectl get pod -n kube-system <pod-name> -o jsonpath='{range .status.initContainerStatuses[*]}{.name}={.ready}{"\n"}{end}{range .status.containerStatuses[*]}{.name}={.ready}{"\n"}{end}'
+
+# Check the loader sidecar's LNet readiness directly
+kubectl exec -n kube-system <pod-name> -c lustre-loader -- /app/readinessProbe.sh
+
+# Check CSI driver startup logs (taint removal is performed by the driver container)
 kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre --tail=100 | grep -i "taint\|ready\|error"
 
 # Verify taint removal is enabled (should be true by default)
@@ -267,15 +278,16 @@ kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i
 2. **Check Lustre Module Loading**:
 
    ```bash
-   # Verify Lustre modules are loaded on nodes
-   kubectl exec -n kube-system <csi-azurelustre-node-pod> -c azurelustre -- lsmod | grep lustre
+   # Verify Lustre modules are loaded on nodes (modules are loaded by the loader sidecar)
+   kubectl exec -n kube-system <csi-azurelustre-node-pod> -c lustre-loader -- lsmod | grep lustre
    ```
 
 3. **Verify CSI Driver Configuration**:
 
    ```bash
-   # Check if taint removal is enabled (default: true)
-   kubectl get deployment csi-azurelustre-node -n kube-system -o yaml | grep "remove-not-ready-taint"
+   # Check if taint removal is enabled (default: true). The node runs as per-OS-flavor
+   # DaemonSets; check the one for the affected node's OS (jammy/noble/azurelinux3).
+   kubectl get ds csi-azurelustre-node-jammy -n kube-system -o yaml | grep "remove-not-ready-taint"
    ```
 
 4. **Emergency Manual Taint Removal** (not recommended for production):
@@ -339,6 +351,48 @@ kubectl get pv <pv-name> -o jsonpath='{.spec.csi.volumeAttributes.mgs-ip-address
 - Validate MGS IP address is correct and reachable
 - Check firewall rules and network security groups
 - Add NSG rules to allow AMLFS traffic if necessary
+
+---
+
+#### Error: MGS IP address is not reachable
+
+**Symptoms:**
+
+- Pod fails to start and stays in `ContainerCreating` status
+- Before mounting, the driver checks reachability in two stages: a fast TCP dial to the LNet acceptor port (default `988`), then an `lnetctl ping`. A wrong or unreachable MGS IP fails the dial within about 5 seconds. If a port is open but the peer is not a healthy LNet endpoint, the `lnetctl ping` stage can take up to about 50 seconds before failing (the LNet handshake is an in-kernel wait that cannot be shortened).
+- `NodePublishVolume` fails with:
+  - `MGS IP address "10.10.10.10" is not reachable; verify the cluster IP address and node network configuration are correct (if the cluster was only briefly unreachable, the operation will recover on retry)`
+- Error code: `FailedPrecondition`
+- Node logs show either `LNet reachability gate: dial to <mgs-ip>:988 failed` or `lnetctl ping to <mgs-ip>@tcp failed with error`
+
+**Possible Causes:**
+
+- Incorrect MGS IP address in the PersistentVolume or StorageClass
+- Missing or misconfigured virtual network peering or routing between the cluster and the AMLFS cluster
+- Network security group or firewall blocking LNet (TCP) traffic to the MGS
+- The AMLFS cluster is stopped, deleting, or otherwise temporarily unreachable
+- LNet is not configured correctly on the node (see [CSI Driver Troubleshooting Guide](csi-debug.md))
+
+**Debugging Steps:**
+
+```bash
+# Verify the MGS IP recorded on the volume
+kubectl get pv <pv-name> -o jsonpath='{.spec.csi.volumeAttributes.mgs-ip-address}'
+
+# Look for the reachability failure in the node driver logs
+kubectl logs -n kube-system csi-azurelustre-node-<pod> -c azurelustre --tail=300 | grep -iE 'reachability|ping'
+
+# Reproduce the reachability check from the node pod
+kubectl exec -n kube-system csi-azurelustre-node-<pod> -c azurelustre -- lnetctl ping <mgs-ip>@tcp
+```
+
+**Resolution:**
+
+- Correct the MGS IP address in the PersistentVolume or StorageClass if it is wrong
+- Verify virtual network peering and routing between the cluster and the AMLFS cluster
+- Add NSG or firewall rules to allow LNet (TCP) traffic to the MGS
+- Confirm the AMLFS cluster is running and healthy in the Azure portal
+- The check result is cached briefly (about 20 seconds); once connectivity is restored, the operation will recover on retry
 
 ---
 

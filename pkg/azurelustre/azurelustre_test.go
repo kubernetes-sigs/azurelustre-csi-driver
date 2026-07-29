@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -76,8 +77,52 @@ func NewFakeDriver(t *testing.T) *Driver {
 	driver.location = driverDefaultLocation
 	driver.resourceGroup = "defaultFakeResourceGroup"
 	driver.dynamicProvisioner = &FakeDynamicProvisioner{}
+	driver.pingChecker = &fakePingChecker{}
 
 	return driver
+}
+
+func writeFakeCloudConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "azure.json")
+	content := `{
+    "tenantId": "fake-tenant-id",
+    "subscriptionId": "fake-subscription-id",
+    "aadClientId": "fake-client-id",
+    "aadClientSecret": "fake-client-secret",
+    "resourceGroup": "fake-resource-group",
+    "location": "fake-location"
+}`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+type FakeCommandRunner struct {
+	CalledCommands []string
+	cmdShouldFail  bool
+}
+
+func NewFakeCommandRunner(shouldFail bool) *FakeCommandRunner {
+	return &FakeCommandRunner{
+		CalledCommands: []string{},
+		cmdShouldFail:  shouldFail,
+	}
+}
+
+func (f *FakeCommandRunner) RunWithTimeout(_ context.Context, _ time.Duration, cmd string, args ...string) (string, error) {
+	f.CalledCommands = append(f.CalledCommands, fmt.Sprintf("%s %s", cmd, strings.Join(args, " ")))
+	if f.cmdShouldFail {
+		return "", errors.New("error occurred calling command: " + cmd)
+	}
+	return "fake command output", nil
+}
+
+type fakePingChecker struct {
+	err error
+}
+
+func (f *fakePingChecker) EnsureReachable(_ string) error {
+	return f.err
 }
 
 type FakeDynamicProvisioner struct {
@@ -138,27 +183,7 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 }
 
 func TestNewDriver(t *testing.T) {
-	fakeConfigFile := "fake-cred-file.json"
-	fakeConfigContent := `{
-    "tenantId": "fake-tenant-id",
-    "subscriptionId": "fake-subscription-id",
-    "aadClientId": "fake-client-id",
-    "aadClientSecret": "fake-client-secret",
-    "resourceGroup": "fake-resource-group",
-    "location": "fake-location",
-}`
-
-	if err := os.WriteFile(fakeConfigFile, []byte(fakeConfigContent), 0o600); err != nil {
-		t.Error(err)
-	}
-
-	defer func() {
-		if err := os.Remove(fakeConfigFile); err != nil {
-			t.Error(err)
-		}
-	}()
-
-	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+	t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
 
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
@@ -187,6 +212,42 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
 	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
 	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+}
+
+func TestNewDriverControllerIdentityModes(t *testing.T) {
+	tests := []struct {
+		name               string
+		clientID           string
+		tenantID           string
+		federatedTokenFile string
+	}{
+		{name: "managed identity"},
+		{
+			name:               "workload identity",
+			clientID:           "test-client-id",
+			tenantID:           "test-tenant-id",
+			federatedTokenFile: "/var/run/secrets/azure/tokens/azure-identity-token",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
+			t.Setenv("AZURE_CLIENT_ID", test.clientID)
+			t.Setenv("AZURE_TENANT_ID", test.tenantID)
+			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", test.federatedTokenFile)
+			t.Setenv("AZURE_CLIENT_SECRET", "")
+
+			driverOptions := DriverOptions{
+				DriverName:                   fakeDriverName,
+				EnableAzureLustreMockDynProv: true,
+			}
+			driver, err := NewDriver(&driverOptions)
+
+			require.NoError(t, err)
+			require.NotNil(t, driver)
+		})
+	}
 }
 
 func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
@@ -797,4 +858,27 @@ func TestAddVolumeCapabilityAccessModes(t *testing.T) {
 	d.AddVolumeCapabilityAccessModes(vc)
 	assert.Len(t, d.VC, 1)
 	assert.Equal(t, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, d.VC[0].GetMode())
+}
+
+func TestAzureIdentityConfigurationMessage(t *testing.T) {
+	t.Run("workload identity", func(t *testing.T) {
+		t.Setenv("AZURE_CLIENT_ID", "test-client-id")
+		t.Setenv("AZURE_FEDERATED_TOKEN_FILE", "/var/run/secrets/azure/tokens/azure-identity-token")
+
+		msg := azureIdentityConfigurationMessage()
+
+		assert.Contains(t, msg, "authenticating with workload identity", "should name the identity type in use")
+		assert.Contains(t, msg, "test-client-id", "should include the client ID")
+	})
+
+	t.Run("managed identity", func(t *testing.T) {
+		t.Setenv("AZURE_CLIENT_ID", "test-client-id")
+		t.Setenv("AZURE_FEDERATED_TOKEN_FILE", "")
+
+		msg := azureIdentityConfigurationMessage()
+
+		assert.Contains(t, msg, "authenticating with managed identity", "should name the identity type in use")
+		assert.Contains(t, msg, "test-client-id", "should include the client ID")
+		assert.NotContains(t, msg, "workload identity", "should not mention workload identity when it is not in use")
+	})
 }

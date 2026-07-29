@@ -55,6 +55,72 @@ spec:
       priorityClassName: system-node-critical
       tolerations:
         - operator: Exists
+      initContainers:
+        # Native sidecar (restartPolicy: Always): installs the Lustre client
+        # kernel module for the running kernel, loads it into the shared host
+        # kernel, configures LNet, then runs an LNet reconcile loop for the life
+        # of the pod. Its startupProbe gates the driver and registrar containers
+        # so they do not start until LNet is up (no registrar connect race); on
+        # termination its SIGTERM handler unloads the modules so nothing is left
+        # behind when the driver is uninstalled.
+        - name: lustre-loader
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
+          imagePullPolicy: Always
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                # Restart the sidecar only when the Lustre kernel module has
+                # vanished (unrecoverable in-process). Transient LNet config
+                # drift is repaired by the reconcile loop and surfaced via the
+                # readinessProbe, so it must not trigger a restart here.
+                - /bin/sh
+                - -c
+                - "test -d /sys/module/lnet"
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: loader
+            - name: LUSTRE_VERSION
+              value: "2.17.0"
+            - name: CLIENT_SHA_SUFFIX
+              value: "24-gf517bc4"
+          volumeMounts:
+            - mountPath: /dev
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            limits:
+              cpu: 1
+              memory: 200Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
       containers:
         - name: liveness-probe
           volumeMounts:
@@ -117,13 +183,6 @@ spec:
         - name: azurelustre
           image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
           imagePullPolicy: Always
-          lifecycle:
-            preStop:
-              exec:
-                command:
-                  - /bin/sh
-                  - -c
-                  - lustre_rmmod
           args:
             - -v=5
             - --endpoint=$(CSI_ENDPOINT)
@@ -145,26 +204,25 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           readinessProbe:
-            failureThreshold: 5
+            # Gate Ready on the CSI socket existing: the driver installs its
+            # userspace utils and only then execs and opens the socket (~18s on
+            # Azure Linux), so without this the pod reports Ready before it can
+            # serve mounts, letting a rolling upgrade advance past a node whose
+            # driver is not serving yet.
             exec:
               command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
-            timeoutSeconds: 10
-            periodSeconds: 30
-          startupProbe:
-            failureThreshold: 120
-            exec:
-              command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
+                - /bin/sh
+                - -c
+                - "test -S /csi/csi.sock"
+            initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 5
+            failureThreshold: 3
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: "yes"
+            - name: AZURELUSTRE_CSI_ROLE
+              value: driver
             - name: LUSTRE_VERSION
               value: "2.17.0"
             - name: CLIENT_SHA_SUFFIX

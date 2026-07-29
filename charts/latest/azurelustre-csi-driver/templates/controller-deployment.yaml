@@ -1,3 +1,9 @@
+{{- if not (has .Values.IsWorkloadIdentityEnabled (list "Enabled" "Disabled")) -}}
+{{- fail (printf "IsWorkloadIdentityEnabled must be 'Enabled' or 'Disabled', got: %v" .Values.IsWorkloadIdentityEnabled) -}}
+{{- end -}}
+{{- if eq .Values.IsWorkloadIdentityEnabled "Enabled" -}}
+{{- $_ := required "IdentityClientId must be set when IsWorkloadIdentityEnabled is Enabled" .Values.IdentityClientId -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +29,9 @@ spec:
       labels:
         app.kubernetes.io/component: controller
         app: csi-azurelustre-controller
+        {{- if eq .Values.IsWorkloadIdentityEnabled "Enabled" }}
+        azure.workload.identity/use: "true"
+        {{- end }}
         {{- include "azurelustre.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -138,10 +147,14 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: controller
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: "no"
+            # Pinning the credential keeps the chain from silently falling back to
+            # another identity, and skips the IMDS probe timeout on the managed path.
+            - name: AZURE_TOKEN_CREDENTIALS
+              value: {{ ternary "WorkloadIdentityCredential" "ManagedIdentityCredential" (eq .Values.IsWorkloadIdentityEnabled "Enabled") }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

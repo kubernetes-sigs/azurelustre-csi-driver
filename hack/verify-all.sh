@@ -26,6 +26,7 @@ PKG_ROOT=$(git rev-parse --show-toplevel)
 "${PKG_ROOT}"/hack/verify-boilerplate.sh
 "${PKG_ROOT}"/hack/verify-shellcheck.sh
 "${PKG_ROOT}"/hack/verify-markdownlint.sh
+"${PKG_ROOT}"/hack/verify-actionlint.sh
 "${PKG_ROOT}"/hack/verify-helm-chart-files.sh
 "${PKG_ROOT}"/hack/verify-helm-chart-packages.sh
 "${PKG_ROOT}"/hack/verify-helm-chart-index.sh

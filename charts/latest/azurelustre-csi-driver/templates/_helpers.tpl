@@ -48,19 +48,11 @@ Full entity names.
 {{- end -}}
 
 {{- define "azurelustre.serviceAccountNameController" -}}
-{{- if .Values.serviceAccount.controller.name -}}
-{{ .Values.serviceAccount.controller.name }}
-{{- else -}}
-{{ include "azurelustre.fullname" . }}-controller-sa
-{{- end -}}
+csi-azurelustre-controller-sa
 {{- end -}}
 
 {{- define "azurelustre.serviceAccountNameNode" -}}
-{{- if .Values.serviceAccount.node.name -}}
-{{ .Values.serviceAccount.node.name }}
-{{- else -}}
-{{ include "azurelustre.fullname" . }}-node-sa
-{{- end -}}
+csi-azurelustre-node-sa
 {{- end -}}
 
 {{/*

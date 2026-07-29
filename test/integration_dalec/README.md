@@ -46,6 +46,24 @@ package manager or Go toolchain. The `csc` image is never shipped.
 | `integration_dalec_aks.yaml.template` | Two-container Pod (`driver` + `tester`) sharing the CSI socket. |
 | `setup_integration_test_dalec.sh` | Orchestrator: creates the configmap, applies the Pod, waits for the `tester` container to finish, and exits with its exit code. |
 
+## DALEC harness version selection
+
+The shared test wrapper in `dalec-build-defs` checks out the integration harness
+from the CSI version being built. Stable versions use the matching tag directly.
+For prereleases, DALEC passes a Debian-style version such as `v0.5.0~rc.1`; the
+wrapper converts it back to the Git tag `v0.5.0-rc.1` before cloning this repo.
+
+There are two exceptions:
+
+- `v0.2.0` uses the `v0.3.0` harness because the original harness contains an
+  unpinned dependency that is no longer compatible with its build environment.
+- `TEST_HARNESS_REF` overrides the selected Git ref. Set it to `development`
+  when testing an untagged local candidate against the current harness.
+
+If the selected ref contains `Dockerfile.csc`, the wrapper builds and loads the
+test-only sidecar image. Older harnesses without that file continue to use their
+original test layout.
+
 ## Running manually
 
 ### Prerequisites
@@ -88,15 +106,25 @@ Azure Linux 3:
 
 ```bash
 cd "$DALEC"
-export REGISTRY=upstream.azurecr.io REPO=oss/v2/kubernetes-csi TAG=0.5.0-azurelinux3
+export REGISTRY=upstream.azurecr.io REPO=oss/v2/kubernetes-csi TAG=v0.5.0-azurelinux3
 export IMAGE_NAME="${REGISTRY}/${REPO}/azurelustre-csi:${TAG}"
 docker buildx build --target azlinux3/container --build-arg DALEC_SKIP_SIGNING=1 \
-  -f specs/kubernetes-csi-azurelustre/azurelustre-csi-0.5.0-azurelinux3.yml \
+  -f specs/kubernetes-csi-azurelustre/azurelustre-csi-azurelinux3-0.5.0.yml \
   -t "$IMAGE_NAME" --load .
 ```
 
 For the deb variants use `--target noble/testing/container` (or
-`jammy/testing/container`) and the matching spec file.
+`jammy/testing/container`) and the matching component-first spec file, such as
+`azurelustre-csi-noble-0.5.0.yml`.
+
+For a release candidate, the generated spec filename uses `~`, while the image
+tag and CSI Git tag use `-`. For example:
+
+```text
+Spec:      azurelustre-csi-azurelinux3-0.5.0~rc.1.yml
+Image tag: v0.5.0-rc.1-azurelinux3
+Git tag:   v0.5.0-rc.1
+```
 
 ### 2. Build the csc sidecar image
 

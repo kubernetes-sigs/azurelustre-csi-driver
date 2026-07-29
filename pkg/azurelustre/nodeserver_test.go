@@ -489,6 +489,22 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMountActions: []mount.FakeAction{},
 		},
 		{
+			desc: "Success already mounted returns OK even when cluster ping is unreachable",
+			setup: func(d *Driver) {
+				d.pingChecker = &fakePingChecker{err: status.Error(codes.FailedPrecondition, "MGS IP address is not reachable")}
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
+				TargetPath:       alreadyExistTarget,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
+				Readonly:         true,
+			},
+			expectedErr:          nil,
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
 			desc: "Error could not mount",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
@@ -521,11 +537,25 @@ func TestNodePublishVolume(t *testing.T) {
 				d.volumeLocks.Release(lockKey)
 			},
 		},
+		{
+			desc: "Error failed ping to MGS",
+			setup: func(d *Driver) {
+				d.pingChecker = &fakePingChecker{err: status.Error(codes.FailedPrecondition, "MGS IP address is not reachable")}
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+			},
+			expectedErr:          status.Error(codes.FailedPrecondition, "MGS IP address is not reachable"),
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
 	}
 
-	d := NewFakeDriver(t)
-
 	for i := range tests {
+		d := NewFakeDriver(t)
 		test := &tests[i]
 
 		fakeMounter := &fakeMounter{}

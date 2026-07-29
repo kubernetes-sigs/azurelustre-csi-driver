@@ -7,7 +7,7 @@ keywords:
 - csi
 - azure
 - lustre
-kubeVersion: '>=1.21.0-0'
+kubeVersion: '>=1.29.0-0'
 name: azurelustre-csi-driver
 sources:
 - https://github.com/kubernetes-sigs/azurelustre-csi-driver

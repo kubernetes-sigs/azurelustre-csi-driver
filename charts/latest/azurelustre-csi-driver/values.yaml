@@ -131,18 +131,28 @@ node:
 rbac:
   create: true
 
-serviceAccount:
-  create: true
-  controller:
-    name: ""
-  node:
-    name: ""
-
 csidriver:
   name: azurelustre.csi.azure.com
   fsGroupPolicy: File
   attachRequired: false
   podInfoOnMount: true
+
+# Microsoft Entra Workload Identity.
+#
+# For direct Helm installs, set IsWorkloadIdentityEnabled to "Enabled" and
+# IdentityClientId to the client ID of a user-assigned managed identity that has
+# a federated credential for the controller service account. IdentityTenantId is
+# optional for cross-tenant scenarios. These value names also match the AKS
+# extension workload identity contract so the chart remains compatible with
+# platform-managed value injection.
+#
+# Workload identity is only used for dynamic provisioning (ARM calls to create
+# and delete AMLFS filesystems). When IsWorkloadIdentityEnabled is "Disabled",
+# no workload identity label or annotation is rendered. IdentityClientId is
+# required when IsWorkloadIdentityEnabled is "Enabled".
+IsWorkloadIdentityEnabled: "Disabled"
+IdentityClientId: ""
+IdentityTenantId: ""
 
 imagePullSecrets: []
 nameOverride: ""

@@ -85,6 +85,7 @@ const (
 	clusterGetImmediateFailureName              = "cluster-get-failure"
 	clusterGetRetryCheckFailureName             = "cluster-get-retry-check-failure"
 	errorLocation                               = "sku-error-location"
+	forbiddenLocation                           = "sku-forbidden-location"
 	noAmlfsSkus                                 = "no-amlfs-skus"
 	noAmlfsSkusForLocation                      = "no-amlfs-skus-for-location"
 	invalidSkuIncrement                         = "invalid-sku-increment"
@@ -155,7 +156,8 @@ func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *Dynam
 }
 
 func newFakeSkusClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.SKUsClient {
-	skusClientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{},
+	skusClientFactory, err := armstoragecache.NewClientFactory(
+		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
 				Transport: fake.NewSKUsServerTransport(newFakeSkusServer(t, recorder)),
@@ -236,6 +238,9 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 			case errorLocation:
 				resp.AddError(errors.New("fake location error"))
 				return resp
+			case forbiddenLocation:
+				resp.AddError(&azcore.ResponseError{StatusCode: http.StatusForbidden})
+				return resp
 			case noAmlfsSkus:
 				resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
 					ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
@@ -308,7 +313,8 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 				resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
 					ResourceSKUsResult: armstoragecache.ResourceSKUsResult{
 						Value: []*armstoragecache.ResourceSKU{
-							newResourceSku(AmlfsSkuResourceType,
+							newResourceSku(
+								AmlfsSkuResourceType,
 								expectedSku,
 								expectedLocation,
 								expectedSkuIncrement,
@@ -346,7 +352,8 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 }
 
 func newFakeVnetClient(t *testing.T, recorder *mockAmlfsRecorder) *armnetwork.VirtualNetworksClient {
-	vnetClientFactory, err := armnetwork.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{},
+	vnetClientFactory, err := armnetwork.NewClientFactory(
+		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
 				Transport: networkfake.NewVirtualNetworksServerTransport(newFakeVnetServer(t, recorder)),
@@ -435,7 +442,8 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 }
 
 func newFakeMgmtClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.ManagementClient {
-	mgmtClientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{},
+	mgmtClientFactory, err := armstoragecache.NewClientFactory(
+		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
 				Transport: fake.NewManagementServerTransport(newFakeManagementServer(t, recorder)),
@@ -518,7 +526,8 @@ func createAscInternalErrorResponse() *azcore.ResponseError {
 }
 
 func newFakeAmlFilesystemsClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.AmlFilesystemsClient {
-	amlFilesystemsClientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{},
+	amlFilesystemsClientFactory, err := armstoragecache.NewClientFactory(
+		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
 				Transport: fake.NewAmlFilesystemsServerTransport(newFakeAmlFilesystemsServer(t, recorder)),
@@ -1528,36 +1537,49 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 	testCases := []struct {
 		desc             string
 		failureBehaviors []string
+		expectedCode     codes.Code
 		expectedError    string
 	}{
 		{
 			desc:             "No AMLFS SKUs",
 			failureBehaviors: []string{noAmlfsSkus},
+			expectedCode:     codes.Internal,
 			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "No AMLFS SKUs for location",
 			failureBehaviors: []string{noAmlfsSkusForLocation},
+			expectedCode:     codes.Internal,
 			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "Invalid SKU increment",
 			failureBehaviors: []string{invalidSkuIncrement},
+			expectedCode:     codes.Internal,
 			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "Invalid SKU maximum",
 			failureBehaviors: []string{invalidSkuMaximum},
+			expectedCode:     codes.Internal,
 			expectedError:    "found no AMLFS SKUs",
 		},
 		{
 			desc:             "No location info for SKU",
 			failureBehaviors: []string{noLocationInfoForSku},
+			expectedCode:     codes.Internal,
 			expectedError:    "could not find location info for sku",
 		},
 		{
 			desc:             "Invalid location",
 			failureBehaviors: []string{errorLocation},
+			expectedCode:     codes.Unknown,
+			expectedError:    "error retrieving SKUs",
+		},
+		{
+			desc:             "Forbidden from ARM",
+			failureBehaviors: []string{forbiddenLocation},
+			expectedCode:     codes.PermissionDenied,
 			expectedError:    "error retrieving SKUs",
 		},
 	}
@@ -1572,7 +1594,7 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 			require.Error(t, err)
 			grpcStatus, ok := status.FromError(err)
 			require.True(t, ok)
-			assert.Equal(t, codes.Internal, grpcStatus.Code())
+			assert.Equal(t, tC.expectedCode, grpcStatus.Code())
 			require.ErrorContains(t, err, tC.expectedError)
 			assert.Empty(t, recorder.recordedAmlfsConfigurations)
 		})
@@ -1581,9 +1603,10 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 
 func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputError   error
-		expectedCode codes.Code
+		name                string
+		inputError          error
+		expectedCode        codes.Code
+		expectedMsgContains string
 	}{
 		{
 			name:         "BadRequest",
@@ -1606,14 +1629,16 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 			expectedCode: codes.NotFound,
 		},
 		{
-			name:         "Forbidden",
-			inputError:   &azcore.ResponseError{StatusCode: http.StatusForbidden},
-			expectedCode: codes.PermissionDenied,
+			name:                "Forbidden",
+			inputError:          &azcore.ResponseError{StatusCode: http.StatusForbidden},
+			expectedCode:        codes.PermissionDenied,
+			expectedMsgContains: "required RBAC role assignments",
 		},
 		{
-			name:         "Unauthorized",
-			inputError:   &azcore.ResponseError{StatusCode: http.StatusUnauthorized},
-			expectedCode: codes.Unauthenticated,
+			name:                "Unauthorized",
+			inputError:          &azcore.ResponseError{StatusCode: http.StatusUnauthorized},
+			expectedCode:        codes.Unauthenticated,
+			expectedMsgContains: "required RBAC role assignments",
 		},
 		{
 			name:         "TooManyRequests",
@@ -1701,6 +1726,9 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 			status, ok := status.FromError(err)
 			require.True(t, ok)
 			assert.Equal(t, tt.expectedCode, status.Code())
+			if tt.expectedMsgContains != "" {
+				assert.Contains(t, status.Message(), tt.expectedMsgContains)
+			}
 		})
 	}
 }

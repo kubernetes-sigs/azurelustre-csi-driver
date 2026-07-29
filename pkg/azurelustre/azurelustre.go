@@ -160,6 +160,7 @@ type Driver struct {
 	resourceGroup      string
 	location           string
 	dynamicProvisioner DynamicProvisionerInterface
+	pingChecker        clusterPingChecker
 
 	removeNotReadyTaint bool
 	kubeClient          kubernetes.Interface
@@ -240,6 +241,9 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 			Factor:   2,
 			Steps:    10, // Max delay = 0.5 * 2^9 = ~4 minutes
 		}
+		if d.NodeID == "" {
+			klog.Infof("%s", azureIdentityConfigurationMessage())
+		}
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			klog.Warningf("failed to obtain a credential: %v", err)
@@ -268,7 +272,19 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		}
 	}
 
+	if d.pingChecker, err = newClusterPingCache(&util.DefaultCommandRunner{}); err != nil {
+		klog.Fatalf("%v", err)
+	}
+
 	return &d, nil
+}
+
+func azureIdentityConfigurationMessage() string {
+	clientID := os.Getenv("AZURE_CLIENT_ID")
+	if os.Getenv("AZURE_FEDERATED_TOKEN_FILE") != "" {
+		return fmt.Sprintf("controller authenticating with workload identity (client ID %q)", clientID)
+	}
+	return fmt.Sprintf("controller authenticating with managed identity (client ID %q)", clientID)
 }
 
 func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProperties) SubnetProperties {

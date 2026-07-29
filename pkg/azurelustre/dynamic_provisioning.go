@@ -45,6 +45,7 @@ const (
 	AmlfsSkuResourceType                       = "amlFilesystems"
 	AmlfsSkuCapacityIncrementName              = "OSS capacity increment (TiB)"
 	AmlfsSkuCapacityMaximumName                = "default maximum capacity (TiB)"
+	authFailureHintFormat                      = "error occurred calling API: %v; verify the controller identity has the required RBAC role assignments (for workload identity, confirm its federated credential is configured)"
 )
 
 type DynamicProvisionerInterface interface {
@@ -99,9 +100,9 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		case http.StatusNotFound:
 			grpcErrorCode = codes.NotFound
 		case http.StatusForbidden:
-			grpcErrorCode = codes.PermissionDenied
+			return status.Errorf(codes.PermissionDenied, authFailureHintFormat, httpError)
 		case http.StatusUnauthorized:
-			grpcErrorCode = codes.Unauthenticated
+			return status.Errorf(codes.Unauthenticated, authFailureHintFormat, httpError)
 		case http.StatusTooManyRequests:
 			grpcErrorCode = codes.Unavailable
 		default:
@@ -235,7 +236,8 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 			return "", convertHTTPResponseErrorToGrpcCodeError(err)
 		}
 		if !hasSufficientCapacity {
-			return "", status.Errorf(codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
+			return "", status.Errorf(
+				codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
 				amlFilesystemProperties.AmlFilesystemName,
 				amlFilesystemProperties.SubnetInfo.SubnetID,
 			)
@@ -256,7 +258,8 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		amlFilesystemProperties.ResourceGroupName,
 		amlFilesystemProperties.AmlFilesystemName,
 		amlFilesystem,
-		nil)
+		nil,
+	)
 	if err != nil {
 		retry, retryErr := d.checkErrorForRetry(ctx, err, amlFilesystemProperties)
 		if retryErr != nil {
@@ -339,7 +342,11 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 		page, err := skusPager.NextPage(ctx)
 		if err != nil {
 			klog.Errorf("error retrieving SKUs for location %s: %v", location, err)
-			return nil, status.Errorf(codes.Internal, "error retrieving SKUs: %v", err)
+			// Preserve the mapped gRPC code (e.g. 403 -> PermissionDenied with the
+			// auth hint, matching CreateAmlFilesystem/DeleteAmlFilesystem) while
+			// adding the SKU-listing context to the message.
+			st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
+			return nil, status.Errorf(st.Code(), "error retrieving SKUs for location %s: %s", location, st.Message())
 		}
 
 		for _, sku := range page.Value {

@@ -16,10 +16,12 @@ This driver allows Kubernetes to access Azure Lustre file system.
 
 Starting with v0.4.0, the driver ships separate images per node OS: `-jammy` (Ubuntu 22.04) and `-noble` (Ubuntu 24.04). An `-azurelinux3` (Azure Linux 3) image is currently available on the development branch. See [deploy/README-distribution-specific.md](deploy/README-distribution-specific.md) for details.
 
+The development branch requires Kubernetes 1.29+ because the node plugin uses native sidecar containers (init containers with `restartPolicy: Always`), enabled by default from 1.29. The main branch and released versions support 1.21+.
+
 | Driver version | Image | Supported k8s version | Lustre client version |
 | -------------- | ----- | --------------------- | --------------------- |
 | main branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble | 1.21+ | 2.15.7 (jammy)<br>2.16.1 (noble) |
-| development branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-azurelinux3 | 1.21+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
+| development branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
 | v0.4.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble | 1.21+ | 2.15.7 (jammy)<br>2.16.1 (noble) |
 | v0.3.1 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.1 | 1.21+ | 2.15.7 |
 | v0.3.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.0 | 1.21+ | 2.15.5 |

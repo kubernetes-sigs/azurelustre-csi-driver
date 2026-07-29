@@ -64,13 +64,13 @@ func (d *Driver) NodePublishVolume(
 			"Target path not provided")
 	}
 
-	context := req.GetVolumeContext()
-	if context == nil {
+	volumeContext := req.GetVolumeContext()
+	if volumeContext == nil {
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume context must be provided")
 	}
 
-	vol, err := getVolume(volumeID, context)
+	vol, err := getVolume(volumeID, volumeContext)
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +88,42 @@ func (d *Driver) NodePublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
+	// Check whether the target is already mounted before doing anything that requires
+	// the MGS to be reachable. NodePublishVolume must be idempotent: a retry against an
+	// already-published target has to return OK even if the cluster is briefly
+	// unreachable, so this fast path runs ahead of the ping check and the sub-dir setup
+	// (which itself mounts the MGS).
+	mnt, err := d.ensureMountPoint(target)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"Could not mount target %q: %v",
+			target,
+			err)
+	}
+	if mnt {
+		klog.V(2).Infof(
+			"NodePublishVolume: volume %s is already mounted on %s",
+			volumeID,
+			target,
+		)
+		isOperationSucceeded = true
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
+	if !d.enableAzureLustreMockMount {
+		klog.V(2).Infof("NodePublishVolume: ensuring MGS IP address %s responds to ping before attempting mount", vol.mgsIPAddress)
+		if err := d.pingChecker.EnsureReachable(vol.mgsIPAddress); err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("NodePublishVolume: ping to MGS IP address %s successful", vol.mgsIPAddress)
+	}
+
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
 	mountOptions, readOnly := getMountOptions(req, userMountFlags)
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		interpolatedSubDir := interpolateSubDirVariables(context, vol)
+		interpolatedSubDir := interpolateSubDirVariables(volumeContext, vol)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(
@@ -120,22 +150,6 @@ func (d *Driver) NodePublishVolume(
 			"NodePublishVolume: full mount source with sub-dir: %q",
 			source,
 		)
-	}
-
-	mnt, err := d.ensureMountPoint(target)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"Could not mount target %q: %v",
-			target,
-			err)
-	}
-	if mnt {
-		klog.V(2).Infof(
-			"NodePublishVolume: volume %s is already mounted on %s",
-			volumeID,
-			target,
-		)
-		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
 	klog.V(2).Infof(
