@@ -95,7 +95,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: csi-provisioner
-          image: {{ .Values.sidecars.provisioner.repository }}:{{ .Values.sidecars.provisioner.tag }}
+          image: {{ include "azurelustre.imageRef" (dict "repository" .Values.sidecars.provisioner.repository "tag" .Values.sidecars.provisioner.tag "digest" .Values.sidecars.provisioner.digest) }}
           args:
             - -v=2
             - --leader-election
@@ -117,7 +117,7 @@ spec:
               drop:
                 - ALL
         - name: liveness-probe
-          image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          image: {{ include "azurelustre.imageRef" (dict "repository" .Values.sidecars.livenessProbe.repository "tag" .Values.sidecars.livenessProbe.tag "digest" .Values.sidecars.livenessProbe.digest) }}
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=120s
@@ -133,7 +133,7 @@ spec:
               drop:
                 - ALL
         - name: azurelustre
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          image: {{ include "azurelustre.imageRef" (dict "repository" .Values.image.repository "tag" .Values.image.tag "suffix" "-noble") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
 {{- range $arg := .Values.controller.extraArgs }}

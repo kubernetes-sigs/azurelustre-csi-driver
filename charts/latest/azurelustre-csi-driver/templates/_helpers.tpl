@@ -66,3 +66,25 @@ imagePullSecrets:
   {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/*
+Render a container image reference.
+Args (dict): repository (required), tag (required), suffix (optional flavor
+suffix, e.g. "-noble"), digest (optional "sha256:...").
+Renders "<repository>:<tag><suffix>". When digest is set, it is trimmed and
+validated as "sha256:<64 hex>" then appended as "@<digest>" so the image is
+pulled by immutable digest while the tag stays human-readable. A malformed
+digest fails the render (fast, local) instead of surfacing as a runtime
+ImagePullBackOff. Empty digest reproduces the historical tag-only reference.
+*/}}
+{{- define "azurelustre.imageRef" -}}
+{{- $ref := printf "%s:%s%s" .repository .tag (default "" .suffix) -}}
+{{- with .digest -}}
+{{- $d := trim . -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $d) -}}
+{{- fail (printf "azurelustre.imageRef: invalid image digest %q (expected sha256:<64 hex chars>)" $d) -}}
+{{- end -}}
+{{- $ref = printf "%s@%s" $ref $d -}}
+{{- end -}}
+{{- $ref -}}
+{{- end -}}

@@ -3,11 +3,19 @@ image:
   repository: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi
   tag: latest
   pullPolicy: Always
+  # The driver image is intentionally referenced by tag, not by digest. It is
+  # published by the first-party DALEC pipeline, which republishes CVE and
+  # dependency fixes under the same release tag (e.g. "v0.5.0-noble" -> "-1",
+  # "-2", ...). Pinning a digest would freeze the driver on a fixed base image
+  # and suppress those automatic CVE refreshes until a full patch release, so
+  # supply-chain integrity is instead provided by DALEC signing/provenance/SBOM.
 
 sidecars:
   provisioner:
     repository: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner
     tag: v5.2.0
+    # Optional immutable digest ("sha256:..."); empty = pull by tag.
+    digest: ""
     resources:
       limits:
         cpu: 100m
@@ -18,6 +26,8 @@ sidecars:
   livenessProbe:
     repository: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe
     tag: v2.15.0
+    # Optional immutable digest ("sha256:..."); empty = pull by tag.
+    digest: ""
     resources:
       limits:
         cpu: 100m
@@ -34,6 +44,8 @@ sidecars:
   nodeDriverRegistrar:
     repository: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar
     tag: v2.13.0
+    # Optional immutable digest ("sha256:..."); empty = pull by tag.
+    digest: ""
     resources:
       limits:
         cpu: 100m
