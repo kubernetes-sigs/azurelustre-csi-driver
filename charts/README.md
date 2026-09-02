@@ -67,13 +67,48 @@ workloads and restart the node pods to complete the upgrade.
 
 ## Uninstall
 
+Stop new volume provisioning and delete every PersistentVolumeClaim and
+PersistentVolume backed by `azurelustre.csi.azure.com` before uninstalling. The
+default pre-delete guard lists existing PersistentVolumes and blocks removal of
+the Helm release while any still reference the driver. It also blocks removal
+when the Kubernetes API cannot be queried.
+
     helm uninstall azurelustre -n kube-system
 
-Delete all PersistentVolumeClaims and PersistentVolumes that use
-`azurelustre.csi.azure.com` first. The chart's pre-delete guard blocks both Helm
-uninstall and normal AKS extension deletion while any remain. Do not use
-`az k8s-extension delete --force` as a bypass: it can remove the Azure extension
-resource while leaving the Helm release and driver workloads behind.
+The guard only observes PersistentVolumes that already exist. It cannot detect
+a `CreateVolume` operation that has started creating an AMLFS filesystem but has
+not produced a PersistentVolume. Keep provisioning stopped throughout uninstall.
+
+To bypass the check, disable `preDeleteGuard.enabled` in the release values
+before uninstalling, or skip all Helm hooks:
+
+    helm uninstall azurelustre -n kube-system --no-hooks
+
+Bypassing can orphan a dynamically provisioned AMLFS filesystem or leave volume
+cleanup incomplete.
+
+> [!CAUTION]
+> The guard is not an Azure extension deletion guard. Azure deletes an AKS
+> cluster extension resource immediately and connected agents remove its Helm
+> release asynchronously. A failed hook can preserve the in-cluster release,
+> but it cannot preserve the Azure extension resource. Confirm that no matching
+> PersistentVolumes or provisioning operations remain before deleting an
+> extension instance. See [Delete extension
+> instance](https://learn.microsoft.com/azure/aks/deploy-extensions-az-cli#delete-extension-instance).
+
+Do not use `az k8s-extension delete --force` as a hook bypass: it can leave
+the Helm release and driver workloads behind as an unmanaged installation.
+
+The hook runs `/app/azurelustreplugin --pre-delete-check` from the chart's
+selected driver image family (`image.repository:image.tag-noble`). Package and
+validate the chart with a driver build that implements this command; the
+released `v0.6.0` binary does not. An older image fails the hook and blocks
+uninstall even when no matching PersistentVolumes remain. The guard inherits
+`image.pullPolicy` (default `Always`) unless `preDeleteGuard.imagePullPolicy` is
+explicitly set, avoiding stale cached binaries with mutable development tags.
+`Always` requires registry access at uninstall time. Use an explicit
+`IfNotPresent` override only with an immutable image tag when cached-image
+availability is preferred.
 
 ## Tips
 
@@ -125,6 +160,12 @@ driver image family when it packages a chart:
 | `rbac.create` | Create RBAC resources | `true` |
 | `csidriver.name` | CSIDriver name | `azurelustre.csi.azure.com` |
 | `csidriver.fsGroupPolicy` | FSGroupPolicy | `File` |
+| `preDeleteGuard.enabled` | Block Helm uninstall while matching PersistentVolumes exist or the check cannot complete | `true` |
+| `preDeleteGuard.imagePullPolicy` | Override the hook Job image pull policy; empty inherits `image.pullPolicy` | `""` (inherits `Always`) |
+| `preDeleteGuard.checkTimeout` | Kubernetes API timeout for the guard process | `30s` |
+| `preDeleteGuard.priorityClassName` | Priority class for the hook Job | `system-cluster-critical` |
+| `preDeleteGuard.activeDeadlineSeconds` | Overall hook Job deadline | `300` |
+| `preDeleteGuard.ttlSecondsAfterFinished` | Retention period for a completed hook Job | `300` |
 | `IsWorkloadIdentityEnabled` | Enable controller workload identity | `Disabled` |
 | `IdentityClientId` | Workload identity client ID (required when enabled) | `""` |
 | `IdentityTenantId` | Optional cross-tenant workload identity tenant ID | `""` |

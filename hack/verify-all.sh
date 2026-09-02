@@ -18,6 +18,13 @@ set -euo pipefail
 
 PKG_ROOT=$(git rev-parse --show-toplevel)
 
+TOOLS_DIR=$(mktemp -d)
+trap 'rm -rf "${TOOLS_DIR}"' EXIT
+
+# shellcheck source=hack/ensure-yq.sh
+source "${PKG_ROOT}/hack/ensure-yq.sh"
+ensure_yq "${TOOLS_DIR}"
+
 "${PKG_ROOT}"/hack/verify-gofmt.sh
 "${PKG_ROOT}"/hack/verify-govet.sh
 "${PKG_ROOT}"/hack/verify-golangci-lint.sh

@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+PKG_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
 # This script verifies that the helm chart files in the charts/ directory
 # are consistent with the Kubernetes deployment files in the deploy/ directory.
 # It checks that for each deploy file, the corresponding helm chart template
@@ -43,26 +45,9 @@ if [[ -z "$(command -v helm)" ]]; then
   exit 1
 fi
 
-# Install a pinned mikefarah/yq (provides the `yq eval` syntax used below).
-# Pin to a specific version for deterministic, supply-chain-safe runs, and
-# install into the script-scoped temp dir (cleaned up on exit) instead of a
-# system path that may require root or be read-only.
-YQ_VERSION="v4.53.3"
-if ! command -v yq >/dev/null 2>&1 || ! yq --version 2>&1 | grep -qi mikefarah; then
-  echo "Cannot find mikefarah yq. Installing ${YQ_VERSION} ..."
-  yq_arch=$(uname -m)
-  case "${yq_arch}" in
-    x86_64) yq_arch=amd64 ;;
-    aarch64 | arm64) yq_arch=arm64 ;;
-    *)
-        echo "Unsupported architecture: ${yq_arch}, must be x86_64 or aarch64" >&2
-        exit 1
-        ;;
-  esac
-  curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}" -o "${DIFF_TEMP_DIR}/yq"
-  chmod +x "${DIFF_TEMP_DIR}/yq"
-  export PATH="${DIFF_TEMP_DIR}:${PATH}"
-fi
+# shellcheck source=hack/ensure-yq.sh
+source "${PKG_ROOT}/hack/ensure-yq.sh"
+ensure_yq "${DIFF_TEMP_DIR}"
 
 # Map of deploy files to chart template files. Per-flavor node DaemonSet entries
 # are derived from the Makefile's canonical flavor list (`make print-all-flavors`)

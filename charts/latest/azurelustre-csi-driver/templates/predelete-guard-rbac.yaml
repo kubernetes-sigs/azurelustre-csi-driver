@@ -5,12 +5,12 @@
 #
 # The ServiceAccount follows the chart convention of always being created; the
 # ClusterRole/ClusterRoleBinding are gated on rbac.create. If rbac.create=false,
-# grant the guard ServiceAccount get/list on persistentvolumes out of band, or
+# grant the guard ServiceAccount list on persistentvolumes out of band, or
 # disable the guard (preDeleteGuard.enabled=false).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  name: {{ include "azurelustre.preDeleteGuardName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/component: predelete-guard
@@ -25,7 +25,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  name: {{ include "azurelustre.preDeleteGuardName" . }}
   labels:
     app.kubernetes.io/component: predelete-guard
     {{- include "azurelustre.labels" . | nindent 4 }}
@@ -36,12 +36,12 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
-    verbs: ["get", "list"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  name: {{ include "azurelustre.preDeleteGuardName" . }}
   labels:
     app.kubernetes.io/component: predelete-guard
     {{- include "azurelustre.labels" . | nindent 4 }}
@@ -52,10 +52,10 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  name: {{ include "azurelustre.preDeleteGuardName" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "azurelustre.fullname" . }}-predelete-guard
+    name: {{ include "azurelustre.preDeleteGuardName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
 {{- end }}

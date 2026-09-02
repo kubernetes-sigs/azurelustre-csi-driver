@@ -44,20 +44,14 @@ To uninstall:
 helm uninstall azurelustre -n kube-system
 ```
 
-Before uninstalling, delete all PersistentVolumeClaims and PersistentVolumes
-that use `azurelustre.csi.azure.com`. The chart's pre-delete guard blocks the
-uninstall while any remain, ensuring the running controller can delete
-dynamically provisioned AMLFS resources and the node plugin can finish volume
-teardown.
-
-The same guard is honored by a normal `az k8s-extension delete`: the extension
-operation fails and leaves the Helm release and driver workloads running until
-the volumes are removed and deletion is retried. Do not bypass the guard with
-`az k8s-extension delete --force`; force-delete removes the Azure extension
-resource without completing Helm cleanup and can leave an unmanaged driver
-installation behind. Direct Helm users can explicitly bypass the guard with
-`--no-hooks`, or disable it with `--set preDeleteGuard.enabled=false`, only after
-accepting the orphaned-resource risk.
+Stop new volume provisioning and delete every PersistentVolumeClaim and
+PersistentVolume backed by `azurelustre.csi.azure.com` first. The Helm
+pre-delete guard blocks uninstall while matching PersistentVolumes exist and
+fails closed if it cannot list them. It cannot detect a `CreateVolume` operation
+that has not produced a PersistentVolume, so keep provisioning stopped until
+uninstall completes. See the [Helm uninstall
+details](../charts/README.md#uninstall) for matching driver image requirements,
+bypass options, and Azure extension behavior.
 
 > [!IMPORTANT]
 > **Migrating from a `kubectl` install to Helm.** Helm only adopts resources it
@@ -117,6 +111,21 @@ For the full list of configurable values, version history, and advanced Helm usa
     so the upgrade does not leave orphans or fail on the immutable selector.
     Deleting the controller briefly interrupts volume provisioning until the
     new controller pods become ready.
+
+  - Uninstall:
+
+    Stop new volume provisioning and delete every PersistentVolumeClaim and
+    PersistentVolume backed by `azurelustre.csi.azure.com`, then run:
+
+    ```shell
+    ./deploy/uninstall-driver.sh
+    ```
+
+    The script checks existing PersistentVolumes before deleting any driver
+    resource and fails closed if the Kubernetes API query fails. It cannot
+    detect a `CreateVolume` operation that has not produced a PersistentVolume.
+    `./deploy/uninstall-driver.sh --force` bypasses the check and can leave
+    volume or dynamically provisioned AMLFS filesystem cleanup incomplete.
 
 - check pods status:
 

@@ -47,6 +47,13 @@ Full entity names.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Create the pre-delete guard resource name after adding its suffix.
+*/}}
+{{- define "azurelustre.preDeleteGuardName" -}}
+{{- printf "%s-predelete-guard" (include "azurelustre.fullname" . | trunc 47 | trimSuffix "-") -}}
+{{- end -}}
+
 {{- define "azurelustre.serviceAccountNameController" -}}
 csi-azurelustre-controller-sa
 {{- end -}}

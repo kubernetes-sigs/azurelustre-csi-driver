@@ -16,7 +16,50 @@
 
 set -euo pipefail
 
-repo="$(git rev-parse --show-toplevel)/deploy"
+readonly driver_name="azurelustre.csi.azure.com"
+repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly repo
+
+usage() {
+  echo "Usage: $0 [--force]"
+}
+
+force=false
+while (($# > 0)); do
+  case "$1" in
+    --force)
+      force=true
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [[ "${force}" == "true" ]]; then
+  echo "WARNING: --force skips the PersistentVolume safety check." >&2
+else
+  readonly pv_jsonpath="{range .items[?(@.spec.csi.driver==\"${driver_name}\")]}{.metadata.name}{\"\\n\"}{end}"
+  if ! persistent_volumes=$(kubectl get persistentvolumes -o="jsonpath=${pv_jsonpath}"); then
+    echo "ERROR: could not list PersistentVolumes; blocking uninstall." >&2
+    echo "Resolve Kubernetes API access or rerun with --force to bypass the safety check." >&2
+    exit 1
+  fi
+
+  if [[ -n "${persistent_volumes}" ]]; then
+    echo "ERROR: PersistentVolumes still use CSI driver ${driver_name}:" >&2
+    printf '%s\n' "${persistent_volumes}" >&2
+    echo "Delete these volumes before uninstalling, or rerun with --force to bypass the safety check." >&2
+    exit 1
+  fi
+fi
 
 for i in $(kubectl get daemonsets.apps -n kube-system -l app=csi-azurelustre-node -o name); do
   kubectl delete -n kube-system "${i}"
