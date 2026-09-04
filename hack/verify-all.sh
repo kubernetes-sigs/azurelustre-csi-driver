@@ -16,14 +16,8 @@
 
 set -euo pipefail
 
-PKG_ROOT=$(git rev-parse --show-toplevel)
-
-TOOLS_DIR=$(mktemp -d)
-trap 'rm -rf "${TOOLS_DIR}"' EXIT
-
-# shellcheck source=hack/ensure-yq.sh
-source "${PKG_ROOT}/hack/ensure-yq.sh"
-ensure_yq "${TOOLS_DIR}"
+PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${PKG_ROOT}"
 
 "${PKG_ROOT}"/hack/verify-gofmt.sh
 "${PKG_ROOT}"/hack/verify-govet.sh
@@ -35,4 +29,5 @@ ensure_yq "${TOOLS_DIR}"
 "${PKG_ROOT}"/hack/verify-markdownlint.sh
 "${PKG_ROOT}"/hack/verify-helm-chart-files.sh
 "${PKG_ROOT}"/hack/verify-predelete-guard.sh
+"${PKG_ROOT}"/hack/verify-codespell.sh
 "${PKG_ROOT}"/hack/verify-spelling.sh

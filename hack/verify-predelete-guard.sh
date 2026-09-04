@@ -26,14 +26,11 @@ UNINSTALL_SCRIPT="${PKG_ROOT}/deploy/uninstall-driver.sh"
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
-if ! command -v helm >/dev/null 2>&1; then
-  echo "Cannot find helm. Please install helm first." >&2
-  exit 1
-fi
-
-# shellcheck source=hack/ensure-yq.sh
-source "${PKG_ROOT}/hack/ensure-yq.sh"
-ensure_yq "${WORK_DIR}"
+HELM_BIN=$("${PKG_ROOT}/hack/ensure-helm.sh")
+YQ_BIN=$("${PKG_ROOT}/hack/ensure-yq.sh")
+HELM_DIR=$(dirname "${HELM_BIN}")
+YQ_DIR=$(dirname "${YQ_BIN}")
+export PATH="${HELM_DIR}:${YQ_DIR}:${PATH}"
 
 STUB_DIR="${WORK_DIR}/stubs"
 mkdir -p "${STUB_DIR}"

@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
+
 echo "Verifying gomod"
 echo "go mod tidy -diff"
 if ! go mod tidy -diff; then

@@ -17,43 +17,44 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-readonly YQ_VERSION="v4.53.3"
-readonly YQ_SHA256_AMD64="fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4"
-readonly YQ_SHA256_ARM64="578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea"
-readonly YQ_DIR="${ROOT}/_output/tools/yq/${YQ_VERSION}"
-readonly YQ_BIN="${YQ_DIR}/yq"
+readonly HELM_VERSION="v3.21.0"
+readonly HELM_SHA256_AMD64="0093eb572e3d2380f094df162ddb525e219249de88957afe24cfbb19632acd36"
+readonly HELM_SHA256_ARM64="8de5a0c9a47431e59fd560e91e0779c8cf9316c383da7efb84128a4c339ecb2d"
+readonly HELM_DIR="${ROOT}/_output/tools/helm/${HELM_VERSION}"
+readonly HELM_BIN="${HELM_DIR}/helm"
 
 installed_version=""
-if [[ -x "${YQ_BIN}" ]]; then
-  installed_version=$("${YQ_BIN}" --version 2>&1) || installed_version=""
+if [[ -x "${HELM_BIN}" ]]; then
+  installed_version=$("${HELM_BIN}" version --short 2>&1) || installed_version=""
 fi
-if [[ "${installed_version}" != *"version ${YQ_VERSION}" ]]; then
+if [[ "${installed_version}" != "${HELM_VERSION}"+* ]]; then
   arch=$(uname -m)
   case "${arch}" in
     x86_64)
       arch="amd64"
-      checksum="${YQ_SHA256_AMD64}"
+      checksum="${HELM_SHA256_AMD64}"
       ;;
     aarch64 | arm64)
       arch="arm64"
-      checksum="${YQ_SHA256_ARM64}"
+      checksum="${HELM_SHA256_ARM64}"
       ;;
     *)
-      echo "Unsupported architecture: ${arch}, must be x86_64 or aarch64" >&2
+      echo "Unsupported architecture: ${arch}; Helm supports x86_64 and arm64." >&2
       exit 1
       ;;
   esac
 
   temp_dir=$(mktemp -d)
   trap 'rm -rf "${temp_dir}"' EXIT
-  artifact="yq_linux_${arch}"
+  artifact="helm-${HELM_VERSION}-linux-${arch}.tar.gz"
 
   "${ROOT}/hack/tools/download-verified.sh" \
-    "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${artifact}" \
+    "https://get.helm.sh/${artifact}" \
     "${checksum}" \
     "${temp_dir}/${artifact}"
-  mkdir -p "${YQ_DIR}"
-  install -m 0755 "${temp_dir}/${artifact}" "${YQ_BIN}"
+  tar -xzf "${temp_dir}/${artifact}" -C "${temp_dir}"
+  mkdir -p "${HELM_DIR}"
+  install -m 0755 "${temp_dir}/linux-${arch}/helm" "${HELM_BIN}"
 fi
 
-printf '%s\n' "${YQ_BIN}"
+printf '%s\n' "${HELM_BIN}"

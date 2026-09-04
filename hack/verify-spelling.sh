@@ -18,39 +18,35 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-TOOL_VERSION="v0.3.4"
-
 # cd to the root path
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${ROOT}"
 
+readonly MISSPELL_VERSION="v0.3.4"
+readonly MISSPELL_DIR="${ROOT}/_output/tools/misspell/${MISSPELL_VERSION}"
+readonly MISSPELL_BIN="${MISSPELL_DIR}/misspell"
+
 # create a temporary directory
 TMP_DIR=$(mktemp -d)
 
-# cleanup
-# shellcheck disable=SC2329 # exitHandler is invoked via trap EXIT, not called directly
-exitHandler() {
-  echo "Cleaning up..."
-  rm -rf "${TMP_DIR}"
-}
-trap exitHandler EXIT
+trap 'echo "Cleaning up..."; rm -rf "${TMP_DIR}"' EXIT
 
-# shellcheck disable=SC2312 # command -v prints nothing on failure; -z captures both signals
-if [[ -z "$(command -v misspell)" ]]; then
-  echo "Cannot find misspell. Installing misspell..."
-  # perform go get in a temp dir as we are not tracking this version in a go module
-  # if we do the go get in the repo, it will create / update a go.mod and go.sum
-  cd "${TMP_DIR}"
-  GO111MODULE=on GOBIN="${TMP_DIR}" go install "github.com/client9/misspell/cmd/misspell@${TOOL_VERSION}"
-  export PATH="${TMP_DIR}:${PATH}"
+installed_version=""
+if [[ -x "${MISSPELL_BIN}" ]]; then
+  installed_version=$("${MISSPELL_BIN}" -v 2>&1) || installed_version=""
 fi
-cd "${ROOT}"
+if [[ "${installed_version}" != "${MISSPELL_VERSION}" ]]; then
+  rm -rf "${MISSPELL_DIR}"
+  mkdir -p "${MISSPELL_DIR}"
+  echo "Installing misspell ${MISSPELL_VERSION} ..."
+  GOBIN="${MISSPELL_DIR}" go install -ldflags "-X main.version=${MISSPELL_VERSION}" "github.com/client9/misspell/cmd/misspell@${MISSPELL_VERSION}"
+fi
 
 # check spelling
 RES=0
-echo "Checking spelling..."
+echo "Checking spelling with misspell ${MISSPELL_VERSION}..."
 ERROR_LOG="${TMP_DIR}/errors.log"
-git ls-files | grep -v vendor | xargs misspell > "${ERROR_LOG}"
+git ls-files -z ':!vendor/**' | xargs -0 -- "${MISSPELL_BIN}" > "${ERROR_LOG}"
 if [[ -s "${ERROR_LOG}" ]]; then
   sed 's/^/error: /' "${ERROR_LOG}" # add 'error' to each line to highlight in e2e status
   echo "Found spelling errors!"

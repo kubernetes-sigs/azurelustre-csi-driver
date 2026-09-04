@@ -16,42 +16,47 @@
 
 set -euo pipefail
 
-PKG_ROOT=$(git rev-parse --show-toplevel)
+PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${PKG_ROOT}"
 
-# Pin shellcheck to a specific version so local devs and CI see identical
-# findings regardless of what the system package manager ships.  We always
-# use the pinned binary, never the system shellcheck.
-SHELLCHECK_VERSION="0.11.0"
-SHELLCHECK_DIR="/tmp/shellcheck-v${SHELLCHECK_VERSION}"
-SHELLCHECK_BIN="${SHELLCHECK_DIR}/shellcheck"
+readonly SHELLCHECK_VERSION="0.11.0"
+readonly SHELLCHECK_SHA256_AMD64="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+readonly SHELLCHECK_SHA256_ARM64="12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+readonly SHELLCHECK_DIR="${PKG_ROOT}/_output/tools/shellcheck/${SHELLCHECK_VERSION}"
+readonly SHELLCHECK_BIN="${SHELLCHECK_DIR}/shellcheck"
 
-if [[ ! -x "${SHELLCHECK_BIN}" ]]; then
-    arch=$(uname -m)
-    case "${arch}" in
-        x86_64)  release_arch="x86_64" ;;
-        aarch64) release_arch="aarch64" ;;
+installed_version=""
+if [[ -x "${SHELLCHECK_BIN}" ]]; then
+    installed_version=$("${SHELLCHECK_BIN}" --version | awk '$1 == "version:" { print $2 }') || installed_version=""
+fi
+if [[ "${installed_version}" != "${SHELLCHECK_VERSION}" ]]; then
+    case "$(uname -m)" in
+        x86_64)
+            release_arch="x86_64"
+            checksum="${SHELLCHECK_SHA256_AMD64}"
+            ;;
+        aarch64 | arm64)
+            release_arch="aarch64"
+            checksum="${SHELLCHECK_SHA256_ARM64}"
+            ;;
         *)
-            echo "Unsupported architecture: ${arch}" >&2
-            echo "shellcheck v${SHELLCHECK_VERSION} static binaries are published for x86_64 and aarch64 only." >&2
+            echo "Unsupported architecture: $(uname -m); shellcheck supports x86_64 and arm64." >&2
             exit 1
             ;;
     esac
-    url="https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${release_arch}.tar.xz"
-    echo "Downloading shellcheck v${SHELLCHECK_VERSION} to ${SHELLCHECK_DIR} ..."
-    tarball=$(mktemp --suffix=.tar.xz)
-    trap 'rm -f "${tarball}"' EXIT
-    if ! curl -fsSL "${url}" -o "${tarball}"; then
-        echo "Failed to download ${url}" >&2
-        exit 1
-    fi
-    if ! tar -xJ -C /tmp -f "${tarball}"; then
-        echo "Failed to extract ${tarball} to /tmp" >&2
-        exit 1
-    fi
-    if [[ ! -x "${SHELLCHECK_BIN}" ]]; then
-        echo "Expected ${SHELLCHECK_BIN} after extraction, but it is missing or not executable." >&2
-        exit 1
-    fi
+
+    temp_dir=$(mktemp -d)
+    trap 'rm -rf "${temp_dir}"' EXIT
+    artifact="shellcheck-v${SHELLCHECK_VERSION}.linux.${release_arch}.tar.xz"
+
+    rm -rf "${SHELLCHECK_DIR}"
+    mkdir -p "${SHELLCHECK_DIR}"
+    "${PKG_ROOT}/hack/tools/download-verified.sh" \
+        "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${artifact}" \
+        "${checksum}" \
+        "${temp_dir}/${artifact}"
+    tar -xJf "${temp_dir}/${artifact}" -C "${temp_dir}"
+    install -m 0755 "${temp_dir}/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "${SHELLCHECK_BIN}"
 fi
 
 # Find every shell script in the repo, excluding generated/vendored

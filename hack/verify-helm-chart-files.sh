@@ -17,6 +17,7 @@
 set -euo pipefail
 
 PKG_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "${PKG_ROOT}"
 
 # This script verifies that the helm chart files in the charts/ directory
 # are consistent with the Kubernetes deployment files in the deploy/ directory.
@@ -40,14 +41,11 @@ COLOR=${COLOR:-always}
 DIFF_TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "${DIFF_TEMP_DIR}"' EXIT
 
-if [[ -z "$(command -v helm)" ]]; then
-  echo "Cannot find helm. Please install helm first."
-  exit 1
-fi
-
-# shellcheck source=hack/ensure-yq.sh
-source "${PKG_ROOT}/hack/ensure-yq.sh"
-ensure_yq "${DIFF_TEMP_DIR}"
+HELM_BIN=$("${PKG_ROOT}/hack/ensure-helm.sh")
+YQ_BIN=$("${PKG_ROOT}/hack/ensure-yq.sh")
+HELM_DIR=$(dirname "${HELM_BIN}")
+YQ_DIR=$(dirname "${YQ_BIN}")
+export PATH="${HELM_DIR}:${YQ_DIR}:${PATH}"
 
 # Map of deploy files to chart template files. Per-flavor node DaemonSet entries
 # are derived from the Makefile's canonical flavor list (`make print-all-flavors`)
@@ -622,8 +620,7 @@ check_service_account_names() {
 
 check_chart_source_layout() {
   local layout_issues=false
-  local packaged_charts=()
-  local unexpected_dirs=()
+  local packaged_charts unexpected_dirs
 
   echo "== Checking chart source layout =="
 
@@ -632,17 +629,23 @@ check_chart_source_layout() {
     layout_issues=true
   fi
 
-  mapfile -t packaged_charts < <(find charts -type f -name '*.tgz' -print)
-  if (( ${#packaged_charts[@]} > 0 )); then
+  if ! packaged_charts=$(find charts -type f -name '*.tgz' -print); then
+    echo "ERROR: Could not inspect packaged charts" >&2
+    return 1
+  fi
+  if [[ -n "${packaged_charts}" ]]; then
     echo "ERROR: Packaged charts must not be committed:"
-    printf '  %s\n' "${packaged_charts[@]}"
+    printf '%s\n' "${packaged_charts}"
     layout_issues=true
   fi
 
-  mapfile -t unexpected_dirs < <(find charts -mindepth 1 -maxdepth 1 -type d ! -name latest -print)
-  if (( ${#unexpected_dirs[@]} > 0 )); then
+  if ! unexpected_dirs=$(find charts -mindepth 1 -maxdepth 1 -type d ! -name latest -print); then
+    echo "ERROR: Could not inspect chart source directories" >&2
+    return 1
+  fi
+  if [[ -n "${unexpected_dirs}" ]]; then
     echo "ERROR: Only charts/latest may contain chart source:"
-    printf '  %s\n' "${unexpected_dirs[@]}"
+    printf '%s\n' "${unexpected_dirs}"
     layout_issues=true
   fi
 

@@ -30,8 +30,12 @@ jobs:
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
           go-version-file: 'go.mod'
+      - name: Read tool versions
+        id: tool-versions
+        shell: bash
+        run: |
+          echo "golangci_lint=$(hack/verify-golangci-lint.sh --tool-version)" >> "${GITHUB_OUTPUT}"
       - name: Run linter
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20  # v9.2.0
         with:
-          # Keep in sync with hack/verify-golangci-lint.sh
-          version: v2.9.0
+          version: ${{ steps.tool-versions.outputs.golangci_lint }}
