@@ -25,6 +25,7 @@ linters:
     - forcetypeassert
     - gocheckcompilerdirectives
     - gochecksumtype
+    - gocritic
     - godoclint
     - goprintffuncname
     - gosec

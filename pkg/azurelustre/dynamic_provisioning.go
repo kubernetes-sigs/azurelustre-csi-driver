@@ -86,7 +86,8 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 	statusCode := httpError.StatusCode
 
 	grpcErrorCode := codes.Unknown
-	if statusCode >= 400 && statusCode < 500 {
+	switch {
+	case statusCode >= 400 && statusCode < 500:
 		switch statusCode {
 		case http.StatusBadRequest:
 			grpcErrorCode = codes.InvalidArgument
@@ -107,7 +108,7 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		default:
 			grpcErrorCode = codes.InvalidArgument
 		}
-	} else if statusCode >= 500 {
+	case statusCode >= 500:
 		switch statusCode {
 		case http.StatusInternalServerError:
 			grpcErrorCode = codes.Internal
@@ -121,9 +122,9 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 			// Prefer to default to Unknown rather than Internal so provisioner will retry
 			grpcErrorCode = codes.Unknown
 		}
-	} else if strings.Contains(httpError.ErrorCode, "Error") ||
+	case strings.Contains(httpError.ErrorCode, "Error") ||
 		strings.Contains(httpError.ErrorCode, "Timeout") ||
-		strings.Contains(httpError.ErrorCode, "Fail") {
+		strings.Contains(httpError.ErrorCode, "Fail"):
 		// Special case for 200 status errors to ensure preserve the reason
 		return status.Errorf(codes.DeadlineExceeded, "%s: %v", httpError.ErrorCode, httpError)
 	}

@@ -65,6 +65,7 @@ Additional lint checks cover these conventions:
 | `dupword` | Detect accidentally repeated words in comments and strings. |
 | `errname` | Give sentinel errors and error types recognizable names. |
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
+| `gocritic` | Check suspicious constructs with its default stable rules. |
 | `godoclint` | Keep Go documentation consistent with the symbols it describes. |
 | `goprintffuncname` | Name printf-style helpers with an f suffix. |
 | `iface` | Detect duplicate interfaces with identical method sets. |
