@@ -15,6 +15,7 @@ linters:
     - dupl
     - durationcheck
     - errchkjson
+    - errname
     - errorlint
     - exhaustive
     - fatcontext
