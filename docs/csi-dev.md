@@ -68,6 +68,7 @@ Additional lint checks cover these conventions:
 | `iface` | Detect duplicate interfaces with identical method sets. |
 | `iotamixing` | Avoid mixing iota and explicit constants in one block. |
 | `mirror` | Use matching string or byte APIs without unnecessary conversions. |
+| `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
 
 &nbsp;
 

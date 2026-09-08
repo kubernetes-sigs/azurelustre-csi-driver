@@ -54,6 +54,7 @@ linters:
     - staticcheck
     - tagalign
     - testifylint
+    - tparallel
     - unconvert
     - unparam
     - usestdlibvars
