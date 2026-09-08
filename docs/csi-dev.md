@@ -51,8 +51,8 @@ For pin locations, release hashes, dependency-lock updates, and isolated
 validation commands, see [Maintaining verification tools](verification-tools.md).
 
 Go lint policy is defined in [.golangci.yaml](../.golangci.yaml). Verification
-uses `modernize` for current Go idioms and `unparam` for unused parameters and
-results. Tests use
+uses `modernize` for current Go idioms, `unparam` for unused parameters and
+results, and `fatcontext` for nested contexts in loops and closures. Tests use
 `usetesting` to prefer `t.Context()`, `t.TempDir()`, `t.Chdir()`, and `t.Setenv()`
 where appropriate so resources follow the test lifetime.
 

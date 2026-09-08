@@ -15,6 +15,7 @@ linters:
     - errchkjson
     - errorlint
     - exhaustive
+    - fatcontext
     - forbidigo
     - forcetypeassert
     - gocheckcompilerdirectives
