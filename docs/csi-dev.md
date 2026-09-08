@@ -66,6 +66,7 @@ Additional lint checks cover these conventions:
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
 | `goprintffuncname` | Name printf-style helpers with an f suffix. |
 | `iface` | Detect duplicate interfaces with identical method sets. |
+| `iotamixing` | Avoid mixing iota and explicit constants in one block. |
 
 &nbsp;
 

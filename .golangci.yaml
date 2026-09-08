@@ -30,6 +30,7 @@ linters:
     - grouper
     - iface
     - inamedparam
+    - iotamixing
     - loggercheck
     - makezero
     - misspell
