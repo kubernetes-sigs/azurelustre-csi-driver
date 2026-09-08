@@ -82,6 +82,9 @@ linters:
           msg: return errors instead of panicking
     goconst:
       ignore-tests: true
+    govet:
+      enable:
+        - deepequalerrors
     grouper:
       const-require-single-const: false
       const-require-grouping: true

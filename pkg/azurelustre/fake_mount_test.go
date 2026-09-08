@@ -18,7 +18,6 @@ package azurelustre
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -113,8 +112,10 @@ func TestMount(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.Mount(test.source, test.target, "", nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }
@@ -153,8 +154,10 @@ func TestMountSensitive(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.MountSensitive(test.source, test.target, "", nil, nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }
@@ -195,8 +198,10 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(test.source, test.target, "", nil, nil, nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 
 		mountPoints, err := d.mounter.List()
@@ -235,8 +240,10 @@ func TestIsLikelyNotMountPoint(t *testing.T) {
 	}
 	for _, test := range tests {
 		_, err := d.mounter.IsLikelyNotMountPoint(test.file)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("Unexpected error: %v", err)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }

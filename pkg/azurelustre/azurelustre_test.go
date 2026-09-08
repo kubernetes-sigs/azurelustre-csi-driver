@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -619,8 +618,10 @@ func TestGetLustreVolFromID(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			lustreVolume, err := getLustreVolFromID(test.volumeID)
 
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
+			if test.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, test.expectedErr.Error())
 			}
 			assert.Equal(t, test.expectedLustreVolume, lustreVolume, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, lustreVolume, test.expectedLustreVolume)
 		})

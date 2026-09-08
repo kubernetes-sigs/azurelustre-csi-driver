@@ -251,8 +251,10 @@ func TestConvertTagsToMap(t *testing.T) {
 	for _, test := range tests {
 		actual, err := ConvertTagsToMap(test.tags)
 		require.Equal(t, test.expected, actual, test.desc)
-		if !reflect.DeepEqual(err, test.expectedError) {
-			t.Errorf("test[%s]: unexpected error: %v, expected error: %v", test.desc, err, test.expectedError)
+		if test.expectedError == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedError.Error(), test.desc)
 		}
 	}
 }
