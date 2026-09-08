@@ -100,6 +100,24 @@ func TestConcurrentLockEntry(t *testing.T) {
 	testLockMap.UnlockEntry("entry1")
 }
 
+func TestIndependentLockEntries(test *testing.T) {
+	lockMap := NewLockMap()
+	firstCallback := make(chan any, 1)
+	secondCallback := make(chan any, 1)
+
+	go lockMap.lockAndCallback(test, "entry1", firstCallback)
+	ensureCallbackHappens(test, firstCallback)
+	test.Cleanup(func() {
+		lockMap.UnlockEntry("entry1")
+	})
+
+	go lockMap.lockAndCallback(test, "entry2", secondCallback)
+	ensureCallbackHappens(test, secondCallback)
+	test.Cleanup(func() {
+		lockMap.UnlockEntry("entry2")
+	})
+}
+
 func (lm *LockMap) lockAndCallback(_ *testing.T, entry string, callbackChan chan<- any) {
 	lm.LockEntry(entry)
 	callbackChan <- true
@@ -107,25 +125,21 @@ func (lm *LockMap) lockAndCallback(_ *testing.T, entry string, callbackChan chan
 
 var callbackTimeout = 2 * time.Second
 
-func ensureCallbackHappens(t *testing.T, callbackChan <-chan any) bool {
+func ensureCallbackHappens(t *testing.T, callbackChan <-chan any) {
 	t.Helper()
 	select {
 	case <-callbackChan:
-		return true
 	case <-time.After(callbackTimeout):
 		t.Fatalf("timed out waiting for callback")
-		return false
 	}
 }
 
-func ensureNoCallback(t *testing.T, callbackChan <-chan any) bool {
+func ensureNoCallback(t *testing.T, callbackChan <-chan any) {
 	t.Helper()
 	select {
 	case <-callbackChan:
 		t.Fatalf("unexpected callback")
-		return false
 	case <-time.After(callbackTimeout):
-		return true
 	}
 }
 

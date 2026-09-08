@@ -46,6 +46,7 @@ linters:
     - tagalign
     - testifylint
     - unconvert
+    - unparam
     - usestdlibvars
     - usetesting
     - wastedassign

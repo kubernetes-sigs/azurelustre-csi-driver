@@ -836,16 +836,16 @@ func TestMakeDir(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
+func NewSafeMounter() *mount.SafeFormatAndMount {
 	return &mount.SafeFormatAndMount{
 		Interface: mount.New(""),
-	}, nil
+	}
 }
 
 func TestNewSafeMounter(t *testing.T) {
-	resp, err := NewSafeMounter()
-	assert.NotNil(t, resp)
-	require.NoError(t, err)
+	mounter := NewSafeMounter()
+	require.NotNil(t, mounter)
+	assert.NotNil(t, mounter.Interface)
 }
 
 func TestNodeGetVolumeStats(t *testing.T) {
