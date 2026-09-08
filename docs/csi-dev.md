@@ -67,6 +67,7 @@ Additional lint checks cover these conventions:
 | `goprintffuncname` | Name printf-style helpers with an f suffix. |
 | `iface` | Detect duplicate interfaces with identical method sets. |
 | `iotamixing` | Avoid mixing iota and explicit constants in one block. |
+| `mirror` | Use matching string or byte APIs without unnecessary conversions. |
 
 &nbsp;
 

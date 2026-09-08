@@ -33,6 +33,7 @@ linters:
     - iotamixing
     - loggercheck
     - makezero
+    - mirror
     - misspell
     - modernize
     - musttag
