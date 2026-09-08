@@ -90,6 +90,8 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+    testifylint:
+      enable-all: true
     unparam:
       check-exported: true
     usetesting:

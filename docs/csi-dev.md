@@ -74,6 +74,7 @@ Additional lint checks cover these conventions:
 | `mirror` | Use matching string or byte APIs without unnecessary conversions. |
 | `perfsprint` | Replace unnecessary formatting calls with simpler expressions. |
 | `testableexamples` | Give Go examples expected output so tests execute them. |
+| `testifylint` | Enable all checks for assertions and suite helpers. |
 | `thelper` | Mark test helpers so failures point to their callers. |
 | `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
 
