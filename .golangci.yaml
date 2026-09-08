@@ -53,6 +53,7 @@ linters:
     - sqlclosecheck
     - staticcheck
     - tagalign
+    - testableexamples
     - testifylint
     - tparallel
     - unconvert
