@@ -63,6 +63,7 @@ Additional lint checks cover these conventions:
 | `canonicalheader` | Use canonical HTTP header names. |
 | `dogsled` | Flag assignments that discard too many return values. |
 | `errname` | Give sentinel errors and error types recognizable names. |
+| `exptostd` | Prefer standard-library equivalents of experimental APIs. |
 
 &nbsp;
 

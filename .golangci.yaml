@@ -18,6 +18,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
+    - exptostd
     - fatcontext
     - forbidigo
     - forcetypeassert
