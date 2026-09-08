@@ -68,6 +68,7 @@ func TestCreateAzureCredentialFileOnAzurePublicCloud(t *testing.T) {
 }
 
 func withAzureCredentials(t *testing.T) {
+	t.Helper()
 	credentialPath := filepath.Join(t.TempDir(), "azure.toml")
 	err := os.WriteFile(credentialPath, []byte(fakeAzureCredentials), 0o600)
 	require.NoError(t, err)
@@ -120,6 +121,7 @@ func withAzureCredentials(t *testing.T) {
 }
 
 func withEnvironmentVariables(t *testing.T) {
+	t.Helper()
 	creds, err := CreateAzureCredentialFile()
 	defer func() {
 		err := DeleteAzureCredentialFile()

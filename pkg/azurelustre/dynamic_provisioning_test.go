@@ -143,6 +143,7 @@ func newMockAmlfsRecorder(failureBehaviors []string) *mockAmlfsRecorder {
 }
 
 func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *DynamicProvisioner {
+	t.Helper()
 	dynamicProvisioner := &DynamicProvisioner{
 		amlFilesystemsClient: newFakeAmlFilesystemsClient(t, recorder),
 		vnetClient:           newFakeVnetClient(t, recorder),
@@ -155,6 +156,7 @@ func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *Dynam
 }
 
 func newFakeSkusClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.SKUsClient {
+	t.Helper()
 	skusClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -351,6 +353,7 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 }
 
 func newFakeVnetClient(t *testing.T, recorder *mockAmlfsRecorder) *armnetwork.VirtualNetworksClient {
+	t.Helper()
 	vnetClientFactory, err := armnetwork.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -441,6 +444,7 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 }
 
 func newFakeMgmtClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.ManagementClient {
+	t.Helper()
 	mgmtClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -525,6 +529,7 @@ func createAscInternalErrorResponse() *azcore.ResponseError {
 }
 
 func newFakeAmlFilesystemsClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.AmlFilesystemsClient {
+	t.Helper()
 	amlFilesystemsClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{

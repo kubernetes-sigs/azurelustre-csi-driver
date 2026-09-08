@@ -57,6 +57,7 @@ linters:
     - tagalign
     - testableexamples
     - testifylint
+    - thelper
     - tparallel
     - unconvert
     - unparam

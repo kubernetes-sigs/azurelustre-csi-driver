@@ -71,6 +71,7 @@ Additional lint checks cover these conventions:
 | `iotamixing` | Avoid mixing iota and explicit constants in one block. |
 | `mirror` | Use matching string or byte APIs without unnecessary conversions. |
 | `testableexamples` | Give Go examples expected output so tests execute them. |
+| `thelper` | Mark test helpers so failures point to their callers. |
 | `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
 
 &nbsp;
