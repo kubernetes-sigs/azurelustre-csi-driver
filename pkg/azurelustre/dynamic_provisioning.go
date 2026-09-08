@@ -73,6 +73,10 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		return err
 	}
 
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, err.Error())
+	}
+
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	}

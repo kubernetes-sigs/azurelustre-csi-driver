@@ -73,6 +73,7 @@ linters:
       check-type-assertions: true
       check-blank: true
     forbidigo:
+      analyze-types: true
       forbid:
         - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
           msg: use klog for logging
@@ -80,6 +81,8 @@ linters:
           msg: return errors instead of calling os.Exit
         - pattern: '^panic$'
           msg: return errors instead of panicking
+        - pattern: '^(klog|log)(\.Logger)?\.(Fatal|Panic|Exit)(f|ln)?$'
+          msg: return errors and let main decide when to exit
     goconst:
       ignore-tests: true
     govet:
