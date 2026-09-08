@@ -28,6 +28,7 @@ linters:
     - gosec
     - gosmopolitan
     - grouper
+    - iface
     - inamedparam
     - loggercheck
     - makezero

@@ -65,6 +65,7 @@ Additional lint checks cover these conventions:
 | `errname` | Give sentinel errors and error types recognizable names. |
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
 | `goprintffuncname` | Name printf-style helpers with an f suffix. |
+| `iface` | Detect duplicate interfaces with identical method sets. |
 
 &nbsp;
 
