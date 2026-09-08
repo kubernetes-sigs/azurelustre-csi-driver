@@ -79,6 +79,11 @@ Additional lint checks cover these conventions:
 | `thelper` | Mark test helpers so failures point to their callers. |
 | `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
 
+General Go checks remain enabled to catch mistakes when a construct is first
+introduced, even when the current code has no examples, parallel tests, or iota
+declarations. SQL, span-lifecycle, and zerolog checks are not enabled because the
+driver does not use those APIs directly; add their checks with the APIs if needed.
+
 &nbsp;
 
 ### Verify Helm chart source changes
