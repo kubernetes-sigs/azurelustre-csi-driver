@@ -203,8 +203,7 @@ func SetKeyValueInMap(m map[string]string, key, value string) {
 	m[key] = value
 }
 
-// GetValueInMap get value from map by key
-// key in the map is case insensitive
+// GetValueInMap looks up a value using a case-insensitive key.
 func GetValueInMap(m map[string]string, key string) string {
 	if m == nil {
 		return ""
