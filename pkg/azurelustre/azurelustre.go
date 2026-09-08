@@ -519,9 +519,9 @@ func getKubeClient() (kubernetes.Interface, error) {
 
 // JSONPatch represents a JSON patch operation
 type JSONPatch struct {
-	OP    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
+	OP    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
 }
 
 func (d *Driver) removeNotReadyTaintIfNeeded() {

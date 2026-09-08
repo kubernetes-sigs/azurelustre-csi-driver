@@ -50,6 +50,9 @@ verification; automatic toolchain selection does not downgrade a newer Go.
 For pin locations, release hashes, dependency-lock updates, and isolated
 validation commands, see [Maintaining verification tools](verification-tools.md).
 
+Go lint policy is defined in [.golangci.yaml](../.golangci.yaml). Verification
+uses `modernize` for current Go idioms.
+
 &nbsp;
 
 ### Verify Helm chart source changes

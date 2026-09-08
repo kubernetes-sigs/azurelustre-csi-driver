@@ -161,8 +161,8 @@ func ConvertTagsToMap(tags string) (map[string]string, error) {
 	if tags == "" {
 		return m, nil
 	}
-	s := strings.Split(tags, tagsDelimiter)
-	for _, tag := range s {
+	s := strings.SplitSeq(tags, tagsDelimiter)
+	for tag := range s {
 		kv := strings.Split(tag, tagKeyValueDelimiter)
 		if len(kv) != 2 {
 			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
