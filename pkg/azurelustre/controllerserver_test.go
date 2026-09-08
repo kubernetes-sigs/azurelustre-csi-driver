@@ -373,7 +373,7 @@ func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, fmt.Sprintf("Parameter zone cannot be used in location %s", emptyZonesLocation))
+	require.ErrorContains(t, err, "Parameter zone cannot be used in location "+emptyZonesLocation)
 	require.ErrorContains(t, err, "no zones available for SKU")
 }
 

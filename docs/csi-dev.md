@@ -70,6 +70,7 @@ Additional lint checks cover these conventions:
 | `iface` | Detect duplicate interfaces with identical method sets. |
 | `iotamixing` | Avoid mixing iota and explicit constants in one block. |
 | `mirror` | Use matching string or byte APIs without unnecessary conversions. |
+| `perfsprint` | Replace unnecessary formatting calls with simpler expressions. |
 | `testableexamples` | Give Go examples expected output so tests execute them. |
 | `thelper` | Mark test helpers so failures point to their callers. |
 | `tparallel` | Check parallel subtest scheduling and cleanup consistency. |

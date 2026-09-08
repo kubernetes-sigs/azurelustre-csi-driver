@@ -17,6 +17,7 @@ limitations under the License.
 package azurelustre
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func TestEnsureMountPoint(t *testing.T) {
 		{
 			desc:        "[Error] Mocked by IsLikelyNotMountPoint",
 			target:      errorTarget,
-			expectedErr: fmt.Errorf("fake IsLikelyNotMountPoint: fake error"),
+			expectedErr: errors.New("fake IsLikelyNotMountPoint: fake error"),
 		},
 		{
 			desc:        "[Error] Error opening file",
