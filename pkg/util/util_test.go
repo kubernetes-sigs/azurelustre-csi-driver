@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"context"
 	"errors"
 	"os"
 	"reflect"
@@ -46,14 +45,14 @@ func TestRoundUpGiB(t *testing.T) {
 func TestCommandRunnerSuccess(t *testing.T) {
 	runner := &DefaultCommandRunner{}
 
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "echo", "hello")
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "echo", "hello")
 	require.NoError(t, err)
 	require.Equal(t, "hello\n", output)
 }
 
 func TestCommandRunnerTimeout(t *testing.T) {
 	runner := &DefaultCommandRunner{}
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "sleep", "10")
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "sleep", "10")
 	require.ErrorContains(t, err, "killed")
 	require.Empty(t, output, "Expected no output on timeout")
 }
@@ -62,7 +61,7 @@ func TestCommandRunnerError(t *testing.T) {
 	runner := &DefaultCommandRunner{}
 
 	nonexistentPath := "./non-existent-path"
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "ls", nonexistentPath)
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "ls", nonexistentPath)
 	require.Error(t, err)
 	require.Contains(t, output, nonexistentPath)
 }

@@ -47,6 +47,7 @@ linters:
     - testifylint
     - unconvert
     - usestdlibvars
+    - usetesting
     - wastedassign
     - whitespace
     - zerologlint
@@ -71,6 +72,9 @@ linters:
       require-specific: true
     unparam:
       check-exported: true
+    usetesting:
+      context-background: true
+      context-todo: true
   exclusions:
     presets:
       - comments

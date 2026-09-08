@@ -484,15 +484,7 @@ func TestSelectForceUnmounter(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := os.MkdirTemp(os.TempDir(), "azurelustre-csi-mount-test")
-	if err != nil {
-		t.Fatalf("failed to create tmp dir: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(existingMountPath); err != nil {
-			t.Fatalf("failed to remove tmp dir: %v", err)
-		}
-	}()
+	existingMountPath := t.TempDir()
 
 	tests := []struct {
 		desc           string
@@ -501,7 +493,7 @@ func TestIsCorruptedDir(t *testing.T) {
 	}{
 		{
 			desc:           "NotExist dir",
-			dir:            "/tmp/NotExist",
+			dir:            filepath.Join(existingMountPath, "missing"),
 			expectedResult: false,
 		},
 		{
@@ -872,7 +864,7 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 
 				// Create fake kubernetes client
 				fakeClient := kubefake.NewSimpleClientset()

@@ -17,7 +17,6 @@ limitations under the License.
 package sanitylocal
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -27,10 +26,7 @@ import (
 )
 
 func TestSanity(t *testing.T) {
-	testDir, err := os.MkdirTemp("", "csi_sanity_test")
-	if err != nil {
-		t.Fatalf("can't create tmp dir %s", err)
-	}
+	testDir := t.TempDir()
 	socketEndpoint := filepath.Join(testDir, "csi.sock")
 	targetPath := filepath.Join(testDir, "targetPath")
 	stagingPath := filepath.Join(testDir, "stagingPath")

@@ -92,7 +92,7 @@ func TestClusterPingCacheProbe(t *testing.T) {
 			fakeRunner := NewFakeCommandRunner(test.pingFails)
 			c := &clusterPingCache{commandRunner: fakeRunner, dial: test.dial}
 
-			result, err := c.probe(context.Background(), "1.1.1.1")
+			result, err := c.probe(t.Context(), "1.1.1.1")
 			require.NoError(t, err)
 
 			reachable, ok := result.(bool)

@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func TestNodeGetInfo(t *testing.T) {
 
 	// Test valid request
 	req := csi.NodeGetInfoRequest{}
-	resp, err := d.NodeGetInfo(context.Background(), &req)
+	resp, err := d.NodeGetInfo(t.Context(), &req)
 	require.NoError(t, err)
 	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
@@ -62,7 +61,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 	d.NSCap = capList
 	// Test valid request
 	req := csi.NodeGetCapabilitiesRequest{}
-	resp, err := d.NodeGetCapabilities(context.Background(), &req)
+	resp, err := d.NodeGetCapabilities(t.Context(), &req)
 	assert.NotNil(t, resp)
 	assert.Equal(t, capType, resp.GetCapabilities()[0].GetType())
 	require.NoError(t, err)
@@ -579,7 +578,7 @@ func TestNodePublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err = d.NodePublishVolume(context.Background(), &test.req)
+			_, err = d.NodePublishVolume(t.Context(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
@@ -680,7 +679,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 					Readonly:      false,
 				}
-				_, err := d.NodePublishVolume(context.Background(), &req)
+				_, err := d.NodePublishVolume(t.Context(), &req)
 				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1"},
@@ -718,7 +717,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 					Readonly:      false,
 				}
-				_, err := d.NodePublishVolume(context.Background(), &req)
+				_, err := d.NodePublishVolume(t.Context(), &req)
 				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
@@ -774,7 +773,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodeUnpublishVolume(context.Background(), &test.req)
+			_, err := d.NodeUnpublishVolume(t.Context(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
@@ -894,7 +893,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 		}()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodeGetVolumeStats(context.Background(), &test.req)
+			_, err := d.NodeGetVolumeStats(t.Context(), &test.req)
 			if !reflect.DeepEqual(err, test.expectedErr) {
 				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
 			}
@@ -1345,7 +1344,7 @@ func TestNewLustreVolume(t *testing.T) {
 func TestNodeStageVolume(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.NodeStageVolumeRequest{}
-	resp, err := d.NodeStageVolume(context.Background(), &req)
+	resp, err := d.NodeStageVolume(t.Context(), &req)
 	assert.Nil(t, resp)
 	require.ErrorContains(t, err, "not implemented")
 	assert.Equal(t, codes.Unimplemented, status.Code(err))
@@ -1354,7 +1353,7 @@ func TestNodeStageVolume(t *testing.T) {
 func TestNodeUnstageVolume(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.NodeUnstageVolumeRequest{}
-	resp, err := d.NodeUnstageVolume(context.Background(), &req)
+	resp, err := d.NodeUnstageVolume(t.Context(), &req)
 	assert.Nil(t, resp)
 	require.ErrorContains(t, err, "not implemented")
 	assert.Equal(t, codes.Unimplemented, status.Code(err))

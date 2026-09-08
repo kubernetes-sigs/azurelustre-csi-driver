@@ -17,7 +17,6 @@ limitations under the License.
 package sanity
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/exec"
@@ -44,7 +43,7 @@ func TestSanity(t *testing.T) {
 	azureClient, err := azure.GetClient(creds.Cloud, creds.SubscriptionID, creds.AADClientID, creds.TenantID, creds.AADClientSecret)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	// Create an empty resource group for sanity test
 	log.Printf("Creating resource group %s in %s", creds.ResourceGroup, creds.Cloud)
 	_, err = azureClient.EnsureResourceGroup(ctx, creds.ResourceGroup, creds.Location, nil)
@@ -59,17 +58,11 @@ func TestSanity(t *testing.T) {
 	}()
 
 	// Execute the script from project root
-	err = os.Chdir("../..")
-	require.NoError(t, err)
-	// Change directory back to test/sanity
-	defer func() {
-		err := os.Chdir("test/sanity")
-		require.NoError(t, err)
-	}()
+	t.Chdir("../..")
 
 	projectRoot, err := os.Getwd()
 	require.NoError(t, err)
-	assert.True(t, strings.HasSuffix(projectRoot, "azurelustre-csi-driver"))
+	assert.True(t, strings.HasSuffix(projectRoot, "azurelustre-csi-driver"), "sanity tests must run from the project root")
 
 	cmd := exec.CommandContext(ctx, "./test/sanity/run-tests-all-clouds.sh") // #nosec G204
 	cmd.Dir = projectRoot
