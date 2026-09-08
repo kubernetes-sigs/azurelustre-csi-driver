@@ -61,6 +61,7 @@ Additional lint checks cover these conventions:
 | Linter | Purpose |
 | --- | --- |
 | `canonicalheader` | Use canonical HTTP header names. |
+| `dogsled` | Flag assignments that discard too many return values. |
 
 &nbsp;
 
