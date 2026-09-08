@@ -56,6 +56,12 @@ results, and `fatcontext` for nested contexts in loops and closures. Tests use
 `usetesting` to prefer `t.Context()`, `t.TempDir()`, `t.Chdir()`, and `t.Setenv()`
 where appropriate so resources follow the test lifetime.
 
+Additional lint checks cover these conventions:
+
+| Linter | Purpose |
+| --- | --- |
+| `canonicalheader` | Use canonical HTTP header names. |
+
 &nbsp;
 
 ### Verify Helm chart source changes
