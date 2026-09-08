@@ -70,6 +70,7 @@ Additional lint checks cover these conventions:
 | `gocritic` | Check suspicious constructs with its default stable rules. |
 | `godoclint` | Keep Go documentation consistent with the symbols it describes. |
 | `goprintffuncname` | Name printf-style helpers with an f suffix. |
+| `grouper` | Group constants while allowing separate enum and unrelated constant blocks. |
 | `iface` | Detect duplicate interfaces with identical method sets. |
 | `iotamixing` | Avoid mixing iota and explicit constants in one block. |
 | `mirror` | Use matching string or byte APIs without unnecessary conversions. |

@@ -83,7 +83,7 @@ linters:
     goconst:
       ignore-tests: true
     grouper:
-      const-require-single-const: true
+      const-require-single-const: false
       const-require-grouping: true
       import-require-single-import: true
       import-require-grouping: false
