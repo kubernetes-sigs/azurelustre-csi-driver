@@ -164,7 +164,6 @@ type Driver struct {
 	allowUnadvertisedZones       bool
 	mounter                      *mount.SafeFormatAndMount
 	forceMounter                 *mount.MounterForceUnmounter
-	volLockMap                   *util.LockMap
 	// Directory to temporarily mount to for subdirectory creation
 	workingMountDir string
 	// A map storing all volumes with ongoing operations so that additional operations
@@ -190,7 +189,6 @@ type Driver struct {
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(options *DriverOptions) (*Driver, error) {
 	d := Driver{
-		volLockMap:                   util.NewLockMap(),
 		volumeLocks:                  newVolumeLocks(),
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
