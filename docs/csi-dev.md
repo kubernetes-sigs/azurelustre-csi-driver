@@ -64,6 +64,7 @@ Additional lint checks cover these conventions:
 | `dogsled` | Flag assignments that discard too many return values. |
 | `errname` | Give sentinel errors and error types recognizable names. |
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
+| `goprintffuncname` | Name printf-style helpers with an f suffix. |
 
 &nbsp;
 
