@@ -162,6 +162,36 @@ csidriver:
   attachRequired: false
   podInfoOnMount: true
 
+# Pre-delete guard.
+#
+# Blocks `helm uninstall` while PersistentVolumes provisioned by this driver
+# still exist. Removing the driver first strands the backing AMLFS filesystem
+# (dynamic provisioning deletes it via the controller's DeleteVolume, which no
+# longer runs once the driver is gone) and leaves PVs stuck in Terminating with
+# stale node mounts. The check runs as a Helm pre-delete hook Job that reuses the
+# driver image (already ships curl + a shell), so no extra image is introduced.
+#
+# Set enabled=false to allow uninstall without the guard. The guard is
+# fail-closed: if the check cannot run (for example the API call fails),
+# uninstall is blocked; use `helm uninstall --no-hooks` to force it.
+preDeleteGuard:
+  enabled: true
+  # Reuse the (already node-cached) driver image; IfNotPresent so uninstall does
+  # not depend on registry availability at delete time.
+  imagePullPolicy: IfNotPresent
+  # Schedules the guard Job promptly, including on busy clusters.
+  priorityClassName: system-cluster-critical
+  # Upper bound on how long `helm uninstall` may block on the guard Job. Sized to
+  # tolerate node scale-from-zero (e.g. AKS Automatic) before the check runs.
+  activeDeadlineSeconds: 300
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+
 # Microsoft Entra Workload Identity.
 #
 # For direct Helm installs, set IsWorkloadIdentityEnabled to "Enabled" and

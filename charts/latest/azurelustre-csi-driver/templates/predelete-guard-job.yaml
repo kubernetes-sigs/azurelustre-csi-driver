@@ -1,0 +1,127 @@
+{{- if .Values.preDeleteGuard.enabled }}
+# Pre-delete guard.
+#
+# CSI teardown is a two-party handshake: the external-provisioner sidecar (in the
+# controller) observes PVC deletion and calls the driver controller's
+# DeleteVolume, which for dynamically provisioned volumes deletes the backing
+# AMLFS filesystem. `helm uninstall` removes both the controller and the node
+# plugin, so if it runs while driver-owned PersistentVolumes still exist there is
+# nothing left to service teardown: the AMLFS filesystem is orphaned (still
+# billing) and PV objects are left stuck in Terminating with stale node mounts.
+#
+# This pre-delete hook Job lists PersistentVolumes and fails (blocking uninstall)
+# if any still reference this driver, forcing the operator to delete the volumes
+# first. It reuses the driver image (which already ships curl + a shell) so no
+# additional image dependency is introduced. Disable with preDeleteGuard.enabled=false.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.preDeleteGuard.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: predelete-guard
+        {{- include "azurelustre.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "azurelustre.fullname" . }}-predelete-guard
+      priorityClassName: {{ .Values.preDeleteGuard.priorityClassName }}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "azurelustre.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: predelete-guard
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          imagePullPolicy: {{ .Values.preDeleteGuard.imagePullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              driver="{{ .Values.csidriver.name }}"
+              # Regex-safe copy of the driver name (dots escaped) for the value
+              # match below, so a literal '.' cannot match an arbitrary character.
+              driver_re="{{ .Values.csidriver.name | replace "." "\\." }}"
+              sa=/var/run/secrets/kubernetes.io/serviceaccount
+              # In-cluster API endpoint; DNS name is IPv6-safe and needs no env vars.
+              api="https://kubernetes.default.svc"
+              echo "Checking for PersistentVolumes provisioned by ${driver} before uninstall..."
+              # --retry rides out transient API errors and brief RBAC-informer lag
+              # (a fresh authorizer replica may 403 for a moment after the hook RBAC
+              # is created). A persistent failure still fails closed and blocks uninstall.
+              pvs="$(curl -sS --fail --retry 5 --retry-all-errors --retry-delay 2 --max-time 20 \
+                --cacert "${sa}/ca.crt" \
+                -H "Authorization: Bearer $(cat "${sa}/token")" \
+                -H "Accept: application/json" \
+                "${api}/api/v1/persistentvolumes?pretty=false")"
+              # spec.csi.driver holds the driver name for every PV backed by this
+              # driver (static and dynamic alike). Match "driver": "<name>"
+              # tolerating optional whitespace so the scan works whether the API
+              # returns compact or pretty-printed JSON: ?pretty=false requests the
+              # compact form, and the whitespace-tolerant regex is defense-in-depth
+              # in case a proxy re-indents. The escaped copy of the value inside any
+              # last-applied-configuration annotation does not match this pattern,
+              # so each backing PV is counted exactly once.
+              #
+              # Capture grep's exit status explicitly so we can distinguish "no
+              # matches" (rc 1 -> allow) from a real scan failure (rc >1, or grep
+              # absent -> fail CLOSED and block). A masked pipeline status here
+              # would let a broken grep miscount as 0 and silently orphan resources.
+              set +e
+              matches="$(printf '%s' "${pvs}" | grep -oE "\"driver\"[[:space:]]*:[[:space:]]*\"${driver_re}\"")"
+              rc=$?
+              set -e
+              if [ "${rc}" -gt 1 ]; then
+                echo "ERROR: could not scan the PersistentVolume list (grep exit ${rc})." >&2
+                echo "Blocking uninstall to avoid orphaning driver-owned volumes." >&2
+                exit 1
+              fi
+              if [ "${rc}" -eq 0 ]; then
+                count="$(printf '%s\n' "${matches}" | wc -l | tr -d '[:space:]')"
+              else
+                count=0
+              fi
+              case "${count}" in
+                ''|*[!0-9]*)
+                  echo "ERROR: unexpected PersistentVolume scan result '${count}'." >&2
+                  echo "Blocking uninstall to avoid orphaning driver-owned volumes." >&2
+                  exit 1
+                  ;;
+              esac
+              if [ "${count}" -gt 0 ]; then
+                echo "ERROR: found ${count} PersistentVolume(s) still using the ${driver} CSI driver." >&2
+                echo "Delete the PVCs/PVs first so the driver can clean up their backing AMLFS" >&2
+                echo "filesystems (dynamic provisioning) and avoid stuck Terminating PVs, then" >&2
+                echo "uninstall. To bypass this guard, set preDeleteGuard.enabled=false or run" >&2
+                echo "'helm uninstall --no-hooks'." >&2
+                exit 1
+              fi
+              echo "No ${driver} PersistentVolumes found; allowing uninstall."
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.preDeleteGuard.resources | nindent 12 }}
+{{- end }}
