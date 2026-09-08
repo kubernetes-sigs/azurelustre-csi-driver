@@ -28,7 +28,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// Defines Non blocking GRPC server interfaces
+// NonBlockingGRPCServer defines the lifecycle of a nonblocking gRPC server.
 type NonBlockingGRPCServer interface {
 	// Start services at the endpoint
 	Start(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer, testMode bool)

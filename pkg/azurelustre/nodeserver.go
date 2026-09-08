@@ -374,7 +374,7 @@ func unmountVolumeAtPath(d *Driver, targetPath string) error {
 	return err
 }
 
-// Staging and Unstaging is not able to be supported with how Lustre is mounted
+// NodeStageVolume is unsupported because of how kubelet checks Lustre mounts.
 //
 // This was discovered during a proof of concept implementation and the issue
 // is as follows:
@@ -429,7 +429,7 @@ func (d *Driver) NodeStageVolume(_ context.Context, _ *csi.NodeStageVolumeReques
 	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
 }
 
-// Staging and Unstaging is not able to be supported with how Lustre is mounted
+// NodeUnstageVolume is unsupported because Lustre volumes are not staged.
 //
 // See NodeStageVolume for more details
 func (d *Driver) NodeUnstageVolume(_ context.Context, _ *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
