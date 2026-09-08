@@ -65,6 +65,7 @@ Additional lint checks cover these conventions:
 | `dupword` | Detect accidentally repeated words in comments and strings. |
 | `errname` | Give sentinel errors and error types recognizable names. |
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
+| `forbidigo` | Prefer logging and error returns to printing, panic, or os.Exit. |
 | `goconst` | Detect repeated production strings; preserve literal test fixtures. |
 | `gocritic` | Check suspicious constructs with its default stable rules. |
 | `godoclint` | Keep Go documentation consistent with the symbols it describes. |

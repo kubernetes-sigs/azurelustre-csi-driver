@@ -76,6 +76,14 @@ linters:
       disable-default-exclusions: true
       check-type-assertions: true
       check-blank: true
+    forbidigo:
+      forbid:
+        - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
+          msg: use klog for logging
+        - pattern: '^os\.Exit$'
+          msg: return errors instead of calling os.Exit
+        - pattern: '^panic$'
+          msg: return errors instead of panicking
     goconst:
       ignore-tests: true
     grouper:
