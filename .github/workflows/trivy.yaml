@@ -1,12 +1,13 @@
+---
 name: Trivy vulnerability scanner
 
 # Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the main branch
+  # Triggers the workflow on configured push and pull request branches
   push:
-    branches: [ main, development ]
+    branches: [main, development, 'release/**']
   pull_request:
-    branches: [ main, development ]
+    branches: [main, development]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -35,10 +36,8 @@ jobs:
 
       - name: Build an image from Dockerfile
         run: |
-          export PUBLISH=true
           export REGISTRY=test
           export IMAGE_VERSION=latest
-          export DOCKER_CLI_EXPERIMENTAL=enabled
           make container
 
       - name: Run Trivy vulnerability scanner
@@ -61,3 +60,12 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0
+        with:
+          image-ref: 'test/azurelustre-csi:latest-azurelinux3'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'

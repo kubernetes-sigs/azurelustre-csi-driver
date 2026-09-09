@@ -4,19 +4,31 @@ apiVersion: apps/v1
 metadata:
   name: csi-azurelustre-node-jammy
   namespace: kube-system
+  labels:
+    app.kubernetes.io/component: node
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+    app: csi-azurelustre-node
+    flavor: jammy
 spec:
   updateStrategy:
     rollingUpdate:
-      maxUnavailable: 1
+      maxUnavailable: 10%
     type: RollingUpdate
   selector:
     matchLabels:
+      app.kubernetes.io/component: node
       app: csi-azurelustre-node
       flavor: jammy
   template:
     metadata:
       labels:
         app: csi-azurelustre-node
+        app.kubernetes.io/component: node
+        app.kubernetes.io/name: azurelustre-csi-driver
+        app.kubernetes.io/part-of: azurelustre-csi-driver
+        app.kubernetes.io/version: v0.6.0
         flavor: jammy
     spec:
       hostNetwork: true
@@ -24,6 +36,10 @@ spec:
       serviceAccountName: csi-azurelustre-node-sa
       nodeSelector:
         kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -39,8 +55,89 @@ spec:
                       - Ubuntu2204
                       - Ubuntu2004  # To support CVM nodes still on 20.04
       priorityClassName: system-node-critical
+      # Tolerate common AKS user-pool taints (spot, GPU) but NOT CriticalAddonsOnly,
+      # which keeps the plugin off reserved/AKS Automatic system pools. See the
+      # node.tolerations comment in the Helm chart values.yaml for rationale.
       tolerations:
-        - operator: "Exists"
+        - key: kubernetes.azure.com/scalesetpriority
+          operator: Equal
+          value: spot
+          effect: NoSchedule
+        - key: sku
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        # Native sidecar (restartPolicy: Always): installs the Lustre client
+        # kernel module for the running kernel, loads it into the shared host
+        # kernel, configures LNet, then runs an LNet reconcile loop for the life
+        # of the pod. Its startupProbe gates the driver and registrar containers
+        # so they do not start until LNet is up, leaving the registrar's 30s
+        # connect deadline racing only the driver's utils install; on
+        # termination its SIGTERM handler unloads the modules so nothing is left
+        # behind when the driver is uninstalled.
+        - name: lustre-loader
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy
+          imagePullPolicy: Always
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                # Restart the sidecar only when the Lustre kernel module has
+                # vanished (unrecoverable in-process). Transient LNet config
+                # drift is repaired by the reconcile loop and surfaced via the
+                # readinessProbe, so it must not trigger a restart here.
+                - /bin/sh
+                - -c
+                - "test -d /sys/module/lnet"
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: loader
+            - name: LUSTRE_VERSION
+              value: "2.15.8"
+            - name: CLIENT_SHA_SUFFIX
+              value: "39-g2d32b59"
+          volumeMounts:
+            - mountPath: /dev
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            limits:
+              cpu: 1
+              memory: 200Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
       containers:
         - name: liveness-probe
           volumeMounts:
@@ -59,6 +156,11 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
         - name: node-driver-registrar
           image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.13.0
           args:
@@ -90,17 +192,18 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
         - name: azurelustre
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy
           imagePullPolicy: Always
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "lustre_rmmod"]
           args:
-            - "-v=5"
-            - "--endpoint=$(CSI_ENDPOINT)"
-            - "--nodeid=$(KUBE_NODE_NAME)"
+            - -v=5
+            - --endpoint=$(CSI_ENDPOINT)
+            - --nodeid=$(KUBE_NODE_NAME)
           ports:
             - containerPort: 29763
               name: healthz
@@ -109,6 +212,18 @@ spec:
           # - containerPort: 29765
           #   name: metrics
           #   protocol: TCP
+          startupProbe:
+            # Hold off the livenessProbe until the driver is serving: the
+            # liveness-probe sidecar does not bind :29763 until it has connected
+            # to csi.sock, so /healthz is connection-refused for the whole utils
+            # install.
+            failureThreshold: 60
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 10
           livenessProbe:
             failureThreshold: 5
             httpGet:
@@ -118,30 +233,29 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           readinessProbe:
-            failureThreshold: 5
+            # Gate Ready on the CSI socket existing: the driver installs its
+            # userspace utils and only then execs and opens the socket (~18s on
+            # Azure Linux), so without this the pod reports Ready before it can
+            # serve mounts, letting a rolling upgrade advance past a node whose
+            # driver is not serving yet.
             exec:
               command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
-            timeoutSeconds: 10
-            periodSeconds: 30
-          startupProbe:
-            failureThreshold: 120
-            exec:
-              command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
+                - /bin/sh
+                - -c
+                - "test -S /csi/csi.sock"
+            initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 5
+            failureThreshold: 3
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: "yes"
+            - name: AZURELUSTRE_CSI_ROLE
+              value: driver
             - name: LUSTRE_VERSION
-              value: "2.15.7"
+              value: "2.15.8"
             - name: CLIENT_SHA_SUFFIX
-              value: "33-g79ddf99"
+              value: "39-g2d32b59"
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -154,13 +268,18 @@ spec:
               name: socket-dir
             - mountPath: /var/lib/kubelet/
               name: mountpoint-dir
-              mountPropagation: "Bidirectional"
+              mountPropagation: Bidirectional
             - mountPath: /etc/kubernetes/
               name: azure-cred
+              readOnly: true
             - mountPath: /dev
               name: host-dev
             - mountPath: /etc/host-os-release
               name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
           resources:
             limits:
               cpu: 1
@@ -193,3 +312,8 @@ spec:
             path: /etc/os-release
             type: File
           name: host-os-release
+        - name: custom-entrypoint
+          configMap:
+            name: csi-azurelustre-entrypoint
+            defaultMode: 0755
+            optional: true

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -14,41 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -euo pipefail
+
+# shellcheck disable=SC2312 # command -v prints nothing on failure; -z captures both signals
 if [[ -z "$(command -v yamllint)" ]]; then
   apt update && apt install yamllint -y
 fi
 
-LOG=/tmp/yamllint.log
-#helmPath=charts/latest/azurelustre-csi-driver/templates
-
-echo "checking yaml files num ..."
-deployDirNum=`find ./deploy/ -maxdepth 1 -type f -name '*.yaml' ! -name 'kustomization.yaml' | wc -l`
-# helmDirNum=`ls $helmPath/*.yaml | grep -v serviceaccount | wc -l`
-# if [[ "${deployDirNum}" != "${helmDirNum}" ]]; then
-#   echo "yaml file num($deployDirNum) under deploy/ not equal to num($helmDirNum) under $helmPath"
-#   exit 1
-# fi
-
-for path in $(find docs deploy -name '*.yaml')
+for path in $(find docs deploy test .github/workflows -name '*.yaml' -o -name '*.yml') .golangci.yaml .yamllint.yaml
 do
-    echo "checking yamllint under path: $path ..."
-    yamllint -f parsable $path | grep -v "line too long" > $LOG
-    cat $LOG
-    linecount=`cat $LOG | grep -v "line too long" | wc -l`
-    if [ $linecount -gt 0 ]; then
-        echo "yaml files under $path are not linted, failed with: "
-        cat $LOG
+    echo "checking yamllint under path: ${path} ..."
+    if ! output=$(yamllint --strict -f parsable "${path}" 2>&1); then
+        echo "yaml files under ${path} are not linted, failed with: "
+        echo "${output}"
         exit 1
     fi
 done
-
-# echo "checking yamllint under path: $helmPath ..."
-# yamllint -f parsable $helmPath/*.yaml | grep -v "line too long" | grep -v "too many spaces inside braces" | grep -v "missing document start" | grep -v "syntax error" > $LOG
-# linecount=`cat $LOG | wc -l`
-# if [ $linecount -gt 0 ]; then
-# 	echo "yaml files under $helmPath/ are not linted, failed with: "
-# 	cat $LOG
-# 	exit 1
-# fi
 
 echo "Congratulations! All Yaml files have been linted."

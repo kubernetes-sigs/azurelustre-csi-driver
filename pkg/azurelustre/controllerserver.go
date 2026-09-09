@@ -227,11 +227,26 @@ func validateVolumeCapabilities(capabilities []*csi.VolumeCapability) error {
 	return nil
 }
 
+// requireDynamicProvisioner rejects volume lifecycle RPCs on pods that never
+// built Azure clients. Though avoided in practice due to sidecar configuration,
+// both pods are currently configured as serving the controller service, so a
+// misrouted request must be answered rather than dereference a nil provisioner.
+func (d *Driver) requireDynamicProvisioner() error {
+	if d.dynamicProvisioner == nil {
+		return status.Errorf(codes.FailedPrecondition,
+			"volume lifecycle requests are served by the controller, not this %s pod", d.podRole)
+	}
+	return nil
+}
+
 // CreateVolume provisions a volume
 func (d *Driver) CreateVolume(
 	ctx context.Context,
 	req *csi.CreateVolumeRequest,
 ) (*csi.CreateVolumeResponse, error) {
+	if err := d.requireDynamicProvisioner(); err != nil {
+		return nil, err
+	}
 	mc := metrics.NewMetricContext(
 		azureLustreCSIDriverName,
 		"controller_create_volume",
@@ -488,6 +503,9 @@ func checkVolumeRequest(req *csi.CreateVolumeRequest) error {
 func (d *Driver) DeleteVolume(
 	ctx context.Context, req *csi.DeleteVolumeRequest,
 ) (*csi.DeleteVolumeResponse, error) {
+	if err := d.requireDynamicProvisioner(); err != nil {
+		return nil, err
+	}
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"controller_delete_volume",
 		d.resourceGroup,

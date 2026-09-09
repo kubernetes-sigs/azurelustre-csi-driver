@@ -1,0 +1,263 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-node-noble
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: node
+    app: csi-azurelustre-node
+    flavor: noble
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: {{ .Values.node.updateStrategy.maxUnavailable }}
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: node
+      app: csi-azurelustre-node
+      flavor: noble
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/component: node
+        app: csi-azurelustre-node
+        flavor: noble
+        {{- include "azurelustre.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      serviceAccountName: {{ include "azurelustre.serviceAccountNameNode" . }}
+      nodeSelector:
+        {{- toYaml .Values.node.noble.nodeSelector | nindent 8 }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: kubernetes.azure.com/os-sku-effective
+                    operator: In
+                    values:
+                      {{- toYaml .Values.node.noble.affinityOsSkus | nindent 22 }}
+      priorityClassName: {{ .Values.node.priorityClassName }}
+      tolerations:
+        {{- toYaml .Values.node.tolerations | nindent 8 }}
+      initContainers:
+        - name: lustre-loader
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -d /sys/module/lnet"
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: loader
+            - name: LUSTRE_VERSION
+              value: {{ .Values.node.noble.lustreClient.version | quote }}
+            - name: CLIENT_SHA_SUFFIX
+              value: {{ .Values.node.noble.lustreClient.shaSuffix | quote }}
+          volumeMounts:
+            - mountPath: {{ .Values.paths.dev }}
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            {{- toYaml .Values.node.noble.resources | nindent 12 }}
+      containers:
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port={{ .Values.sidecars.livenessProbe.node.healthPort }}
+            - --v=2
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+            {{- toYaml .Values.sidecars.livenessProbe.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: node-driver-registrar
+          image: {{ .Values.sidecars.nodeDriverRegistrar.repository }}:{{ .Values.sidecars.nodeDriverRegistrar.tag }}
+          args:
+            - --csi-address=$(ADDRESS)
+            - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+            - --v=2
+          livenessProbe:
+            exec:
+              command:
+                - /csi-node-driver-registrar
+                - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+                - --mode=kubelet-registration-probe
+            initialDelaySeconds: 30
+            timeoutSeconds: 15
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: {{ .Values.paths.kubelet }}/plugins/{{ .Values.csidriver.name }}/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+            {{- toYaml .Values.sidecars.nodeDriverRegistrar.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: azurelustre
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+{{- range $arg := .Values.node.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+            - --endpoint=$(CSI_ENDPOINT)
+            - --nodeid=$(KUBE_NODE_NAME)
+          ports:
+            - containerPort: {{ .Values.sidecars.livenessProbe.node.healthPort }}
+              name: healthz
+              protocol: TCP
+          startupProbe:
+            failureThreshold: 60
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -S /csi/csi.sock"
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: AZURELUSTRE_CSI_ROLE
+              value: driver
+            - name: LUSTRE_VERSION
+              value: {{ .Values.node.noble.lustreClient.version | quote }}
+            - name: CLIENT_SHA_SUFFIX
+              value: {{ .Values.node.noble.lustreClient.shaSuffix | quote }}
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: {{ .Values.paths.kubelet }}/
+              name: mountpoint-dir
+              mountPropagation: Bidirectional
+            - mountPath: {{ .Values.paths.kubernetes }}/
+              name: azure-cred
+              readOnly: true
+            - mountPath: {{ .Values.paths.dev }}
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            {{- toYaml .Values.node.noble.resources | nindent 12 }}
+      volumes:
+        - hostPath:
+            path: {{ .Values.paths.kubelet }}/plugins/{{ .Values.csidriver.name }}
+            type: DirectoryOrCreate
+          name: socket-dir
+        - hostPath:
+            path: {{ .Values.paths.kubelet }}/plugins_registry/
+            type: Directory
+          name: registration-dir
+        - hostPath:
+            path: {{ .Values.paths.kubelet }}/
+            type: Directory
+          name: mountpoint-dir
+        - hostPath:
+            path: {{ .Values.paths.kubernetes }}/
+            type: DirectoryOrCreate
+          name: azure-cred
+        - hostPath:
+            path: {{ .Values.paths.dev }}
+            type: Directory
+          name: host-dev
+        - hostPath:
+            path: {{ .Values.paths.osRelease }}
+            type: File
+          name: host-os-release
+        - name: custom-entrypoint
+          configMap:
+            name: csi-azurelustre-entrypoint
+            defaultMode: 0755
+            optional: true

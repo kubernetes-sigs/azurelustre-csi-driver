@@ -1,0 +1,25 @@
+# shellcheck configuration for the azurelustre-csi-driver repo.
+#
+# We run shellcheck with `-o all -S style` to opt into the strictest
+# ruleset and surface stylistic issues. The two rules below are excluded
+# from `-o all` because they have very high false-positive rates on
+# correctly-written, simple scripts and would force us to either
+# pepper the codebase with `# shellcheck disable` comments or to rewrite
+# straightforward code into harder-to-read forms purely to silence them:
+#
+#   SC2310 - "This function is invoked in an 'if' condition so set -e
+#            will be disabled. Invoke separately if failures should
+#            cause the script to exit." Triggers any time you call a
+#            function that may itself call other commands inside an
+#            `if`, which is the dominant pattern for guard checks.
+#
+#   SC2312 - "Consider invoking this command separately to avoid
+#            masking its return value (or use '|| true' to ignore)."
+#            Triggers any time a command's stdout is captured in `$( )`
+#            inside a conditional, which again is a normal idiom.
+#
+# All other optional rules from `-o all` are enabled. If you find
+# yourself wanting to disable a rule for a single line, prefer an
+# inline `# shellcheck disable=SCxxxx` comment with a short
+# justification rather than expanding this list.
+disable=SC2310,SC2312

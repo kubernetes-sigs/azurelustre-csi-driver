@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: csi-azurelustre-controller
+      app.kubernetes.io/component: controller

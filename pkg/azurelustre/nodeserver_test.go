@@ -41,7 +41,7 @@ const (
 )
 
 func TestNodeGetInfo(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 
 	// Test valid request
 	req := csi.NodeGetInfoRequest{}
@@ -51,7 +51,7 @@ func TestNodeGetInfo(t *testing.T) {
 }
 
 func TestNodeGetCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capType := &csi.NodeServiceCapability_Rpc{
 		Rpc: &csi.NodeServiceCapability_RPC{
 			Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
@@ -108,7 +108,7 @@ func TestEnsureMountPoint(t *testing.T) {
 	}
 
 	// Setup
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeMounter := &fakeMounter{}
 	fakeExec := &testingexec.FakeExec{ExactOrder: true}
 	d.mounter = &mount.SafeFormatAndMount{
@@ -312,9 +312,9 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap, AccessType: &csi.VolumeCapability_Mount{
 					Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"noatime", "flock"}},
 				}},
-				VolumeId:      "vol_1#lustrefs#1.1.1.1##test-amlfilesystem-rg",
+				VolumeId:      "vol_1#lustrefs#1.1.1.1##t#test-amlfilesystem-rg",
 				TargetPath:    targetTest,
-				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "amlfilesystem-name": "test-amlfilesystem-name", "resource-group-name": "test-amlfilesystem-rg"},
+				VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "amlfilesystem-name": "test-amlfilesystem-name", "resource-group-name": "test-amlfilesystem-rg", "created-by-dynamic-provisioning": "t"},
 				Readonly:      false,
 			},
 			expectedErr:          nil,
@@ -489,6 +489,22 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMountActions: []mount.FakeAction{},
 		},
 		{
+			desc: "Success already mounted returns OK even when cluster ping is unreachable",
+			setup: func(d *Driver) {
+				d.pingChecker = &fakePingChecker{err: status.Error(codes.FailedPrecondition, "MGS IP address is not reachable")}
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
+				TargetPath:       alreadyExistTarget,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
+				Readonly:         true,
+			},
+			expectedErr:          nil,
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
 			desc: "Error could not mount",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
@@ -521,11 +537,25 @@ func TestNodePublishVolume(t *testing.T) {
 				d.volumeLocks.Release(lockKey)
 			},
 		},
+		{
+			desc: "Error failed ping to MGS",
+			setup: func(d *Driver) {
+				d.pingChecker = &fakePingChecker{err: status.Error(codes.FailedPrecondition, "MGS IP address is not reachable")}
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+			},
+			expectedErr:          status.Error(codes.FailedPrecondition, "MGS IP address is not reachable"),
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
 	}
 
-	d := NewFakeDriver()
-
 	for i := range tests {
+		d := NewFakeDriver(t)
 		test := &tests[i]
 
 		fakeMounter := &fakeMounter{}
@@ -721,7 +751,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	}
 
 	// Setup
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	d.workingMountDir = workingMountDir
 
 	for i := range tests {
@@ -855,7 +885,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	}
 
 	// Setup
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 
 	for i := range tests {
 		test := &tests[i]
@@ -1045,21 +1075,147 @@ func TestNewLustreVolume(t *testing.T) {
 		},
 		{
 			desc:    "valid context with dynamic provisioning",
-			id:      "vol_1#lustrefs#1.1.1.1##test-amlfilesystem-rg",
+			id:      "vol_1#lustrefs#1.1.1.1##t#test-amlfilesystem-rg",
 			volName: "vol_1",
 			params: map[string]string{
-				"mgs-ip-address":      "1.1.1.1",
-				"fs-name":             "lustrefs",
-				"amlfilesystem-name":  "test-amlfilesystem-name",
-				"resource-group-name": "test-amlfilesystem-rg",
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"amlfilesystem-name":              "test-amlfilesystem-name",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "t",
 			},
 			expectedLustreVolume: &lustreVolume{
-				id:                "vol_1#lustrefs#1.1.1.1##test-amlfilesystem-rg",
-				name:              "vol_1",
-				azureLustreName:   "lustrefs",
-				mgsIPAddress:      "1.1.1.1",
-				subDir:            "",
-				resourceGroupName: "test-amlfilesystem-rg",
+				id:                           "vol_1#lustrefs#1.1.1.1##t#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: true,
+			},
+		},
+		{
+			desc:    "valid context not created by dynamic provisioning",
+			id:      "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"amlfilesystem-name":              "test-amlfilesystem-name",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "f",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: false,
+			},
+		},
+		{
+			desc:    "ignore invalid 'created by dynamic provisioning' value",
+			id:      "vol_1#lustrefs#1.1.1.1##unknown#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"amlfilesystem-name":              "test-amlfilesystem-name",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "unknown",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##unknown#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: false,
+			},
+		},
+		{
+			desc:    "dynamic provisioning empty string defaults to false",
+			id:      "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"amlfilesystem-name":              "test-amlfilesystem-name",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: false,
+			},
+		},
+		{
+			desc:    "invalid dynamic provisioning value 'true' defaults to false",
+			id:      "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"amlfilesystem-name":              "test-amlfilesystem-name",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "true",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##f#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: false,
+			},
+		},
+		{
+			desc:    "case insensitive parameter key handling",
+			id:      "vol_1#lustrefs#1.1.1.1##t#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"MGS-IP-ADDRESS":                  "1.1.1.1",
+				"FS-NAME":                         "lustrefs",
+				"RESOURCE-GROUP-NAME":             "test-amlfilesystem-rg",
+				"CREATED-BY-DYNAMIC-PROVISIONING": "t",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##t#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: true,
+			},
+		},
+		{
+			desc:    "uppercase dynamic provisioning value 'T' is not case insensitive",
+			id:      "vol_1#lustrefs#1.1.1.1##T#test-amlfilesystem-rg",
+			volName: "vol_1",
+			params: map[string]string{
+				"mgs-ip-address":                  "1.1.1.1",
+				"fs-name":                         "lustrefs",
+				"resource-group-name":             "test-amlfilesystem-rg",
+				"created-by-dynamic-provisioning": "T",
+			},
+			expectedLustreVolume: &lustreVolume{
+				id:                           "vol_1#lustrefs#1.1.1.1##T#test-amlfilesystem-rg",
+				name:                         "vol_1",
+				azureLustreName:              "lustrefs",
+				mgsIPAddress:                 "1.1.1.1",
+				subDir:                       "",
+				resourceGroupName:            "test-amlfilesystem-rg",
+				createdByDynamicProvisioning: false,
 			},
 		},
 		{
@@ -1148,4 +1304,22 @@ func TestNewLustreVolume(t *testing.T) {
 			assert.Equal(t, test.expectedLustreVolume, vol, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, vol, test.expectedLustreVolume)
 		})
 	}
+}
+
+func TestNodeStageVolume(t *testing.T) {
+	d := NewFakeDriver(t)
+	req := csi.NodeStageVolumeRequest{}
+	resp, err := d.NodeStageVolume(context.Background(), &req)
+	assert.Nil(t, resp)
+	require.ErrorContains(t, err, "not implemented")
+	assert.Equal(t, codes.Unimplemented, status.Code(err))
+}
+
+func TestNodeUnstageVolume(t *testing.T) {
+	d := NewFakeDriver(t)
+	req := csi.NodeUnstageVolumeRequest{}
+	resp, err := d.NodeUnstageVolume(context.Background(), &req)
+	assert.Nil(t, resp)
+	require.ErrorContains(t, err, "not implemented")
+	assert.Equal(t, codes.Unimplemented, status.Code(err))
 }

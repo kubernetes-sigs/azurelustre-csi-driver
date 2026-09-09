@@ -1,0 +1,183 @@
+{{- if not (has .Values.IsWorkloadIdentityEnabled (list "Enabled" "Disabled")) -}}
+{{- fail (printf "IsWorkloadIdentityEnabled must be 'Enabled' or 'Disabled', got: %v" .Values.IsWorkloadIdentityEnabled) -}}
+{{- end -}}
+{{- if eq .Values.IsWorkloadIdentityEnabled "Enabled" -}}
+{{- $_ := required "IdentityClientId must be set when IsWorkloadIdentityEnabled is Enabled" .Values.IdentityClientId -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: controller
+    app: csi-azurelustre-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app: csi-azurelustre-controller
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/component: controller
+        app: csi-azurelustre-controller
+        {{- if eq .Values.IsWorkloadIdentityEnabled "Enabled" }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+        {{- include "azurelustre.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "azurelustre.serviceAccountNameController" . }}
+      nodeSelector:
+        {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      tolerations:
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: kubernetes.azure.com/cluster
+                    operator: Exists
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+          # Soft preference to keep the controller off AKS-managed system node
+          # pools. This is advisory only (a Deployment, unlike a DaemonSet,
+          # schedules replicas the scheduler can steer) so the controller still
+          # falls back to a system node if no user node is available.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.azure.com/mode
+                    operator: NotIn
+                    values:
+                      - system
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-controller
+                topologyKey: topology.kubernetes.io/zone
+              weight: 10
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-controller
+                topologyKey: kubernetes.io/hostname
+              weight: 5
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: csi-provisioner
+          image: {{ .Values.sidecars.provisioner.repository }}:{{ .Values.sidecars.provisioner.tag }}
+          args:
+            - -v=2
+            - --leader-election
+            - --timeout=15m
+            - --extra-create-metadata=true
+            - --volume-name-uuid-length=-1
+            - --csi-address=$(ADDRESS)
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+            {{- toYaml .Values.sidecars.provisioner.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: liveness-probe
+          image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port={{ .Values.sidecars.livenessProbe.controller.healthPort }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            {{- toYaml .Values.sidecars.livenessProbe.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: azurelustre
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+{{- range $arg := .Values.controller.extraArgs }}
+            - {{ $arg | quote }}
+{{- end }}
+            - --endpoint=$(CSI_ENDPOINT)
+          ports:
+            - containerPort: {{ .Values.sidecars.livenessProbe.controller.healthPort }}
+              name: healthz
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: controller
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            # Naming one credential keeps the chain from silently falling back to
+            # another identity, and skips the IMDS probe timeout on the managed path.
+            - name: AZURE_TOKEN_CREDENTIALS
+              value: {{ ternary "WorkloadIdentityCredential" "ManagedIdentityCredential" (eq .Values.IsWorkloadIdentityEnabled "Enabled") }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: {{ .Values.paths.kubernetes }}/
+              name: azure-cred
+              readOnly: true
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: azure-cred
+          hostPath:
+            path: {{ .Values.paths.kubernetes }}/
+            type: DirectoryOrCreate

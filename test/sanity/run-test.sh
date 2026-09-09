@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 The Kubernetes Authors.
 #
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -eo pipefail
+set -euo pipefail
 
 function cleanup {
   echo 'pkill -f azurelustreplugin'
@@ -32,9 +32,9 @@ if [[ "$#" -gt 0 ]] && [[ -n "$1" ]]; then
   nodeid="$1"
 fi
 
-_output/azurelustreplugin --endpoint "$controllerendpoint" -v=5 &
-_output/azurelustreplugin --endpoint "$nodeendpoint" --nodeid "$nodeid" --enable-azurelustre-mock-mount -v=5 &
+_output/azurelustreplugin --endpoint "${controllerendpoint}" -v=5 &
+_output/azurelustreplugin --endpoint "${nodeendpoint}" --nodeid "${nodeid}" --enable-azurelustre-mock-mount -v=5 &
 
 echo "Begin to run sanity test..."
 readonly CSI_SANITY_BIN='csi-sanity'
-"$CSI_SANITY_BIN" --ginkgo.v --csi.endpoint=$nodeendpoint --csi.controllerendpoint=$controllerendpoint -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should be idempotent|should return appropriate capabilities"
+"${CSI_SANITY_BIN}" --ginkgo.v "--csi.endpoint=${nodeendpoint}" "--csi.controllerendpoint=${controllerendpoint}" -ginkgo.skip="should fail when requesting to create a volume with already existing name and different capacity|should be idempotent|should return appropriate capabilities"
