@@ -570,11 +570,11 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
 3. **Align image versions:**
 
    Ensure all three DaemonSets use the same base version (only differing by OS suffix):
-   - Jammy: `v0.5.0-jammy`
-   - Noble: `v0.5.0-noble`
-   - Azure Linux 3: `v0.5.0-azurelinux3`
+   - Jammy: `v0.6.0-jammy`
+   - Noble: `v0.6.0-noble`
+   - Azure Linux 3: `v0.6.0-azurelinux3`
 
-   All three should share the same version number (`v0.5.0` in this example).
+   All three should share the same version number (`v0.6.0` in this example).
 
 4. **If upgrading from driver version < v0.4.0:**
 

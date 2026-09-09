@@ -50,8 +50,8 @@ package manager or Go toolchain. The `csc` image is never shipped.
 
 The shared test wrapper in `dalec-build-defs` checks out the integration harness
 from the CSI version being built. Stable versions use the matching tag directly.
-For prereleases, DALEC passes a Debian-style version such as `v0.5.0~rc.1`; the
-wrapper converts it back to the Git tag `v0.5.0-rc.1` before cloning this repo.
+For prereleases, DALEC passes a Debian-style version such as `v0.6.0~rc.1`; the
+wrapper converts it back to the Git tag `v0.6.0-rc.1` before cloning this repo.
 
 There are two exceptions:
 
@@ -106,24 +106,24 @@ Azure Linux 3:
 
 ```bash
 cd "$DALEC"
-export REGISTRY=upstream.azurecr.io REPO=oss/v2/kubernetes-csi TAG=v0.5.0-azurelinux3
+export REGISTRY=upstream.azurecr.io REPO=oss/v2/kubernetes-csi TAG=v0.6.0-azurelinux3
 export IMAGE_NAME="${REGISTRY}/${REPO}/azurelustre-csi:${TAG}"
 docker buildx build --target azlinux3/container --build-arg DALEC_SKIP_SIGNING=1 \
-  -f specs/kubernetes-csi-azurelustre/azurelustre-csi-azurelinux3-0.5.0.yml \
+  -f specs/kubernetes-csi-azurelustre/azurelustre-csi-azurelinux3-0.6.0.yml \
   -t "$IMAGE_NAME" --load .
 ```
 
 For the deb variants use `--target noble/testing/container` (or
 `jammy/testing/container`) and the matching component-first spec file, such as
-`azurelustre-csi-noble-0.5.0.yml`.
+`azurelustre-csi-noble-0.6.0.yml`.
 
 For a release candidate, the generated spec filename uses `~`, while the image
 tag and CSI Git tag use `-`. For example:
 
 ```text
-Spec:      azurelustre-csi-azurelinux3-0.5.0~rc.1.yml
-Image tag: v0.5.0-rc.1-azurelinux3
-Git tag:   v0.5.0-rc.1
+Spec:      azurelustre-csi-azurelinux3-0.6.0~rc.1.yml
+Image tag: v0.6.0-rc.1-azurelinux3
+Git tag:   v0.6.0-rc.1
 ```
 
 ### 2. Build the csc sidecar image

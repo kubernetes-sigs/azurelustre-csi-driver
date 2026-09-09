@@ -7,7 +7,7 @@ metadata:
   labels:
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: latest
+    app.kubernetes.io/version: v0.6.0
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
@@ -16,7 +16,7 @@ metadata:
   labels:
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: latest
+    app.kubernetes.io/version: v0.6.0
 rules:
   - apiGroups:
       - ""
@@ -92,7 +92,7 @@ metadata:
   labels:
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: latest
+    app.kubernetes.io/version: v0.6.0
 subjects:
   - kind: ServiceAccount
     name: csi-azurelustre-controller-sa

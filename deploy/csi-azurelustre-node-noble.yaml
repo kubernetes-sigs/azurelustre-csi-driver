@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: node
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: latest
+    app.kubernetes.io/version: v0.6.0
     app: csi-azurelustre-node
     flavor: noble
 spec:
@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/component: node
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: latest
+        app.kubernetes.io/version: v0.6.0
         app: csi-azurelustre-node
         flavor: noble
     spec:
@@ -78,7 +78,7 @@ spec:
         # termination its SIGTERM handler unloads the modules so nothing is left
         # behind when the driver is uninstalled.
         - name: lustre-loader
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble
           imagePullPolicy: Always
           restartPolicy: Always
           securityContext:
@@ -196,7 +196,7 @@ spec:
               drop:
                 - ALL
         - name: azurelustre
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble
           imagePullPolicy: Always
           args:
             - -v=5

@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: latest
+    app.kubernetes.io/version: v0.6.0
 spec:
   fsGroupPolicy: File
   attachRequired: false
