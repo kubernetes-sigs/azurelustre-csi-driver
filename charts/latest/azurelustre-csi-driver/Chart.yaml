@@ -1,0 +1,14 @@
+apiVersion: v2
+appVersion: latest
+description: Azure Lustre CSI Driver Helm chart
+home: https://github.com/kubernetes-sigs/azurelustre-csi-driver
+keywords:
+- storage
+- csi
+- azure
+- lustre
+kubeVersion: '>=1.29.0-0'
+name: azurelustre-csi-driver
+sources:
+- https://github.com/kubernetes-sigs/azurelustre-csi-driver
+version: 0.0.0

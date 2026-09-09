@@ -9,7 +9,9 @@ https://git.k8s.io/community/contributors/devel/release.md#issue-kind-label
 6. If the PR is unfinished, see how to mark it: https://git.k8s.io/community/contributors/guide/pull-requests.md#marking-unfinished-pull-requests
 -->
 
-**What type of PR is this?**
+# Pull Request
+
+## What type of PR is this?
 
 <!--
 Add one of the following kinds:
@@ -28,9 +30,10 @@ Optionally add one or more of the following kinds if applicable:
 /kind regression
 -->
 
-**What this PR does / why we need it**:
+## What this PR does / why we need it
 
-**Which issue(s) this PR fixes**:
+## Which issue(s) this PR fixes
+
 <!--
 *Automatically closes linked issue when PR is merged.
 Usage: `Fixes #<issue number>`, or `Fixes (paste link of issue)`.
@@ -38,7 +41,8 @@ _If PR is about `failing-tests or flakes`, please post the related issues/tests 
 -->
 Fixes #
 
-**Requirements**:
+## Requirements
+
 - [ ] uses [conventional commit messages](https://www.conventionalcommits.org/)
   <!-- Common commit types:
         build: Build 🏭
@@ -57,10 +61,10 @@ Fixes #
 - [ ] adds unit tests
 - [ ] tested upgrade from previous version
 
-**Special notes for your reviewer**:
+## Special notes for your reviewer
 
+## Release note
 
-**Release note**:
-```
+```text
 none
 ```

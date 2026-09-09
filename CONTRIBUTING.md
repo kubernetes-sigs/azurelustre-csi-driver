@@ -6,9 +6,6 @@ _As contributors and maintainers of this project, and in the interest of fosteri
 
 ## Getting Started
 
-## Adding new sample drivers
-Please, DO NOT submit PRs to add new drivers here unless they are just examples. Real CSI drivers are to be housed on their own repo separate from this one. You are then welcomed to send a PR to https://github.com/kubernetes-csi/docs to add the [Driver](https://github.com/kubernetes-csi/docs/wiki/Drivers) page.
-
 We have full documentation on how to get started contributing here:
 
 - [Contributor License Agreement](https://git.k8s.io/community/CLA.md) Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests

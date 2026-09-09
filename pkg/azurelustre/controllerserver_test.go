@@ -35,7 +35,7 @@ import (
 )
 
 func TestControllerGetCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	d.AddControllerServiceCapabilities(controllerServiceCapabilities)
 	req := csi.ControllerGetCapabilitiesRequest{}
 	resp, err := d.ControllerGetCapabilities(context.Background(), &req)
@@ -108,7 +108,7 @@ func buildDynamicProvCreateVolumeRequest() *csi.CreateVolumeRequest {
 }
 
 func TestCreateVolume_Success(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	rep, err := d.CreateVolume(context.Background(), req)
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestCreateVolume_Success(t *testing.T) {
 }
 
 func TestCreateVolume_Success_DoesNotCallDynamicProvisioner(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	req := buildCreateVolumeRequest()
@@ -130,7 +130,7 @@ func TestCreateVolume_Success_DoesNotCallDynamicProvisioner(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Success(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
@@ -170,7 +170,7 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 		},
 	}
 
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	ctrl := gomock.NewController(t)
@@ -193,7 +193,7 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 func TestDynamicCreateVolume_Success_ZonesSynonym(t *testing.T) {
 	expectedZone := "zone1"
 
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -212,7 +212,7 @@ func TestDynamicCreateVolume_Success_ZonesSynonym(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -231,7 +231,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
@@ -245,7 +245,7 @@ func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Success_UsesReturnedIPAddress(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
@@ -289,7 +289,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
-			d := NewFakeDriver()
+			d := NewFakeDriver(t)
 			req := buildCreateVolumeRequest()
 
 			req.CapacityRange = &csi.CapacityRange{
@@ -303,7 +303,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Err_CreateError(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -322,7 +322,7 @@ func TestDynamicCreateVolume_Err_CreateError(t *testing.T) {
 }
 
 func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -340,7 +340,7 @@ func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
 }
 
 func TestParseAmlfilesystemProperties_Err_InvalidZone(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -359,7 +359,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidZone(t *testing.T) {
 }
 
 func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -379,7 +379,7 @@ func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
 }
 
 func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -400,7 +400,7 @@ func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
 }
 
 func TestCreateVolume_Err_NoName(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Name = ""
 	_, err := d.CreateVolume(context.Background(), req)
@@ -412,7 +412,7 @@ func TestCreateVolume_Err_NoName(t *testing.T) {
 }
 
 func TestCreateVolume_Err_NoVolumeCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = nil
 	_, err := d.CreateVolume(context.Background(), req)
@@ -424,7 +424,7 @@ func TestCreateVolume_Err_NoVolumeCapabilities(t *testing.T) {
 }
 
 func TestCreateVolume_Err_EmptyVolumeCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = []*csi.VolumeCapability{}
 	_, err := d.CreateVolume(context.Background(), req)
@@ -436,7 +436,7 @@ func TestCreateVolume_Err_EmptyVolumeCapabilities(t *testing.T) {
 }
 
 func TestCreateVolume_Err_NoParameters(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Parameters = nil
 	_, err := d.CreateVolume(context.Background(), req)
@@ -448,7 +448,7 @@ func TestCreateVolume_Err_NoParameters(t *testing.T) {
 }
 
 func TestCreateVolume_Err_BadSku(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["sku-name"] = "bad-sku"
 	_, err := d.CreateVolume(context.Background(), req)
@@ -460,7 +460,7 @@ func TestCreateVolume_Err_BadSku(t *testing.T) {
 }
 
 func TestCreateVolume_Err_ErrorRetrievingSku(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["location"] = errorLocation
 	_, err := d.CreateVolume(context.Background(), req)
@@ -472,7 +472,7 @@ func TestCreateVolume_Err_ErrorRetrievingSku(t *testing.T) {
 }
 
 func TestCreateVolume_Err_CapacityAboveSkuMax(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.CapacityRange = &csi.CapacityRange{
 		RequiredBytes: 9000 * util.TiB,
@@ -486,7 +486,7 @@ func TestCreateVolume_Err_CapacityAboveSkuMax(t *testing.T) {
 }
 
 func TestCreateVolume_Err_CapacityOverflow(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.CapacityRange = &csi.CapacityRange{
 		RequiredBytes: math.MaxInt64,
@@ -500,7 +500,7 @@ func TestCreateVolume_Err_CapacityOverflow(t *testing.T) {
 }
 
 func TestCreateVolume_Err_CapacityAboveLimit(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.CapacityRange = &csi.CapacityRange{
 		RequiredBytes: 2 * util.TiB,
@@ -515,7 +515,7 @@ func TestCreateVolume_Err_CapacityAboveLimit(t *testing.T) {
 }
 
 func TestCreateVolume_Success_NoFSName(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	delete(req.GetParameters(), VolumeContextFSName)
 	rep, err := d.CreateVolume(context.Background(), req)
@@ -526,7 +526,7 @@ func TestCreateVolume_Success_NoFSName(t *testing.T) {
 }
 
 func TestCreateVolume_Success_EmptyFSName(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.GetParameters()[VolumeContextFSName] = ""
 	rep, err := d.CreateVolume(context.Background(), req)
@@ -537,7 +537,7 @@ func TestCreateVolume_Success_EmptyFSName(t *testing.T) {
 }
 
 func TestCreateVolume_Err_ParametersEmptySubDir(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Parameters[VolumeContextSubDir] = ""
 	_, err := d.CreateVolume(context.Background(), req)
@@ -549,7 +549,7 @@ func TestCreateVolume_Err_ParametersEmptySubDir(t *testing.T) {
 }
 
 func TestCreateVolume_Err_UnknownParameters(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Parameters["FirstNonexistentParameter"] = "Invalid"
 	req.Parameters["AnotherNonexistentParameter"] = "Invalid"
@@ -564,7 +564,7 @@ func TestCreateVolume_Err_UnknownParameters(t *testing.T) {
 }
 
 func TestCreateVolume_Err_UnknownParametersDynamicProvisioning(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["FirstNonexistentParameter"] = "Invalid"
 	req.Parameters["AnotherNonexistentParameter"] = "Invalid"
@@ -579,7 +579,7 @@ func TestCreateVolume_Err_UnknownParametersDynamicProvisioning(t *testing.T) {
 }
 
 func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeContentSource = &csi.VolumeContentSource{}
 	_, err := d.CreateVolume(context.Background(), req)
@@ -591,7 +591,7 @@ func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
 }
 
 func TestCreateVolume_Err_HasSecrets(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Secrets = map[string]string{}
 	_, err := d.CreateVolume(context.Background(), req)
@@ -603,7 +603,7 @@ func TestCreateVolume_Err_HasSecrets(t *testing.T) {
 }
 
 func TestCreateVolume_Err_HasSecretsValue(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Secrets = map[string]string{"test": "test"}
 	_, err := d.CreateVolume(context.Background(), req)
@@ -615,7 +615,7 @@ func TestCreateVolume_Err_HasSecretsValue(t *testing.T) {
 }
 
 func TestCreateVolume_Err_HasAccessibilityRequirements(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.AccessibilityRequirements = &csi.TopologyRequirement{}
 	_, err := d.CreateVolume(context.Background(), req)
@@ -627,7 +627,7 @@ func TestCreateVolume_Err_HasAccessibilityRequirements(t *testing.T) {
 }
 
 func TestCreateVolume_Err_BlockVolume(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = []*csi.VolumeCapability{
 		{
@@ -648,7 +648,7 @@ func TestCreateVolume_Err_BlockVolume(t *testing.T) {
 }
 
 func TestCreateVolume_Err_BlockMountVolume(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = append(req.VolumeCapabilities,
 		&csi.VolumeCapability{
@@ -679,7 +679,7 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 
 	require.NotEmpty(t, capabilitiesNotSupported, "No unsupported AccessMode.")
 
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = []*csi.VolumeCapability{}
 	t.Logf("Unsupported access modes: %s", capabilitiesNotSupported)
@@ -704,7 +704,7 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 }
 
 func TestCreateVolume_Err_OperationExists(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	if acquired := d.volumeLocks.TryAcquire(req.GetName()); !acquired {
 		assert.Fail(t, "Can't acquire volume lock")
@@ -718,7 +718,7 @@ func TestCreateVolume_Err_OperationExists(t *testing.T) {
 }
 
 func TestDeleteVolume_Success(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	req := &csi.DeleteVolumeRequest{
@@ -731,7 +731,7 @@ func TestDeleteVolume_Success(t *testing.T) {
 }
 
 func TestDeleteVolume_Success_MissingDynamicCreateValue(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	req := &csi.DeleteVolumeRequest{
@@ -744,7 +744,7 @@ func TestDeleteVolume_Success_MissingDynamicCreateValue(t *testing.T) {
 }
 
 func TestDeleteVolume_Success_UnnecessaryResourceGroup(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	req := &csi.DeleteVolumeRequest{
@@ -757,7 +757,7 @@ func TestDeleteVolume_Success_UnnecessaryResourceGroup(t *testing.T) {
 }
 
 func TestDeleteVolume_Success_NoFsName(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"testVolume", "", "127.0.0.1", "testSubDir", "f", ""),
@@ -767,7 +767,7 @@ func TestDeleteVolume_Success_NoFsName(t *testing.T) {
 }
 
 func TestDynamicDeleteVolume_Success(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -794,7 +794,7 @@ func TestDynamicDeleteVolume_Success(t *testing.T) {
 }
 
 func TestDynamicDeleteVolume_Err_DeleteError(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
@@ -815,7 +815,7 @@ func TestDynamicDeleteVolume_Err_DeleteError(t *testing.T) {
 }
 
 func TestDeleteVolume_Err_NoVolumeID(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: "",
 	}
@@ -828,7 +828,7 @@ func TestDeleteVolume_Err_NoVolumeID(t *testing.T) {
 }
 
 func TestDeleteVolume_Success_InvalidVolumeID(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: "#",
 	}
@@ -837,7 +837,7 @@ func TestDeleteVolume_Success_InvalidVolumeID(t *testing.T) {
 }
 
 func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -852,7 +852,7 @@ func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
 }
 
 func TestDynamicDeleteVolume_Err_NoResourceGroup(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", ""),
@@ -873,7 +873,7 @@ func TestDynamicDeleteVolume_Err_NoResourceGroup(t *testing.T) {
 }
 
 func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -890,7 +890,7 @@ func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
 }
 
 func TestDeleteVolume_Err_OperationExists(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -907,7 +907,7 @@ func TestDeleteVolume_Err_OperationExists(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Success(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range volumeCapabilities {
 		capabilities = append(
@@ -931,7 +931,7 @@ func TestValidateVolumeCapabilities_Success(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Err_NoVolumeID(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range volumeCapabilities {
 		capabilities = append(
@@ -958,7 +958,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeID(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -974,7 +974,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := &csi.ValidateVolumeCapabilitiesRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -990,7 +990,7 @@ func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range volumeCapabilities {
 		capabilities = append(
@@ -1019,7 +1019,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range volumeCapabilities {
 		capabilities = append(
@@ -1048,7 +1048,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
 }
 
 func TestValidateVolumeCapabilities_Success_BlockCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range volumeCapabilities {
 		capabilities = append(
@@ -1088,7 +1088,7 @@ func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
 
 	require.NotEmpty(t, capabilitiesNotSupported, "No unsupported AccessMode.")
 
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	capabilities := []*csi.VolumeCapability{}
 	for _, capability := range capabilitiesNotSupported {
 		capabilities = append(
@@ -1428,7 +1428,7 @@ func TestValidateVolumeName(t *testing.T) {
 }
 
 func TestRoundToAmlfsBlockSizeForSku(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	laaSOBlockSizeInBytes := int64(defaultLaaSOBlockSizeInTib) * util.TiB
 
 	tests := []struct {

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -18,10 +18,18 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# shellcheck source=test/long-haul/utils.sh
 source ./utils.sh
 
-SleepInSecs="100"
-
+# Run reset_all on script exit (success or failure) to ensure the cluster is
+# left in a clean state: stops the sample workload and reinstalls the CSI
+# driver, which clears any DaemonSet nodeSelector patches and orphaned pods
+# left behind by the fault injection steps below. The ERR trap continues to
+# fire first (capturing debug output) before the shell exits and runs EXIT.
+# `|| true` keeps a partial cleanup failure (e.g. apiserver hiccup during
+# `stop_sample_workload`) from masking the original error or aborting the
+# rest of the trap under `set -o errexit`.
+trap 'reset_all || true' EXIT
 trap print_debug ERR
 
 print_logs_title "Reset AKS environment and start sample workload"
@@ -32,31 +40,35 @@ verify_sample_workload_by_pod_status workloadPodName workloadNodeName
 
 
 print_logs_title "Delete workload pod and verify new workload pod "
-kubectl delete po $workloadPodName
-sleep $SleepInSecs
+kubectl delete po "${workloadPodName}"
+kubectl wait --for=delete "pod/${workloadPodName}" --timeout=120s
+# Wait for the deployment to roll the replacement pod to Ready
+kubectl rollout status deployment/azurelustre-longhaulsample-deployment --timeout=300s
 
 verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew
-if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
-    print_logs_error "workload pod $workloadPodName should be killed and new workload should be started"
+# shellcheck disable=SC2154 # workloadPodNameNew is assigned via eval in verify_sample_workload_by_pod_status
+if [[ "${workloadPodName}" == "${workloadPodNameNew}" ]] ; then
+    print_logs_error "workload pod ${workloadPodName} should be killed and new workload should be started"
     print_debug
     fast_exit
 fi
 
-workloadPodName=$workloadPodNameNew
-workloadNodeName=$workloadNodeNameNew
+workloadPodName=${workloadPodNameNew}
+# shellcheck disable=SC2154 # workloadNodeNameNew is assigned via eval in verify_sample_workload_by_pod_status
+workloadNodeName=${workloadNodeNameNew}
 
 
 print_logs_title "Add label for worker nodes"
 kubectl get nodes --no-headers | awk '{print $1}' |
 {
-    while read n;
+    while read -r n;
     do
-        if  [[ $n == "$workloadNodeName" ]]; then
-            print_logs_info "set label node4faulttest=TRUE for $n"
-            kubectl label nodes $n node4faulttest=true --overwrite
+        if  [[ ${n} == "${workloadNodeName}" ]]; then
+            print_logs_info "set label node4faulttest=TRUE for ${n}"
+            kubectl label nodes "${n}" node4faulttest=true --overwrite
         else
-            print_logs_info "set label node4faulttest=FALSE for $n"
-            kubectl label nodes $n node4faulttest=false --overwrite
+            print_logs_info "set label node4faulttest=FALSE for ${n}"
+            kubectl label nodes "${n}" node4faulttest=false --overwrite
         fi
     done
 }
@@ -75,78 +87,106 @@ print_logs_info "Found daemonset ${daemonsetName} managing pod on ${workloadNode
 
 # Patch the specific daemonset
 kubectl patch daemonset "${daemonsetName}" -n kube-system -p '{"spec": {"template": {"spec": {"nodeSelector": {"node4faulttest": "false"}}}}}'
-sleep $SleepInSecs
+# Wait for the CSI node pod on this node to be terminated
+kubectl wait --for=delete "pod/${podOnNode}" -n kube-system --timeout=120s
 
 
 print_logs_title "Verify Lustre CSI node pod removed from the worker node"
-podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
+podState=$(get_pod_state "${NodePodNameKeyword}" "${workloadNodeName}")
 
-if  [[ ! -z "$podState" ]]; then
-    print_logs_error "Lustre CSI node pod can't be deleted on $workloadNodeName, state=$podState"
+if  [[ -n "${podState}" ]]; then
+    print_logs_error "Lustre CSI node pod can't be deleted on ${workloadNodeName}, state=${podState}"
     fast_exit
 else
-    print_logs_info "Lustre CSI node pod is deleted on $workloadNodeName"
+    print_logs_info "Lustre CSI node pod is deleted on ${workloadNodeName}"
 fi
 
 
 print_logs_title "Verify workload pod on the same worker node is still working"
 verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew
-if [[ "$workloadPodName" != "$workloadPodNameNew" || "$workloadNodeName" != "$workloadNodeNameNew" ]] ; then
-    print_logs_error "expected workload pod $workloadPodName on $workloadNodeName, actual new workload pod $workloadPodNameNew on $workloadNodeNameNew"
+if [[ "${workloadPodName}" != "${workloadPodNameNew}" || "${workloadNodeName}" != "${workloadNodeNameNew}" ]] ; then
+    print_logs_error "expected workload pod ${workloadPodName} on ${workloadNodeName}, actual new workload pod ${workloadPodNameNew} on ${workloadNodeNameNew}"
     fast_exit
 fi
 
 
 print_logs_title "Delete the workload pod on the worker node and verify its state"
-kubectl delete po $workloadPodName > /dev/null 2>&1 &
+kubectl delete po "${workloadPodName}" &
 print_logs_info "running 'kubectl delete po' by background task"
-sleep $SleepInSecs
+# Poll for the pod to enter Terminating/Error state.
+# This deletion is backgrounded intentionally to test intermediate states.
+for _ in $(seq 1 30); do
+    podState=$(get_pod_state "${workloadPodName}" "${workloadNodeName}")
+    if [[ "${podState}" == "Terminating" || "${podState}" == "Error" ]]; then
+        break
+    fi
+    sleep 1
+done
 
-podState=$(get_pod_state $workloadPodName $workloadNodeName)
-if [[ "$podState" != "Terminating" && "$podState" != "Error" ]]; then
-    print_logs_error "Workload pod $workloadPodName should be in Error/Terminating state on node $workloadNodeName, but its actual state is $podState"
+podState=$(get_pod_state "${workloadPodName}" "${workloadNodeName}")
+if [[ "${podState}" != "Terminating" && "${podState}" != "Error" ]]; then
+    print_logs_error "Workload pod ${workloadPodName} should be in Error/Terminating state on node ${workloadNodeName}, but its actual state is ${podState}"
     print_debug
     fast_exit
 else
-    print_logs_info "Workload pod $workloadPodName is in Error state on node $workloadNodeName"
+    print_logs_info "Workload pod ${workloadPodName} is in Error state on node ${workloadNodeName}"
 fi
 
 
 print_logs_title "Verify the new workload pod in Running state on other nodes or ContainerCreating state on the same node"
 verify_sample_workload_by_pod_status workloadPodNameNew workloadNodeNameNew "Running\|ContainerCreating"
-if [[ "$workloadPodName" == "$workloadPodNameNew" ]] ; then
-    print_logs_error "New workload pod should be started, but still find old running pod $workloadPodName"
+if [[ "${workloadPodName}" == "${workloadPodNameNew}" ]] ; then
+    print_logs_error "New workload pod should be started, but still find old running pod ${workloadPodName}"
     print_debug
     fast_exit
 else
-    print_logs_info "new workload pod $workloadPodNameNew started on another node $workloadNodeNameNew"
+    print_logs_info "new workload pod ${workloadPodNameNew} started on another node ${workloadNodeNameNew}"
 fi
 
 
 print_logs_title "Bring Lustre CSI node pod back on the worker node"
-kubectl label nodes $workloadNodeName node4faulttest=false --overwrite
-sleep $SleepInSecs
+kubectl label nodes "${workloadNodeName}" node4faulttest=false --overwrite
+# Poll for the CSI node pod on this node to be Ready. Pod phase `Running` can
+# precede the readiness probe passing (which validates LNet/module load), so
+# we explicitly check the Ready condition rather than the phase.
+for i in $(seq 1 60); do
+    ready=$(kubectl get po -n kube-system -l app=csi-azurelustre-node \
+        -o jsonpath="{.items[?(@.spec.nodeName=='${workloadNodeName}')].status.conditions[?(@.type=='Ready')].status}" || true)
+    if [[ "${ready}" == "True" ]]; then
+        break
+    fi
+    print_logs_info "Waiting for CSI node pod Ready on ${workloadNodeName} (attempt ${i}/60, ready=${ready:-pod-not-found})"
+    sleep 5
+done
 
-podState=$(get_pod_state $NodePodNameKeyword $workloadNodeName)
-if  [[ -z "$podState" || "$podState" != "Running" ]]; then
-    print_logs_error "Lustre CSI node pod can't be started on $nodeName, state=$podState"
+# Loop exhausted without observing Ready=True -- fail explicitly. Pod phase
+# Running can precede readiness, so passing the next get_pod_state check
+# does NOT mean the CSI node pod is actually usable.
+if [[ "${ready}" != "True" ]]; then
+    print_logs_error "CSI node pod on ${workloadNodeName} did not become Ready within 300s (last ready=${ready:-pod-not-found})"
+    fast_exit
+fi
+
+podState=$(get_pod_state "${NodePodNameKeyword}" "${workloadNodeName}")
+if  [[ -z "${podState}" || "${podState}" != "Running" ]]; then
+    print_logs_error "Lustre CSI node pod can't be started on ${workloadNodeName}, state=${podState}"
     print_debug
     fast_exit
 else
-    print_logs_info "Lustre CSI node pod started on $nodeName again"
+    print_logs_info "Lustre CSI node pod started on ${workloadNodeName} again"
 fi
 
 
 print_logs_title "Verify the old workload pod is deleted successfully"
-sleep $SleepInSecs
+# Wait for the old workload pod to be fully removed
+kubectl wait --for=delete "pod/${workloadPodName}" --timeout=300s || true
 
-podState=$(get_pod_state $workloadPodName $workloadNodeName)
-if [[ ! -z $podState ]]; then
-    print_logs_error "Still can find workload pod $workloadPodName in $podState state on node $workloadNodeName, it should be deleted successfully"
+podState=$(get_pod_state "${workloadPodName}" "${workloadNodeName}")
+if [[ -n ${podState} ]]; then
+    print_logs_error "Still can find workload pod ${workloadPodName} in ${podState} state on node ${workloadNodeName}, it should be deleted successfully"
     print_debug
     fast_exit
 else
-    print_logs_info "workload pod $workloadPodName has been deleted successfully from node $workloadNodeName"
+    print_logs_info "workload pod ${workloadPodName} has been deleted successfully from node ${workloadNodeName}"
 fi
 
-reset_all

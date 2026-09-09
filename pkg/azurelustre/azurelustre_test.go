@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -39,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	mount "k8s.io/mount-utils"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
@@ -52,28 +55,74 @@ var DefaultLocationSkuValues = map[string]*LustreSkuValue{
 const (
 	fakeNodeID                = "fakeNodeID"
 	fakeDriverName            = "fake"
-	vendorVersion             = "0.4.0"
+	vendorVersion             = "v0.0.0"
 	clusterRequestFailureName = "testShouldFail"
 	driverDefaultLocation     = "defaultFakeLocation"
 	emptyZonesLocation        = "emptyZonesLocation"
 )
 
-func NewFakeDriver() *Driver {
+func NewFakeDriver(t *testing.T) *Driver {
+	t.Helper()
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
 		DriverName:                   fakeDriverName,
 		EnableAzureLustreMockMount:   false,
 		EnableAzureLustreMockDynProv: true,
 	}
-	driver := NewDriver(&driverOptions)
+	driver, err := NewDriver(&driverOptions)
+	require.NoError(t, err)
 	driver.Version = vendorVersion
 	driver.cloud = &azure.Cloud{}
 	driver.cloud.SubscriptionID = "defaultFakeSubID"
 	driver.location = driverDefaultLocation
 	driver.resourceGroup = "defaultFakeResourceGroup"
 	driver.dynamicProvisioner = &FakeDynamicProvisioner{}
+	driver.pingChecker = &fakePingChecker{}
 
 	return driver
+}
+
+func writeFakeCloudConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "azure.json")
+	content := `{
+    "tenantId": "fake-tenant-id",
+    "subscriptionId": "fake-subscription-id",
+    "aadClientId": "fake-client-id",
+    "aadClientSecret": "fake-client-secret",
+    "resourceGroup": "fake-resource-group",
+    "location": "fake-location"
+}`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+type FakeCommandRunner struct {
+	CalledCommands []string
+	cmdShouldFail  bool
+}
+
+func NewFakeCommandRunner(shouldFail bool) *FakeCommandRunner {
+	return &FakeCommandRunner{
+		CalledCommands: []string{},
+		cmdShouldFail:  shouldFail,
+	}
+}
+
+func (f *FakeCommandRunner) RunWithTimeout(_ context.Context, _ time.Duration, cmd string, args ...string) (string, error) {
+	f.CalledCommands = append(f.CalledCommands, fmt.Sprintf("%s %s", cmd, strings.Join(args, " ")))
+	if f.cmdShouldFail {
+		return "", errors.New("error occurred calling command: " + cmd)
+	}
+	return "fake command output", nil
+}
+
+type fakePingChecker struct {
+	err error
+}
+
+func (f *fakePingChecker) EnsureReachable(_ string) error {
+	return f.err
 }
 
 type FakeDynamicProvisioner struct {
@@ -134,27 +183,7 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 }
 
 func TestNewDriver(t *testing.T) {
-	fakeConfigFile := "fake-cred-file.json"
-	fakeConfigContent := `{
-    "tenantId": "fake-tenant-id",
-    "subscriptionId": "fake-subscription-id",
-    "aadClientId": "fake-client-id",
-    "aadClientSecret": "fake-client-secret",
-    "resourceGroup": "fake-resource-group",
-    "location": "fake-location",
-}`
-
-	if err := os.WriteFile(fakeConfigFile, []byte(fakeConfigContent), 0o600); err != nil {
-		t.Error(err)
-	}
-
-	defer func() {
-		if err := os.Remove(fakeConfigFile); err != nil {
-			t.Error(err)
-		}
-	}()
-
-	t.Setenv(DefaultAzureConfigFileEnv, fakeConfigFile)
+	t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
 
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
@@ -164,10 +193,12 @@ func TestNewDriver(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d := NewDriver(&driverOptions)
+	d, err := NewDriver(&driverOptions)
+	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.NotNil(t, d.cloud)
-	assert.NotNil(t, d.dynamicProvisioner)
+	assert.Equal(t, nodePod, d.podRole)
+	assert.Nil(t, d.dynamicProvisioner, "node pods must not build Azure clients")
 	assert.Equal(t, "fake-resource-group", d.resourceGroup)
 	assert.Equal(t, "fake-location", d.location)
 	assert.Equal(t, fakeNodeID, d.NodeID)
@@ -182,6 +213,119 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
 	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
 	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+}
+
+func TestNewDriverIdentityModes(t *testing.T) {
+	tests := []struct {
+		name               string
+		clientID           string
+		tenantID           string
+		federatedTokenFile string
+	}{
+		{name: "managed identity"},
+		{
+			name:               "workload identity",
+			clientID:           "test-client-id",
+			tenantID:           "test-tenant-id",
+			federatedTokenFile: "fake-token-file",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
+			t.Setenv("AZURE_CLIENT_ID", test.clientID)
+			t.Setenv("AZURE_TENANT_ID", test.tenantID)
+			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", test.federatedTokenFile)
+			t.Setenv("AZURE_CLIENT_SECRET", "")
+
+			driverOptions := DriverOptions{
+				DriverName:                   fakeDriverName,
+				EnableAzureLustreMockDynProv: true,
+			}
+			driver, err := NewDriver(&driverOptions)
+
+			require.NoError(t, err)
+			require.NotNil(t, driver)
+			assert.Equal(t, controllerPod, driver.podRole)
+			assert.NotNil(t, driver.dynamicProvisioner, "controller pods must build Azure clients")
+		})
+	}
+}
+
+func writeFakeManagedIdentityCloudConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "azure.json")
+	content := `{
+    "tenantId": "fake-tenant-id",
+    "subscriptionId": "fake-subscription-id",
+    "resourceGroup": "fake-resource-group",
+    "location": "fake-location",
+    "useManagedIdentityExtension": true,
+    "userAssignedIdentityID": "node-identity-client-id"
+}`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+func TestNewDriverKubeletIdentityFallback(t *testing.T) {
+	tests := []struct {
+		name             string
+		tokenCredentials string
+		expectedClientID string
+		reason           string
+	}{
+		{
+			name:             "managed identity adopts the node identity",
+			tokenCredentials: "ManagedIdentityCredential",
+			expectedClientID: "node-identity-client-id",
+			reason:           "managed identity must target the node's user-assigned identity, not the system-assigned one",
+		},
+		{
+			name:             "workload identity does not adopt the node identity",
+			tokenCredentials: "WorkloadIdentityCredential",
+			expectedClientID: "",
+			reason:           "the node identity must not stand in for the workload identity the webhook injects",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(DefaultAzureConfigFileEnv, writeFakeManagedIdentityCloudConfig(t))
+			t.Setenv("AZURE_TOKEN_CREDENTIALS", test.tokenCredentials)
+			t.Setenv("AZURE_CLIENT_ID", "")
+			t.Setenv("AZURE_TENANT_ID", "")
+			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", "")
+			t.Setenv("AZURE_CLIENT_SECRET", "")
+
+			driverOptions := DriverOptions{
+				DriverName:                   fakeDriverName,
+				EnableAzureLustreMockDynProv: true,
+			}
+			_, err := NewDriver(&driverOptions)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedClientID, os.Getenv("AZURE_CLIENT_ID"), test.reason)
+		})
+	}
+}
+
+func TestControllerRPCsRejectedWithoutDynamicProvisioner(t *testing.T) {
+	t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
+
+	driverOptions := DriverOptions{
+		NodeID:     fakeNodeID,
+		DriverName: fakeDriverName,
+	}
+	d, err := NewDriver(&driverOptions)
+	require.NoError(t, err)
+	require.Nil(t, d.dynamicProvisioner, "node pods must not build Azure clients")
+
+	_, createErr := d.CreateVolume(t.Context(), &csi.CreateVolumeRequest{})
+	_, deleteErr := d.DeleteVolume(t.Context(), &csi.DeleteVolumeRequest{})
+
+	assert.Equal(t, codes.FailedPrecondition, status.Code(createErr))
+	assert.Equal(t, codes.FailedPrecondition, status.Code(deleteErr))
 }
 
 func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
@@ -201,7 +345,8 @@ func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d := NewDriver(&driverOptions)
+	d, err := NewDriver(&driverOptions)
+	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
 	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
@@ -231,10 +376,47 @@ func TestNewDriverInvalidConfigFileContents(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d := NewDriver(&driverOptions)
+	d, err := NewDriver(&driverOptions)
+	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
 	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
+}
+
+func TestNewDriverNoCloudConfigReturnsError(t *testing.T) {
+	missingConfigFile := "fake-cred-file-no-config.json"
+
+	if err := os.Remove(missingConfigFile); err != nil && !os.IsNotExist(err) {
+		t.Error(err)
+	}
+
+	t.Setenv(DefaultAzureConfigFileEnv, missingConfigFile)
+
+	driverOptions := DriverOptions{
+		NodeID:                       fakeNodeID,
+		DriverName:                   fakeDriverName,
+		EnableAzureLustreMockMount:   false,
+		EnableAzureLustreMockDynProv: false,
+		WorkingMountDir:              "/tmp",
+		RemoveNotReadyTaint:          true,
+	}
+	d, err := NewDriver(&driverOptions)
+	require.Error(t, err, "NewDriver should return an error when no cloud config is provided and mock dynamic provisioning is disabled")
+	assert.Nil(t, d, "driver should be nil when NewDriver fails")
+}
+
+func TestSelectForceUnmounter(t *testing.T) {
+	t.Run("returns force unmounter when the mounter supports it", func(t *testing.T) {
+		forceUnmounter, err := selectForceUnmounter(&fakeMounter{})
+		require.NoError(t, err)
+		assert.NotNil(t, forceUnmounter, "force unmounter should be returned when the mounter supports it")
+	})
+
+	t.Run("returns an error when the mounter does not support force unmount", func(t *testing.T) {
+		forceUnmounter, err := selectForceUnmounter(&mount.FakeMounter{})
+		require.Error(t, err, "an error should be returned when the mounter does not support force unmount")
+		assert.Nil(t, forceUnmounter, "force unmounter should be nil when not supported")
+	})
 }
 
 func TestIsCorruptedDir(t *testing.T) {
@@ -397,7 +579,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 		{
 			name: "NetworkResourceSubscriptionID is Empty",
 			testFunc: func(t *testing.T) {
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.cloud = &azure.Cloud{}
 				d.cloud.SubscriptionID = "fakeSubID"
 				d.cloud.NetworkResourceSubscriptionID = ""
@@ -421,7 +603,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 		{
 			name: "NetworkResourceSubscriptionID is not Empty",
 			testFunc: func(t *testing.T) {
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.cloud = &azure.Cloud{}
 				d.cloud.SubscriptionID = "fakeSubID"
 				d.cloud.NetworkResourceSubscriptionID = "fakeNetSubID"
@@ -445,7 +627,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 		{
 			name: "VnetResourceGroup is Empty",
 			testFunc: func(t *testing.T) {
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.cloud = &azure.Cloud{}
 				d.cloud.SubscriptionID = "bar"
 				d.cloud.NetworkResourceSubscriptionID = "bar"
@@ -469,7 +651,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 		{
 			name: "VnetResourceGroup is not Empty",
 			testFunc: func(t *testing.T) {
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.cloud = &azure.Cloud{}
 				d.cloud.SubscriptionID = "bar"
 				d.cloud.NetworkResourceSubscriptionID = "bar"
@@ -493,7 +675,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 		{
 			name: "VnetResourceGroup, vnetName, subnetName is specified",
 			testFunc: func(t *testing.T) {
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.cloud = &azure.Cloud{}
 				d.cloud.SubscriptionID = "bar"
 				d.cloud.NetworkResourceSubscriptionID = "bar"
@@ -669,7 +851,7 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 
 				// Create driver with fake client
 				initialDelay := 1 * time.Second
-				d := NewFakeDriver()
+				d := NewFakeDriver(t)
 				d.NodeID = tc.nodeName
 				d.kubeClient = fakeClient
 				d.removeNotReadyTaint = tc.featureEnabled
@@ -726,6 +908,121 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 					assert.Equal(t, initialDelay, removalTime, "Taint removal should complete before max backoff time when no errors are expected")
 				}
 			})
+		})
+	}
+}
+
+func TestAddControllerServiceCapabilities(t *testing.T) {
+	d := NewFakeDriver(t)
+	cl := []csi.ControllerServiceCapability_RPC_Type{csi.ControllerServiceCapability_RPC_UNKNOWN}
+	d.AddControllerServiceCapabilities(cl)
+	assert.Len(t, d.Cap, 1)
+	assert.Equal(t, csi.ControllerServiceCapability_RPC_UNKNOWN, d.Cap[0].GetRpc().GetType())
+}
+
+func TestAddNodeServiceCapabilities(t *testing.T) {
+	d := NewFakeDriver(t)
+
+	nl := []csi.NodeServiceCapability_RPC_Type{csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER}
+	d.AddNodeServiceCapabilities(nl)
+	assert.Len(t, d.NSCap, 1)
+	assert.Equal(t, csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER, d.NSCap[0].GetRpc().GetType())
+}
+
+func TestAddVolumeCapabilityAccessModes(t *testing.T) {
+	d := NewFakeDriver(t)
+
+	vc := []csi.VolumeCapability_AccessMode_Mode{csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER}
+	d.AddVolumeCapabilityAccessModes(vc)
+	assert.Len(t, d.VC, 1)
+	assert.Equal(t, csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER, d.VC[0].GetMode())
+}
+
+func TestAzureIdentityConfigurationMessage(t *testing.T) {
+	const (
+		clientID  = "test-client-id"
+		tenantID  = "test-tenant-id"
+		tokenFile = "fake-token-file"
+	)
+
+	tests := []struct {
+		name             string
+		tokenCredentials string
+		clientID         string
+		federatedToken   string
+		tenantID         string
+		expected         string
+	}{
+		{
+			name:             "workload identity fully injected",
+			tokenCredentials: "WorkloadIdentityCredential",
+			clientID:         clientID,
+			federatedToken:   tokenFile,
+			tenantID:         tenantID,
+			expected:         `authenticating with workload identity (client ID "test-client-id")`,
+		},
+		{
+			name:             "workload identity setting is matched case-insensitively",
+			tokenCredentials: "workloadidentitycredential",
+			clientID:         clientID,
+			federatedToken:   tokenFile,
+			tenantID:         tenantID,
+			expected:         `authenticating with workload identity (client ID "test-client-id")`,
+		},
+		{
+			name:             "workload identity without an injected client ID",
+			tokenCredentials: "WorkloadIdentityCredential",
+			federatedToken:   tokenFile,
+			tenantID:         tenantID,
+			expected:         "configured for workload identity but AZURE_CLIENT_ID is not set; token acquisition will fail until the webhook injects it",
+		},
+		{
+			name:             "workload identity without an injected token file",
+			tokenCredentials: "WorkloadIdentityCredential",
+			clientID:         clientID,
+			tenantID:         tenantID,
+			expected:         "configured for workload identity but AZURE_FEDERATED_TOKEN_FILE is not set; token acquisition will fail until the webhook injects it",
+		},
+		{
+			name:             "workload identity without an injected tenant ID",
+			tokenCredentials: "WorkloadIdentityCredential",
+			clientID:         clientID,
+			federatedToken:   tokenFile,
+			expected:         "configured for workload identity but AZURE_TENANT_ID is not set; token acquisition will fail until the webhook injects it",
+		},
+		{
+			name:             "workload identity with nothing injected names the variable azidentity reports first",
+			tokenCredentials: "WorkloadIdentityCredential",
+			expected:         "configured for workload identity but AZURE_CLIENT_ID is not set; token acquisition will fail until the webhook injects it",
+		},
+		{
+			name:             "managed identity",
+			tokenCredentials: "ManagedIdentityCredential",
+			clientID:         clientID,
+			expected:         `authenticating with managed identity (client ID "test-client-id")`,
+		},
+		{
+			name:             "managed identity without a client ID uses the system-assigned identity",
+			tokenCredentials: "ManagedIdentityCredential",
+			expected:         `authenticating with managed identity (client ID "")`,
+		},
+		{
+			name:     "without credential setting uses managed identity",
+			clientID: clientID,
+			expected: `authenticating with managed identity (client ID "test-client-id")`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZURE_TOKEN_CREDENTIALS", test.tokenCredentials)
+			t.Setenv("AZURE_CLIENT_ID", test.clientID)
+			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", test.federatedToken)
+			t.Setenv("AZURE_TENANT_ID", test.tenantID)
+
+			msg := azureIdentityConfigurationMessage()
+
+			assert.Equal(t, test.expected, msg)
 		})
 	}
 }

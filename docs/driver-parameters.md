@@ -57,6 +57,14 @@ If using the `identities` parameter, users will also need to grant Managed Ident
 Microsoft.ManagedIdentity/userAssignedIdentities/assign/action
 ```
 
+### Workload Identity (Alternative to Kubelet Identity)
+
+Instead of granting these permissions to the kubelet (node) identity, the
+controller can authenticate to Azure using Microsoft Entra Workload Identity,
+with the permissions above assigned to a user-assigned managed identity that is
+federated with the controller ServiceAccount. See
+[Workload Identity](workload-identity.md) for setup.
+
 ### Parameters
 
 Name | Meaning | Available Value | Mandatory | Default value

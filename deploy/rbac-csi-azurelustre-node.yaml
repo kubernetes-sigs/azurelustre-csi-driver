@@ -4,30 +4,41 @@ kind: ServiceAccount
 metadata:
   name: csi-azurelustre-node-sa
   namespace: kube-system
-
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-azurelustre-node-secret-role
+  name: csi-azurelustre-node-role
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "patch"]
-
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - patch
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-azurelustre-node-secret-binding
+  name: csi-azurelustre-node-binding
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
 subjects:
   - kind: ServiceAccount
     name: csi-azurelustre-node-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: csi-azurelustre-node-secret-role
+  name: csi-azurelustre-node-role
   apiGroup: rbac.authorization.k8s.io

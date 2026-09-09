@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2018 The Kubernetes Authors.
 #
@@ -18,6 +18,13 @@ set -euo pipefail
 
 echo "Verifying govet"
 
-go vet $(go list ./... | grep -v vendor)
+# Collect package list, excluding vendor, then vet them
+packages_output=$(go list ./...)
+filtered=()
+while IFS= read -r pkg; do
+  [[ "${pkg}" == *vendor* ]] && continue
+  filtered+=("${pkg}")
+done <<< "${packages_output}"
+go vet "${filtered[@]}"
 
 echo "Done"

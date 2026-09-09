@@ -1,0 +1,17 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: csi-azurelustre-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: csi-azurelustre-controller
+      app.kubernetes.io/component: controller

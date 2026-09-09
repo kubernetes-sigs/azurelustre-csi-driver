@@ -4,39 +4,102 @@ apiVersion: apps/v1
 metadata:
   name: csi-azurelustre-controller
   namespace: kube-system
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
+    app: csi-azurelustre-controller
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: csi-azurelustre-controller
+      app.kubernetes.io/component: controller
   template:
     metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
       labels:
         app: csi-azurelustre-controller
+        app.kubernetes.io/component: controller
+        app.kubernetes.io/name: azurelustre-csi-driver
+        app.kubernetes.io/part-of: azurelustre-csi-driver
+        app.kubernetes.io/version: latest
     spec:
       serviceAccountName: csi-azurelustre-controller-sa
       nodeSelector:
         kubernetes.io/os: linux  # add "kubernetes.io/role: master" to run controller on master node
       priorityClassName: system-cluster-critical
       tolerations:
-        - key: "node-role.kubernetes.io/master"
-          operator: "Exists"
-          effect: "NoSchedule"
-        - key: "node-role.kubernetes.io/controlplane"
-          operator: "Exists"
-          effect: "NoSchedule"
-        - key: "node-role.kubernetes.io/control-plane"
-          operator: "Exists"
-          effect: "NoSchedule"
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/controlplane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: kubernetes.azure.com/cluster
+                    operator: Exists
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+          # Soft preference to keep the controller off AKS-managed system node
+          # pools; advisory only, so it still falls back to a system node when
+          # no user node is available.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.azure.com/mode
+                    operator: NotIn
+                    values:
+                      - system
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-controller
+                topologyKey: topology.kubernetes.io/zone
+              weight: 10
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-controller
+                topologyKey: kubernetes.io/hostname
+              weight: 5
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: csi-provisioner
           image: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner:v5.2.0
           args:
-            - "-v=2"
-            - "--csi-address=$(ADDRESS)"
-            - "--leader-election"
-            - "--timeout=15m"
-            - "--extra-create-metadata=true"
+            - -v=2
+            - --leader-election
+            - --timeout=15m
+            - --extra-create-metadata=true
+            - --volume-name-uuid-length=-1
+            - --csi-address=$(ADDRESS)
           env:
             - name: ADDRESS
               value: /csi/csi.sock
@@ -50,6 +113,11 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
         - name: liveness-probe
           image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.15.0
           args:
@@ -66,13 +134,17 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
         - name: azurelustre
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
           imagePullPolicy: Always
           args:
-            - "-v=5"
-            - "--endpoint=$(CSI_ENDPOINT)"
-            - "--enable-azurelustre-mock-dyn-prov=false"
+            - -v=5
+            - --endpoint=$(CSI_ENDPOINT)
           ports:
             - containerPort: 29762
               name: healthz
@@ -90,17 +162,23 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: controller
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
-            - name: AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT
-              value: "no"
+            - name: AZURE_TOKEN_CREDENTIALS
+              value: ManagedIdentityCredential
           securityContext:
-            privileged: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
             - mountPath: /etc/kubernetes/
               name: azure-cred
+              readOnly: true
           resources:
             limits:
               cpu: 1

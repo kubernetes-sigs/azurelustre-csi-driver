@@ -64,13 +64,13 @@ func (d *Driver) NodePublishVolume(
 			"Target path not provided")
 	}
 
-	context := req.GetVolumeContext()
-	if context == nil {
+	volumeContext := req.GetVolumeContext()
+	if volumeContext == nil {
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume context must be provided")
 	}
 
-	vol, err := getVolume(volumeID, context)
+	vol, err := getVolume(volumeID, volumeContext)
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +88,42 @@ func (d *Driver) NodePublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
+	// Check whether the target is already mounted before doing anything that requires
+	// the MGS to be reachable. NodePublishVolume must be idempotent: a retry against an
+	// already-published target has to return OK even if the cluster is briefly
+	// unreachable, so this fast path runs ahead of the ping check and the sub-dir setup
+	// (which itself mounts the MGS).
+	mnt, err := d.ensureMountPoint(target)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal,
+			"Could not mount target %q: %v",
+			target,
+			err)
+	}
+	if mnt {
+		klog.V(2).Infof(
+			"NodePublishVolume: volume %s is already mounted on %s",
+			volumeID,
+			target,
+		)
+		isOperationSucceeded = true
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
+	if !d.enableAzureLustreMockMount {
+		klog.V(2).Infof("NodePublishVolume: ensuring MGS IP address %s responds to ping before attempting mount", vol.mgsIPAddress)
+		if err := d.pingChecker.EnsureReachable(vol.mgsIPAddress); err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("NodePublishVolume: ping to MGS IP address %s successful", vol.mgsIPAddress)
+	}
+
 	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 
 	mountOptions, readOnly := getMountOptions(req, userMountFlags)
 
 	if len(vol.subDir) > 0 && !d.enableAzureLustreMockMount {
-		interpolatedSubDir := interpolateSubDirVariables(context, vol)
+		interpolatedSubDir := interpolateSubDirVariables(volumeContext, vol)
 
 		if isSubpath := ensureStrictSubpath(interpolatedSubDir); !isSubpath {
 			return nil, status.Error(
@@ -120,22 +150,6 @@ func (d *Driver) NodePublishVolume(
 			"NodePublishVolume: full mount source with sub-dir: %q",
 			source,
 		)
-	}
-
-	mnt, err := d.ensureMountPoint(target)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"Could not mount target %q: %v",
-			target,
-			err)
-	}
-	if mnt {
-		klog.V(2).Infof(
-			"NodePublishVolume: volume %s is already mounted on %s",
-			volumeID,
-			target,
-		)
-		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
 	klog.V(2).Infof(
@@ -411,14 +425,14 @@ func unmountVolumeAtPath(d *Driver, targetPath string) error {
 // to the Lustre cluster as you've ever staged, but without any way to see
 // this other than looking at the mounts on the node or in the kubelet logs.
 func (d *Driver) NodeStageVolume(_ context.Context, _ *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	return nil, status.Errorf(codes.Unimplemented, "method NodeStageVolume not implemented")
 }
 
 // Staging and Unstaging is not able to be supported with how Lustre is mounted
 //
 // See NodeStageVolume for more details
 func (d *Driver) NodeUnstageVolume(_ context.Context, _ *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	return nil, status.Errorf(codes.Unimplemented, "method NodeUnstageVolume not implemented")
 }
 
 // NodeGetCapabilities return the capabilities of the Node plugin
@@ -727,8 +741,7 @@ func newLustreVolume(volumeID, volumeName string, params map[string]string) (*lu
 		case VolumeContextInternalDynamicallyCreated:
 			if v == "t" {
 				createdByDynamicProvisioning = true
-			}
-			if v != "" && v != "f" {
+			} else if v != "" && v != "f" {
 				klog.Warningf("invalid value for %s, should be 't' or 'f': %s", VolumeContextInternalDynamicallyCreated, v)
 			}
 		case VolumeContextResourceGroupName:

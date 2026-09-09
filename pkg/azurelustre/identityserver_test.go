@@ -29,7 +29,7 @@ import (
 
 func TestGetPluginInfo(t *testing.T) {
 	// Check with correct arguments
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := csi.GetPluginInfoRequest{}
 	resp, err := d.GetPluginInfo(context.Background(), &req)
 	require.NoError(t, err)
@@ -39,7 +39,7 @@ func TestGetPluginInfo(t *testing.T) {
 
 func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
 	// Check error when driver name is empty
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	d.Name = ""
 	req := csi.GetPluginInfoRequest{}
 	resp, err := d.GetPluginInfo(context.Background(), &req)
@@ -53,7 +53,7 @@ func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
 
 func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
 	// Check error when version is empty
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	d.Version = ""
 	req := csi.GetPluginInfoRequest{}
 	resp, err := d.GetPluginInfo(context.Background(), &req)
@@ -66,7 +66,7 @@ func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
 }
 
 func TestProbe(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := csi.ProbeRequest{}
 	resp, err := d.Probe(context.Background(), &req)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestProbe(t *testing.T) {
 }
 
 func TestGetPluginCapabilities(t *testing.T) {
-	d := NewFakeDriver()
+	d := NewFakeDriver(t)
 	req := csi.GetPluginCapabilitiesRequest{}
 	resp, err := d.GetPluginCapabilities(context.Background(), &req)
 	require.NoError(t, err)

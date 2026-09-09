@@ -1,0 +1,327 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: csi-azurelustre-node-azurelinux3
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: node
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
+    app: csi-azurelustre-node
+    flavor: azurelinux3
+spec:
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 10%
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: node
+      app: csi-azurelustre-node
+      flavor: azurelinux3
+  template:
+    metadata:
+      labels:
+        app: csi-azurelustre-node
+        app.kubernetes.io/component: node
+        app.kubernetes.io/name: azurelustre-csi-driver
+        app.kubernetes.io/part-of: azurelustre-csi-driver
+        app.kubernetes.io/version: latest
+        flavor: azurelinux3
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      serviceAccountName: csi-azurelustre-node-sa
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.io/arch: amd64
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: kubernetes.azure.com/os-sku-effective
+                    operator: In
+                    values:
+                      - AzureLinux3
+      priorityClassName: system-node-critical
+      # Tolerate common AKS user-pool taints (spot, GPU) but NOT CriticalAddonsOnly,
+      # which keeps the plugin off reserved/AKS Automatic system pools. See the
+      # node.tolerations comment in the Helm chart values.yaml for rationale.
+      tolerations:
+        - key: kubernetes.azure.com/scalesetpriority
+          operator: Equal
+          value: spot
+          effect: NoSchedule
+        - key: sku
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        # Native sidecar (restartPolicy: Always): installs the Lustre client
+        # kernel module for the running kernel, loads it into the shared host
+        # kernel, configures LNet, then runs an LNet reconcile loop for the life
+        # of the pod. Its startupProbe gates the driver and registrar containers
+        # so they do not start until LNet is up, leaving the registrar's 30s
+        # connect deadline racing only the driver's utils install; on
+        # termination its SIGTERM handler unloads the modules so nothing is left
+        # behind when the driver is uninstalled.
+        - name: lustre-loader
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-azurelinux3
+          imagePullPolicy: Always
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          startupProbe:
+            failureThreshold: 120
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                - /app/readinessProbe.sh
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            failureThreshold: 5
+            exec:
+              command:
+                # Restart the sidecar only when the Lustre kernel module has
+                # vanished (unrecoverable in-process). Transient LNet config
+                # drift is repaired by the reconcile loop and surfaced via the
+                # readinessProbe, so it must not trigger a restart here.
+                - /bin/sh
+                - -c
+                - "test -d /sys/module/lnet"
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: loader
+            - name: LUSTRE_VERSION
+              value: "2.17.0"
+            - name: CLIENT_SHA_SUFFIX
+              value: "24-gf517bc4"
+          volumeMounts:
+            - mountPath: /dev
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            limits:
+              cpu: 1
+              # Azure Linux 3 needs 500Mi vs 200Mi on Ubuntu: tdnf/libsolv loads
+              # the full repo metadata into memory to solve the install
+              # transaction, spiking ~330Mi anon for ~10s (measured on a live
+              # AzL3 node). The driver runs the same tdnf install and spikes
+              # similarly, so it gets 500Mi too. Ubuntu's apt is far lighter (~100Mi).
+              memory: 500Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+      containers:
+        - name: liveness-probe
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          image: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe:v2.15.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --probe-timeout=120s
+            - --health-port=29763
+            - --v=2
+          resources:
+            limits:
+              cpu: 100m
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: node-driver-registrar
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.13.0
+          args:
+            - --csi-address=$(ADDRESS)
+            - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+            - --v=2
+          livenessProbe:
+            exec:
+              command:
+                - /csi-node-driver-registrar
+                - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+                - --mode=kubelet-registration-probe
+            initialDelaySeconds: 30
+            timeoutSeconds: 15
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/azurelustre.csi.azure.com/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+            limits:
+              cpu: 100m
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - name: azurelustre
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-azurelinux3
+          imagePullPolicy: Always
+          args:
+            - "-v=5"
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--nodeid=$(KUBE_NODE_NAME)"
+          ports:
+            - containerPort: 29763
+              name: healthz
+              protocol: TCP
+          # Reserved port for metrics
+          # - containerPort: 29765
+          #   name: metrics
+          #   protocol: TCP
+          startupProbe:
+            # Hold off the livenessProbe until the driver is serving: the
+            # liveness-probe sidecar does not bind :29763 until it has connected
+            # to csi.sock, so /healthz is connection-refused for the whole utils
+            # install.
+            failureThreshold: 60
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 60
+            timeoutSeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            # Gate Ready on the CSI socket existing: the driver installs its
+            # userspace utils and only then execs and opens the socket (~18s on
+            # Azure Linux), so without this the pod reports Ready before it can
+            # serve mounts, letting a rolling upgrade advance past a node whose
+            # driver is not serving yet.
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -S /csi/csi.sock"
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: AZURELUSTRE_CSI_ROLE
+              value: driver
+            - name: LUSTRE_VERSION
+              value: "2.17.0"
+            - name: CLIENT_SHA_SUFFIX
+              value: "24-gf517bc4"
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+            - mountPath: /var/lib/kubelet/
+              name: mountpoint-dir
+              mountPropagation: "Bidirectional"
+            - mountPath: /etc/kubernetes/
+              name: azure-cred
+              readOnly: true
+            - mountPath: /dev
+              name: host-dev
+            - mountPath: /etc/host-os-release
+              name: host-os-release
+              readOnly: true
+            - mountPath: /app/custom-entrypoint
+              name: custom-entrypoint
+              readOnly: true
+          resources:
+            limits:
+              cpu: 1
+              # Azure Linux 3 needs 500Mi vs 200Mi on Ubuntu: the driver's
+              # utils-only tdnf install spikes ~325Mi anon for ~10s (same
+              # tdnf/libsolv metadata solve as the loader; measured on a live
+              # AzL3 node). Steady-state is ~45Mi. Ubuntu's apt is far lighter (~100Mi).
+              memory: 500Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+      volumes:
+        - hostPath:
+            path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
+            type: DirectoryOrCreate
+          name: socket-dir
+        - hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+          name: registration-dir
+        - hostPath:
+            path: /var/lib/kubelet/
+            type: Directory
+          name: mountpoint-dir
+        - hostPath:
+            path: /etc/kubernetes/
+            type: DirectoryOrCreate
+          name: azure-cred
+        - hostPath:
+            path: /dev
+            type: Directory
+          name: host-dev
+        - hostPath:
+            path: /etc/os-release
+            type: File
+          name: host-os-release
+        - name: custom-entrypoint
+          configMap:
+            name: csi-azurelustre-entrypoint
+            defaultMode: 0755
+            optional: true

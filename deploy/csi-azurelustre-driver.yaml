@@ -3,6 +3,10 @@ apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
   name: azurelustre.csi.azure.com
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
 spec:
   fsGroupPolicy: File
   attachRequired: false
