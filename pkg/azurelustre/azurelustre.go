@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
@@ -40,6 +42,7 @@ import (
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
@@ -296,15 +299,23 @@ func (d *Driver) networkSubscriptionID() string {
 // never call ARM, so they leave the provisioner unset.
 func (d *Driver) initDynamicProvisioner(config *azureconfig.Config) error {
 	klog.Infof("%s", azureIdentityConfigurationMessage())
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	// Keep credential and ARM client options separate: both need the selected
+	// Azure cloud, but ARM-only settings must not change credential behavior.
+	credentialClientOptions, resourceClientOptions, err := getAzureClientOptions(config)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure client options: %w", err)
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: credentialClientOptions,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to obtain a credential: %w", err)
 	}
-	storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, nil)
+	storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, resourceClientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create storage client factory: %w", err)
 	}
-	networkClientFactory, err := armnetwork.NewClientFactory(d.networkSubscriptionID(), cred, nil)
+	networkClientFactory, err := armnetwork.NewClientFactory(d.networkSubscriptionID(), cred, resourceClientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create network client factory: %w", err)
 	}
@@ -334,6 +345,27 @@ func azureIdentityConfigurationMessage() string {
 		return fmt.Sprintf("authenticating with workload identity (client ID %q)", clientID)
 	}
 	return fmt.Sprintf("authenticating with managed identity (client ID %q)", clientID)
+}
+
+func getAzureClientOptions(config *azureconfig.Config) (azcore.ClientOptions, *arm.ClientOptions, error) {
+	cloudConfig, _, err := azclient.GetAzureCloudConfigAndEnvConfig(&config.ARMClientConfig)
+	if err != nil {
+		return azcore.ClientOptions{}, nil, err
+	}
+
+	// Pass the cloud configuration to the credential so token authority and
+	// ARM audience match the endpoint used by the selected Azure cloud.
+	credentialClientOptions := azcore.ClientOptions{
+		Cloud: cloudConfig,
+	}
+
+	// ARM clients need the same cloud endpoint, while keeping SDK retry,
+	// throttling, transport, and timeout defaults unchanged.
+	resourceClientOptions := &arm.ClientOptions{
+		ClientOptions: credentialClientOptions,
+	}
+
+	return credentialClientOptions, resourceClientOptions, nil
 }
 
 func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProperties) SubnetProperties {
