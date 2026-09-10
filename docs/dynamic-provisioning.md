@@ -14,12 +14,33 @@ kubelet identity must have the correct permissions granted to it.
 Ensure that the kubelet identity has all of the permissions that are listed in the section
 on [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
 
+### Azure cloud environment
+
+AKS creates `/etc/kubernetes/azure.json` for the cluster. The driver reads this
+file from the controller and node pods, so users normally do not need to create
+or edit it. The `cloud` field is a cluster-level setting supplied by AKS, not a
+StorageClass parameter.
+
+For reference, the standard cloud values configure the ARM endpoint and token
+audience used by the Azure SDK:
+
+| `cloud` value | ARM endpoint | Token audience |
+| --- | --- | --- |
+| `AzurePublicCloud` | `https://management.azure.com` | `https://management.core.windows.net/` |
+| `AzureChinaCloud` | `https://management.chinacloudapi.cn` | `https://management.core.chinacloudapi.cn/` |
+
+The raw manifests and Helm chart mount the AKS-provided file read-only. No
+additional cloud setting is required in the StorageClass or Helm values.
+
 ### Network Egress
 
 > [!IMPORTANT]
 > The CSI driver controller pod requires outbound HTTPS access to Azure Resource Manager
-> (`management.azure.com`) and Microsoft Entra ID (`login.microsoftonline.com`) for dynamic
-> provisioning operations (creating, deleting, and querying AMLFS clusters).
+> and Microsoft Entra ID for dynamic provisioning operations (creating, deleting, and querying
+> AMLFS clusters). The endpoints must match the configured Azure cloud:
+>
+> - Azure Public: `management.azure.com`, `login.microsoftonline.com`
+> - Azure China: `management.chinacloudapi.cn`, `login.chinacloudapi.cn`
 >
 > The controller pod does **not** use host networking, so it relies on the cluster's pod
 > network egress path. If your AKS cluster restricts outbound traffic (e.g., private clusters,
