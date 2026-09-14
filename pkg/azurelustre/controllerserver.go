@@ -371,9 +371,17 @@ func (d *Driver) CreateVolume(
 		} else {
 			klog.Warningf("no zones available for SKU %s in location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
 			if len(amlFilesystemProperties.Zone) > 0 {
-				return nil, status.Errorf(codes.InvalidArgument,
-					"CreateVolume Parameter %s cannot be used in location %s, no zones available for SKU %s",
-					VolumeContextZone, amlFilesystemProperties.Location, amlFilesystemProperties.SKUName)
+				if !d.allowUnadvertisedZones {
+					return nil, status.Errorf(codes.InvalidArgument,
+						"CreateVolume Parameter %s cannot be used in location %s, no zones available for SKU %s",
+						VolumeContextZone, amlFilesystemProperties.Location, amlFilesystemProperties.SKUName)
+				}
+				klog.Warningf(
+					"allowing explicitly supplied zone %s for SKU %s in location %s because --allow-unadvertised-zones is enabled",
+					amlFilesystemProperties.Zone,
+					amlFilesystemProperties.SKUName,
+					amlFilesystemProperties.Location,
+				)
 			}
 		}
 

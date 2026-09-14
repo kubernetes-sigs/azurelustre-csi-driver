@@ -77,3 +77,15 @@ func TestInitKlogFlags_InvalidThreshold(t *testing.T) {
 	// Assert
 	assert.Error(t, err, "expected error for invalid stderrthreshold value")
 }
+
+func TestNewDriverOptions_AllowUnadvertisedZones(t *testing.T) {
+	original := *allowUnadvertisedZones
+	t.Cleanup(func() {
+		*allowUnadvertisedZones = original
+	})
+	*allowUnadvertisedZones = true
+
+	options := newDriverOptions()
+
+	assert.True(t, options.AllowUnadvertisedZones)
+}

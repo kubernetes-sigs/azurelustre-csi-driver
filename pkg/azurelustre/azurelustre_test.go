@@ -194,6 +194,7 @@ func TestNewDriver(t *testing.T) {
 		EnableAzureLustreMockDynProv: true,
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
+		AllowUnadvertisedZones:       true,
 	}
 	d, err := NewDriver(&driverOptions)
 	require.NoError(t, err)
@@ -215,6 +216,7 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
 	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
 	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+	assert.True(t, d.allowUnadvertisedZones, "allowUnadvertisedZones should be true")
 }
 
 func TestNewDriverIdentityModes(t *testing.T) {

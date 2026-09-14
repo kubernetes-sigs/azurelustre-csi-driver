@@ -39,8 +39,8 @@ additional cloud setting is required in the StorageClass or Helm values.
 > and Microsoft Entra ID for dynamic provisioning operations (creating, deleting, and querying
 > AMLFS clusters). The endpoints must match the configured Azure cloud:
 >
-> - Azure Public: `management.azure.com`, `login.microsoftonline.com`
-> - Azure China: `management.chinacloudapi.cn`, `login.chinacloudapi.cn`
+> Azure Public: `management.azure.com`, `login.microsoftonline.com`
+> Azure China: `management.chinacloudapi.cn`, `login.chinacloudapi.cn`
 >
 > The controller pod does **not** use host networking, so it relies on the cluster's pod
 > network egress path. If your AKS cluster restricts outbound traffic (e.g., private clusters,

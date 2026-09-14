@@ -378,6 +378,45 @@ func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
 	require.ErrorContains(t, err, "no zones available for SKU")
 }
 
+func TestDynamicCreateVolume_Success_AllowUnadvertisedZone(t *testing.T) {
+	d := NewFakeDriver(t)
+	d.allowUnadvertisedZones = true
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	req.Parameters["location"] = emptyZonesLocation
+	req.Parameters["zone"] = "3"
+
+	rep, err := d.CreateVolume(context.Background(), req)
+	require.NoError(t, err)
+	assert.NotEmpty(t, rep.GetVolume())
+	require.Len(t, fakeDynamicProvisioner.Filesystems, 1)
+	assert.Equal(t, "3", fakeDynamicProvisioner.Filesystems[0].Zone)
+}
+
+func TestDynamicCreateVolume_Err_AllowUnadvertisedZoneDoesNotSkipAdvertisedValidation(t *testing.T) {
+	d := NewFakeDriver(t)
+	d.allowUnadvertisedZones = true
+	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
+	d.dynamicProvisioner = fakeDynamicProvisioner
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	d.cloud = azure.GetTestCloud(ctrl)
+	req := buildDynamicProvCreateVolumeRequest()
+	req.Parameters["zone"] = "invalid-zone"
+
+	_, err := d.CreateVolume(context.Background(), req)
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "zone must be one of")
+	require.ErrorContains(t, err, "invalid-zone")
+}
+
 func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
 	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}

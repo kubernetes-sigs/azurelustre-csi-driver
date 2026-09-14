@@ -124,6 +124,8 @@ type DriverOptions struct {
 	EnableAzureLustreMockDynProv bool
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
+	// AllowUnadvertisedZones allows an explicitly supplied zone when the SKU API advertises none.
+	AllowUnadvertisedZones bool
 }
 
 // LustreSkuValue describes the increment and maximum size of a given Lustre sku
@@ -159,6 +161,7 @@ type Driver struct {
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockDynProv bool
+	allowUnadvertisedZones       bool
 	mounter                      *mount.SafeFormatAndMount
 	forceMounter                 *mount.MounterForceUnmounter
 	volLockMap                   *util.LockMap
@@ -191,6 +194,7 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		volumeLocks:                  newVolumeLocks(),
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
+		allowUnadvertisedZones:       options.AllowUnadvertisedZones,
 		workingMountDir:              options.WorkingMountDir,
 		removeNotReadyTaint:          options.RemoveNotReadyTaint,
 	}
