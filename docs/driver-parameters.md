@@ -82,6 +82,41 @@ identities | User-assigned identities to assign to the AMLFS cluster. These iden
 tags | Tags to apply to the AMLFS cluster resource. These tags do not affect AMLFS cluster functionality. | Tag format: `"key1=val1,key2=val2"`. The tag name has a limit of 512 characters and the tag value has a limit of 256 characters. Tag names can't contain these characters: `<, >, %, &, \, ?, /`. | No | None
 sub-dir | This is the subdirectory within the AMLFS cluster's root directory which is where each pod will actually be mounted within the AMLFS filesystem. This subdirectory does not need to exist beforehand. | This must be a valid Linux file path. It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`. | No | None, will default to mounting the root directory of the AMLFS cluster.
 
+### Controller override for incomplete SKU zone metadata
+
+Some zonal regions may temporarily return an empty zone list from the Azure
+SKU API even though the AMLFS create API requires a zone. For that deployment
+specific case, enable the controller-only override:
+
+For a Helm installation, set `controller.extraArgs` in the Helm values:
+
+```yaml
+controller:
+  extraArgs:
+    - "-v=5"
+    - "--allow-unadvertised-zones"
+```
+
+For a direct manifest installation, add the flag to the `azurelustre`
+container in `deploy/csi-azurelustre-controller.yaml`:
+
+```yaml
+args:
+  - -v=5
+  - --allow-unadvertised-zones
+  - --endpoint=$(CSI_ENDPOINT)
+```
+
+Apply the updated controller manifest after making this change. Do not add the
+flag to the node DaemonSets, CSI provisioner sidecar, or StorageClass.
+
+The `zone` StorageClass parameter must still be set to a value accepted by the
+AMLFS create API. The override only permits an explicitly supplied zone when
+the SKU API advertises no zones; it does not disable validation when the SKU
+API returns a non-empty zone list. Keep this override disabled unless the
+region's SKU metadata is known to be incorrect, and remove it after the RP
+metadata is fixed.
+
 ## Static Provisioning (Bring your own AMLFS Cluster through AKS)
 
 Name | Meaning | Available Value | Mandatory | Default value

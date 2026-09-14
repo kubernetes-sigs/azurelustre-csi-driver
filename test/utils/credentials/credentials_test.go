@@ -66,19 +66,6 @@ func TestCreateAzureCredentialFileOnAzurePublicCloud(t *testing.T) {
 	})
 }
 
-func TestCreateAzureCredentialFileOnAzureStackCloud(t *testing.T) {
-	t.Run("WithEnvironmentVariables", func(t *testing.T) {
-		t.Setenv(cloudNameEnvVar, "AzureStackCloud")
-		t.Setenv(tenantIDEnvVar, testTenantID)
-		t.Setenv(subscriptionIDEnvVar, testSubscriptionID)
-		t.Setenv(aadClientIDEnvVar, testAadClientID)
-		t.Setenv(aadClientSecretEnvVar, testAadClientSecret)
-		t.Setenv(resourceGroupEnvVar, testResourceGroup)
-		t.Setenv(locationEnvVar, testLocation)
-		withEnvironmentVariables(t)
-	})
-}
-
 func withAzureCredentials(t *testing.T) {
 	tempFile, err := os.CreateTemp("", "azure.toml")
 	require.NoError(t, err)

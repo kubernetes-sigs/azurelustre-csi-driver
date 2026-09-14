@@ -32,6 +32,7 @@ var (
 	driverName                   = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
 	enableAzureLustreMockMount   = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
 	enableAzureLustreMockDynProv = flag.Bool("enable-azurelustre-mock-dyn-prov", false, "Whether enable mock dynamic provisioning(only for testing)")
+	allowUnadvertisedZones       = flag.Bool("allow-unadvertised-zones", false, "Allow an explicitly specified zone when SKU metadata advertises none")
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
 
@@ -67,14 +68,7 @@ func run() error {
 }
 
 func handle() error {
-	driverOptions := azurelustre.DriverOptions{
-		NodeID:                       *nodeID,
-		DriverName:                   *driverName,
-		EnableAzureLustreMockMount:   *enableAzureLustreMockMount,
-		EnableAzureLustreMockDynProv: *enableAzureLustreMockDynProv,
-		WorkingMountDir:              *workingMountDir,
-		RemoveNotReadyTaint:          *removeNotReadyTaint,
-	}
+	driverOptions := newDriverOptions()
 	driver, err := azurelustre.NewDriver(&driverOptions)
 	if err != nil {
 		return errors.Join(errDriverInitFailed, err)
@@ -86,6 +80,18 @@ func handle() error {
 	// returning means the server stopped without an explicit shutdown signal,
 	// which should surface as a non-zero process exit.
 	return errDriverRunReturnedEarly
+}
+
+func newDriverOptions() azurelustre.DriverOptions {
+	return azurelustre.DriverOptions{
+		NodeID:                       *nodeID,
+		DriverName:                   *driverName,
+		EnableAzureLustreMockMount:   *enableAzureLustreMockMount,
+		EnableAzureLustreMockDynProv: *enableAzureLustreMockDynProv,
+		AllowUnadvertisedZones:       *allowUnadvertisedZones,
+		WorkingMountDir:              *workingMountDir,
+		RemoveNotReadyTaint:          *removeNotReadyTaint,
+	}
 }
 
 // initKlogFlags registers klog flags on the provided FlagSet and configures

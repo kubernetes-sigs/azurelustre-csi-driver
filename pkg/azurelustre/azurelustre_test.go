@@ -30,6 +30,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
 
 var DefaultLocationSkuValues = map[string]*LustreSkuValue{
@@ -192,6 +194,7 @@ func TestNewDriver(t *testing.T) {
 		EnableAzureLustreMockDynProv: true,
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
+		AllowUnadvertisedZones:       true,
 	}
 	d, err := NewDriver(&driverOptions)
 	require.NoError(t, err)
@@ -213,6 +216,7 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
 	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
 	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+	assert.True(t, d.allowUnadvertisedZones, "allowUnadvertisedZones should be true")
 }
 
 func TestNewDriverIdentityModes(t *testing.T) {
@@ -249,6 +253,66 @@ func TestNewDriverIdentityModes(t *testing.T) {
 			require.NotNil(t, driver)
 			assert.Equal(t, controllerPod, driver.podRole)
 			assert.NotNil(t, driver.dynamicProvisioner, "controller pods must build Azure clients")
+		})
+	}
+}
+
+func TestGetAzureClientOptionsForClouds(t *testing.T) {
+	tests := []struct {
+		name     string
+		cloud    string
+		endpoint string
+		audience string
+	}{
+		{
+			name:     "public",
+			cloud:    "AzurePublicCloud",
+			endpoint: "https://management.azure.com",
+			audience: "https://management.core.windows.net/",
+		},
+		{
+			name:     "default when cloud is not provided",
+			cloud:    "",
+			endpoint: "https://management.azure.com",
+			audience: "https://management.core.windows.net/",
+		},
+		{
+			name:     "china",
+			cloud:    "AzureChinaCloud",
+			endpoint: "https://management.chinacloudapi.cn",
+			audience: "https://management.core.chinacloudapi.cn/",
+		},
+		{
+			name:     "government",
+			cloud:    "AzureUSGovernmentCloud",
+			endpoint: "https://management.usgovcloudapi.net",
+			audience: "https://management.core.usgovcloudapi.net/",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := &azureconfig.Config{}
+			config.Cloud = test.cloud
+
+			credentialClientOptions, resourceClientOptions, err := getAzureClientOptions(config)
+			require.NoError(t, err)
+
+			resourceManager, ok := resourceClientOptions.Cloud.Services[cloud.ResourceManager]
+			require.True(t, ok)
+			assert.Equal(t, test.endpoint, resourceManager.Endpoint)
+			assert.Equal(t, test.audience, resourceManager.Audience)
+			assert.Equal(t, resourceClientOptions.Cloud, credentialClientOptions.Cloud)
+			assert.Zero(t, credentialClientOptions.Retry.RetryDelay)
+			assert.Zero(t, credentialClientOptions.Retry.MaxRetries)
+			assert.Nil(t, credentialClientOptions.Transport)
+			assert.Empty(t, credentialClientOptions.PerRetryPolicies)
+			assert.False(t, credentialClientOptions.InsecureAllowCredentialWithHTTP)
+			assert.Zero(t, resourceClientOptions.Retry.RetryDelay)
+			assert.Zero(t, resourceClientOptions.Retry.MaxRetries)
+			assert.Nil(t, resourceClientOptions.Transport)
+			assert.Empty(t, resourceClientOptions.PerRetryPolicies)
+			assert.False(t, resourceClientOptions.InsecureAllowCredentialWithHTTP)
 		})
 	}
 }
