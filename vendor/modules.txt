@@ -47,43 +47,46 @@ github.com/Azure/azure-sdk-for-go/sdk/internal/uuid
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6 v6.4.0
-## explicit; go 1.23.0
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7 v7.3.0
+## explicit; go 1.24.0
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v6 v6.5.0
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v6 v6.6.0
 ## explicit; go 1.23.0
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v6
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.5.0
 ## explicit; go 1.23.0
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.2.0
-## explicit; go 1.18
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
+## explicit; go 1.23.0
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6 v6.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6/fake
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v9 v9.0.0
+## explicit; go 1.24.0
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v9
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns v1.3.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources
-# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1
+# github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage/v2 v2.0.0
 ## explicit; go 1.23.0
-github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage/v2
 # github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4 v4.0.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4/fake
-# github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.3.1
-## explicit; go 1.18
+# github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.5.0
+## explicit; go 1.25.0
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets
-# github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.1.1
-## explicit; go 1.18
+# github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0
+## explicit; go 1.23.0
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal
 # github.com/Azure/go-autorest v14.2.0+incompatible
 ## explicit
@@ -171,8 +174,8 @@ github.com/davecgh/go-spew/spew
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
 github.com/emicklei/go-restful/v3/log
-# github.com/fsnotify/fsnotify v1.9.0
-## explicit; go 1.17
+# github.com/fsnotify/fsnotify v1.10.1
+## explicit; go 1.23
 github.com/fsnotify/fsnotify
 github.com/fsnotify/fsnotify/internal
 # github.com/fxamacker/cbor/v2 v2.9.2
@@ -302,8 +305,8 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/onsi/ginkgo/v2 v2.27.5
-## explicit; go 1.23.0
+# github.com/onsi/ginkgo/v2 v2.31.0
+## explicit; go 1.25.0
 github.com/onsi/ginkgo/v2
 github.com/onsi/ginkgo/v2/config
 github.com/onsi/ginkgo/v2/formatter
@@ -326,8 +329,8 @@ github.com/onsi/ginkgo/v2/internal/reporters
 github.com/onsi/ginkgo/v2/internal/testingtproxy
 github.com/onsi/ginkgo/v2/reporters
 github.com/onsi/ginkgo/v2/types
-# github.com/onsi/gomega v1.38.3
-## explicit; go 1.23.0
+# github.com/onsi/gomega v1.42.0
+## explicit; go 1.24.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
 github.com/onsi/gomega/internal
@@ -352,14 +355,11 @@ github.com/pelletier/go-toml
 # github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 ## explicit; go 1.14
 github.com/pkg/browser
-# github.com/pkg/errors v0.9.1
-## explicit
-github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/client_golang v1.23.2
-## explicit; go 1.23.0
+# github.com/prometheus/client_golang v1.24.1
+## explicit; go 1.25.0
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
 github.com/prometheus/client_golang/prometheus
@@ -370,19 +370,19 @@ github.com/prometheus/client_golang/prometheus/promhttp/internal
 # github.com/prometheus/client_model v0.6.2
 ## explicit; go 1.22.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.67.5
-## explicit; go 1.24.0
+# github.com/prometheus/common v0.70.1
+## explicit; go 1.25.0
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/model
 # github.com/prometheus/otlptranslator v1.0.0
 ## explicit; go 1.23.0
 github.com/prometheus/otlptranslator
-# github.com/prometheus/procfs v0.19.2
-## explicit; go 1.24.0
+# github.com/prometheus/procfs v0.21.1
+## explicit; go 1.25.0
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/samber/lo v1.52.0
+# github.com/samber/lo v1.53.0
 ## explicit; go 1.18
 github.com/samber/lo
 github.com/samber/lo/internal/constraints
@@ -395,10 +395,12 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.10
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/stretchr/testify v1.11.1
+# github.com/stretchr/testify v1.12.1
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
@@ -407,7 +409,7 @@ github.com/x448/float16
 ## explicit; go 1.24.0
 go.opentelemetry.io/auto/sdk
 go.opentelemetry.io/auto/sdk/internal/telemetry
-# go.opentelemetry.io/otel v1.43.0
+# go.opentelemetry.io/otel v1.44.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
@@ -420,22 +422,21 @@ go.opentelemetry.io/otel/internal/errorhandler
 go.opentelemetry.io/otel/internal/global
 go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv/v1.37.0
-go.opentelemetry.io/otel/semconv/v1.37.0/otelconv
-go.opentelemetry.io/otel/semconv/v1.40.0
-go.opentelemetry.io/otel/semconv/v1.40.0/otelconv
-# go.opentelemetry.io/otel/exporters/prometheus v0.61.0
-## explicit; go 1.24.0
+go.opentelemetry.io/otel/semconv/v1.41.0
+go.opentelemetry.io/otel/semconv/v1.41.0/otelconv
+# go.opentelemetry.io/otel/exporters/prometheus v0.66.0
+## explicit; go 1.25.0
 go.opentelemetry.io/otel/exporters/prometheus
 go.opentelemetry.io/otel/exporters/prometheus/internal
 go.opentelemetry.io/otel/exporters/prometheus/internal/counter
 go.opentelemetry.io/otel/exporters/prometheus/internal/observ
 go.opentelemetry.io/otel/exporters/prometheus/internal/x
-# go.opentelemetry.io/otel/metric v1.43.0
+# go.opentelemetry.io/otel/metric v1.44.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
 go.opentelemetry.io/otel/metric/noop
-# go.opentelemetry.io/otel/sdk v1.43.0
+# go.opentelemetry.io/otel/sdk v1.44.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/sdk
 go.opentelemetry.io/otel/sdk/instrumentation
@@ -444,7 +445,7 @@ go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
 go.opentelemetry.io/otel/sdk/trace/internal/env
 go.opentelemetry.io/otel/sdk/trace/internal/observ
-# go.opentelemetry.io/otel/sdk/metric v1.43.0
+# go.opentelemetry.io/otel/sdk/metric v1.44.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/sdk/metric
 go.opentelemetry.io/otel/sdk/metric/exemplar
@@ -452,8 +453,9 @@ go.opentelemetry.io/otel/sdk/metric/internal
 go.opentelemetry.io/otel/sdk/metric/internal/aggregate
 go.opentelemetry.io/otel/sdk/metric/internal/observ
 go.opentelemetry.io/otel/sdk/metric/internal/reservoir
+go.opentelemetry.io/otel/sdk/metric/internal/x
 go.opentelemetry.io/otel/sdk/metric/metricdata
-# go.opentelemetry.io/otel/trace v1.43.0
+# go.opentelemetry.io/otel/trace v1.44.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
@@ -532,8 +534,8 @@ golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
-# golang.org/x/time v0.11.0
-## explicit; go 1.23.0
+# golang.org/x/time v0.15.0
+## explicit; go 1.25.0
 golang.org/x/time/rate
 # golang.org/x/tools v0.49.0
 ## explicit; go 1.25.0
@@ -559,7 +561,7 @@ golang.org/x/tools/internal/versions
 # google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.82.1
+# google.golang.org/grpc v1.83.2
 ## explicit; go 1.25.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -666,7 +668,7 @@ google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
 google.golang.org/protobuf/types/known/wrapperspb
-# gopkg.in/evanphx/json-patch.v4 v4.12.0
+# gopkg.in/evanphx/json-patch.v4 v4.13.0
 ## explicit
 gopkg.in/evanphx/json-patch.v4
 # gopkg.in/inf.v0 v0.9.1
@@ -675,10 +677,7 @@ gopkg.in/inf.v0
 # gopkg.in/yaml.v2 v2.4.0
 ## explicit; go 1.15
 gopkg.in/yaml.v2
-# gopkg.in/yaml.v3 v3.0.1
-## explicit
-gopkg.in/yaml.v3
-# k8s.io/api v0.34.10 => k8s.io/api v0.34.10
+# k8s.io/api v0.36.3 => k8s.io/api v0.34.10
 ## explicit; go 1.24.0
 k8s.io/api/admissionregistration/v1
 k8s.io/api/admissionregistration/v1alpha1
@@ -741,7 +740,7 @@ k8s.io/api/storagemigration/v1alpha1
 # k8s.io/apiextensions-apiserver v0.31.14 => k8s.io/apiextensions-apiserver v0.34.10
 ## explicit; go 1.24.0
 k8s.io/apiextensions-apiserver/pkg/features
-# k8s.io/apimachinery v0.34.10 => k8s.io/apimachinery v0.34.10
+# k8s.io/apimachinery v0.36.3 => k8s.io/apimachinery v0.34.10
 ## explicit; go 1.24.0
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -801,7 +800,7 @@ k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/apiserver v0.34.10 => k8s.io/apiserver v0.34.10
+# k8s.io/apiserver v0.36.3 => k8s.io/apiserver v0.34.10
 ## explicit; go 1.24.0
 k8s.io/apiserver/pkg/features
 k8s.io/apiserver/pkg/util/feature
@@ -1130,13 +1129,13 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/cloud-provider v0.32.13 => k8s.io/cloud-provider v0.34.10
+# k8s.io/cloud-provider v0.36.3 => k8s.io/cloud-provider v0.34.10
 ## explicit; go 1.24.0
 k8s.io/cloud-provider
 k8s.io/cloud-provider/api
 k8s.io/cloud-provider/node/helpers
 k8s.io/cloud-provider/service/helpers
-# k8s.io/component-base v0.34.10 => k8s.io/component-base v0.34.10
+# k8s.io/component-base v0.36.3 => k8s.io/component-base v0.34.10
 ## explicit; go 1.24.0
 k8s.io/component-base/cli/flag
 k8s.io/component-base/featuregate
@@ -1150,10 +1149,10 @@ k8s.io/component-base/metrics/prometheus/feature
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
 k8s.io/component-base/zpages/features
-# k8s.io/component-helpers v0.34.10 => k8s.io/component-helpers v0.34.10
+# k8s.io/component-helpers v0.36.3 => k8s.io/component-helpers v0.34.10
 ## explicit; go 1.24.0
 k8s.io/component-helpers/node/util
-# k8s.io/controller-manager v0.34.10 => k8s.io/controller-manager v0.34.10
+# k8s.io/controller-manager v0.36.3 => k8s.io/controller-manager v0.34.10
 ## explicit; go 1.24.0
 k8s.io/controller-manager/pkg/features
 # k8s.io/klog/v2 v2.140.0
@@ -1214,18 +1213,21 @@ k8s.io/utils/net
 k8s.io/utils/path
 k8s.io/utils/ptr
 k8s.io/utils/trace
-# sigs.k8s.io/cloud-provider-azure v1.32.20
-## explicit; go 1.25.0
+# sigs.k8s.io/cloud-provider-azure v1.36.5
+## explicit; go 1.26.0
 sigs.k8s.io/cloud-provider-azure/pkg/cache
 sigs.k8s.io/cloud-provider-azure/pkg/consts
 sigs.k8s.io/cloud-provider-azure/pkg/log
 sigs.k8s.io/cloud-provider-azure/pkg/metrics
 sigs.k8s.io/cloud-provider-azure/pkg/provider
 sigs.k8s.io/cloud-provider-azure/pkg/provider/config
+sigs.k8s.io/cloud-provider-azure/pkg/provider/errors
 sigs.k8s.io/cloud-provider-azure/pkg/provider/loadbalancer
 sigs.k8s.io/cloud-provider-azure/pkg/provider/privatelinkservice
 sigs.k8s.io/cloud-provider-azure/pkg/provider/routetable
 sigs.k8s.io/cloud-provider-azure/pkg/provider/securitygroup
+sigs.k8s.io/cloud-provider-azure/pkg/provider/servicegateway
+sigs.k8s.io/cloud-provider-azure/pkg/provider/servicegateway/difftracker
 sigs.k8s.io/cloud-provider-azure/pkg/provider/subnet
 sigs.k8s.io/cloud-provider-azure/pkg/provider/virtualmachine
 sigs.k8s.io/cloud-provider-azure/pkg/provider/zone
@@ -1242,8 +1244,8 @@ sigs.k8s.io/cloud-provider-azure/pkg/util/string
 sigs.k8s.io/cloud-provider-azure/pkg/util/taints
 sigs.k8s.io/cloud-provider-azure/pkg/util/vm
 sigs.k8s.io/cloud-provider-azure/pkg/version
-# sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.6.2
-## explicit; go 1.23.0
+# sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.21.0
+## explicit; go 1.25.0
 sigs.k8s.io/cloud-provider-azure/pkg/azclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/accountclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/accountclient/mock_accountclient
@@ -1276,9 +1278,12 @@ sigs.k8s.io/cloud-provider-azure/pkg/azclient/managedclusterclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/managedclusterclient/mock_managedclusterclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/metrics
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/mock_azclient
+sigs.k8s.io/cloud-provider-azure/pkg/azclient/natgatewayclient
+sigs.k8s.io/cloud-provider-azure/pkg/azclient/natgatewayclient/mock_natgatewayclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/etag
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/ratelimit
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/ratelimit/flowcontrol
+sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/retryaftermin
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/retryrepectthrottled
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/useragent
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatednszonegroupclient
@@ -1307,6 +1312,8 @@ sigs.k8s.io/cloud-provider-azure/pkg/azclient/secretclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/secretclient/mock_secretclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/securitygroupclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/securitygroupclient/mock_securitygroupclient
+sigs.k8s.io/cloud-provider-azure/pkg/azclient/servicegatewayclient
+sigs.k8s.io/cloud-provider-azure/pkg/azclient/servicegatewayclient/mock_servicegatewayclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/snapshotclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/snapshotclient/mock_snapshotclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/sshpublickeyresourceclient
@@ -1327,8 +1334,8 @@ sigs.k8s.io/cloud-provider-azure/pkg/azclient/virtualnetworkclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/virtualnetworkclient/mock_virtualnetworkclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/virtualnetworklinkclient
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/virtualnetworklinkclient/mock_virtualnetworklinkclient
-# sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.5.3
-## explicit; go 1.23.0
+# sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.15.3
+## explicit; go 1.26.0
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader
 # sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 ## explicit; go 1.23
