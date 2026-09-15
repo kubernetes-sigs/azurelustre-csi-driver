@@ -5,18 +5,18 @@ go 1.25.0
 toolchain go1.25.13
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6 v6.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4 v4.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4 v4.2.0
 	github.com/Azure/go-autorest/autorest v0.11.30
 	github.com/container-storage-interface/spec v1.11.0
 	github.com/kubernetes-csi/csi-lib-utils v0.19.0
 	github.com/kubernetes-csi/csi-test/v5 v5.3.1
 	github.com/pborman/uuid v1.2.1
 	github.com/pelletier/go-toml v1.9.5
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.1
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.12
@@ -28,6 +28,7 @@ require (
 	k8s.io/mount-utils v0.32.13
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	sigs.k8s.io/cloud-provider-azure v1.32.20
+	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.6.2
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.5.3
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -134,7 +135,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.31.14 // indirect
 	k8s.io/apiserver v0.34.10 // indirect
 	k8s.io/cloud-provider v0.32.13 // indirect
@@ -142,7 +142,6 @@ require (
 	k8s.io/component-helpers v0.34.10 // indirect
 	k8s.io/controller-manager v0.34.10 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.6.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
