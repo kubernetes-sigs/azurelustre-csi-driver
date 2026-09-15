@@ -1,3 +1,19 @@
+/*
+Copyright 2024 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package azurelustre
 
 import (
@@ -29,6 +45,7 @@ const (
 	AmlfsSkuResourceType                       = "amlFilesystems"
 	AmlfsSkuCapacityIncrementName              = "OSS capacity increment (TiB)"
 	AmlfsSkuCapacityMaximumName                = "default maximum capacity (TiB)"
+	authFailureHintFormat                      = "error occurred calling API: %v; verify the identity has the required RBAC role assignments (for workload identity, confirm its federated credential is configured)"
 )
 
 type DynamicProvisionerInterface interface {
@@ -83,9 +100,9 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		case http.StatusNotFound:
 			grpcErrorCode = codes.NotFound
 		case http.StatusForbidden:
-			grpcErrorCode = codes.PermissionDenied
+			return status.Errorf(codes.PermissionDenied, authFailureHintFormat, httpError)
 		case http.StatusUnauthorized:
-			grpcErrorCode = codes.Unauthenticated
+			return status.Errorf(codes.Unauthenticated, authFailureHintFormat, httpError)
 		case http.StatusTooManyRequests:
 			grpcErrorCode = codes.Unavailable
 		default:
@@ -219,7 +236,8 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 			return "", convertHTTPResponseErrorToGrpcCodeError(err)
 		}
 		if !hasSufficientCapacity {
-			return "", status.Errorf(codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
+			return "", status.Errorf(
+				codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
 				amlFilesystemProperties.AmlFilesystemName,
 				amlFilesystemProperties.SubnetInfo.SubnetID,
 			)
@@ -240,7 +258,8 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		amlFilesystemProperties.ResourceGroupName,
 		amlFilesystemProperties.AmlFilesystemName,
 		amlFilesystem,
-		nil)
+		nil,
+	)
 	if err != nil {
 		retry, retryErr := d.checkErrorForRetry(ctx, err, amlFilesystemProperties)
 		if retryErr != nil {
@@ -323,7 +342,11 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 		page, err := skusPager.NextPage(ctx)
 		if err != nil {
 			klog.Errorf("error retrieving SKUs for location %s: %v", location, err)
-			return nil, status.Errorf(codes.Internal, "error retrieving SKUs: %v", err)
+			// Preserve the mapped gRPC code (e.g. 403 -> PermissionDenied with the
+			// auth hint, matching CreateAmlFilesystem/DeleteAmlFilesystem) while
+			// adding the SKU-listing context to the message.
+			st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
+			return nil, status.Errorf(st.Code(), "error retrieving SKUs for location %s: %s", location, st.Message())
 		}
 
 		for _, sku := range page.Value {
@@ -447,7 +470,10 @@ func (d *DynamicProvisioner) checkSubnetAddresses(ctx context.Context, vnetResou
 		}
 
 		for _, usageValue := range page.Value {
-			if *usageValue.ID == subnetID {
+			// Azure resource group names are case-insensitive, but different ARM
+			// endpoints may echo back different casing for the same resource ID,
+			// so compare case-insensitively to avoid false "subnet not found" errors.
+			if strings.EqualFold(*usageValue.ID, subnetID) {
 				usedIPs := *usageValue.CurrentValue
 				limitIPs := *usageValue.Limit
 				availableIPs := int(limitIPs) - int(usedIPs)

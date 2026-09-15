@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2019 The Kubernetes Authors.
 #
@@ -14,14 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -eo pipefail
+set -euo pipefail
 
-readonly cloud="$1"
-
+# shellcheck disable=SC2154 # GOPATH: standard Go environment variable, expected to be set externally
 function install_csi_sanity_bin {
   echo 'Installing CSI sanity test binary...'
-  mkdir -p $GOPATH/src/github.com/kubernetes-csi
-  pushd $GOPATH/src/github.com/kubernetes-csi
+  mkdir -p "${GOPATH}"/src/github.com/kubernetes-csi
+  pushd "${GOPATH}"/src/github.com/kubernetes-csi
   export GO111MODULE=off
   git clone https://github.com/kubernetes-csi/csi-test.git -b v5.1.0
   pushd csi-test/cmd/csi-sanity
@@ -34,4 +33,4 @@ if [[ -z "$(command -v csi-sanity)" ]]; then
 	install_csi_sanity_bin
 fi
 
-test/sanity/run-test.sh "$nodeid"
+test/sanity/run-test.sh

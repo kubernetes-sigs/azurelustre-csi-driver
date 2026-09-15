@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -19,15 +19,20 @@ set -o pipefail
 set -o nounset
 set -o xtrace
 
-export kubernetesVersion=v$(az aks list | jq -r ".[0].currentKubernetesVersion")
+kubernetesVersion="v$(az aks list | jq -r ".[0].currentKubernetesVersion")"
+export kubernetesVersion
 echo "Current kubernetes version is ${kubernetesVersion}"
 
 echo "Downloading kubectl ${kubernetesVersion}"
-curl -Lo ${REPO_ROOT_PATH}/kubectl "https://dl.k8s.io/release/${kubernetesVersion}/bin/linux/amd64/kubectl"
-chmod a+x ${REPO_ROOT_PATH}/kubectl
-export PATH=$(pwd):${PATH}
+# shellcheck disable=SC2154 # REPO_ROOT_PATH: expected env var exported by calling script (start-long-haul.sh)
+curl -fLo "${REPO_ROOT_PATH}/kubectl" "https://dl.k8s.io/release/${kubernetesVersion}/bin/linux/amd64/kubectl"
+chmod a+x "${REPO_ROOT_PATH}/kubectl"
+PATH="${REPO_ROOT_PATH}:${PATH}"
+export PATH
 
-export LUSTRE_FS_NAME=${LustreFSName}
-export LUSTRE_MGS_IP=${LustreFSIP}
+# shellcheck disable=SC2154 # LustreFSName is an expected env var from the pipeline
+export LUSTRE_FS_NAME="${LustreFSName}"
+# shellcheck disable=SC2154 # LustreFSIP is an expected env var from the pipeline
+export LUSTRE_MGS_IP="${LustreFSIP}"
 
-${REPO_ROOT_PATH}/test/external-e2e/run.sh
+"${REPO_ROOT_PATH}/test/external-e2e/run.sh"

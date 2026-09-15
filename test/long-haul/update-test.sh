@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -18,75 +18,101 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# shellcheck source=test/long-haul/utils.sh
 source ./utils.sh
 
 trap print_debug ERR
 
 function print_versions () {
-	# Give extra one minute for daemonset pod to install client modules
-	sleep 90
-	
-	nodepool=$(az aks nodepool show --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
-	currentNodeImageVersion=$(echo $nodepool | jq -r '.nodeImageVersion')
+	# Wait for CSI driver workloads to be Ready (readiness probe validates that
+	# Lustre client modules are installed and LNet is operational on nodes).
+	kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
+	kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
+	kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
+	kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-azurelinux3 --timeout=600s
 
-	nodepoolUpgrades=$(az aks nodepool get-upgrades --resource-group $ResourceGroup --cluster-name $ClusterName --nodepool-name $PoolName)
-	nodeK8sVersion=$(echo $nodepoolUpgrades | jq -r '.kubernetesVersion')
+	# shellcheck disable=SC2154 # ResourceGroup, ClusterName, PoolName are expected env vars from start-long-haul.sh
+	nodepool=$(az aks nodepool show --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}")
+	currentNodeImageVersion=$(echo "${nodepool}" | jq -r '.nodeImageVersion')
 
-	controlPlaneUpgrades=$(az aks get-upgrades --resource-group $ResourceGroup --name $ClusterName)
-	currentControlPlaneK8sVersion=$(echo $controlPlaneUpgrades | jq -r '.controlPlaneProfile.kubernetesVersion')
+	nodepoolUpgrades=$(az aks nodepool get-upgrades --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}")
+	nodeK8sVersion=$(echo "${nodepoolUpgrades}" | jq -r '.kubernetesVersion')
 
-	podName=$(kubectl get pods -n kube-system -l app=csi-azurelustre-node -o wide --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp | grep $PoolName | awk '{print $1}' | head -n 1)
-	echo "Get kernel version and Lustre module version from pod $podName"
-	kernelVersion=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "uname -r")
-	module=$(kubectl exec -n kube-system -it $podName -c azurelustre -- /bin/bash -c "dpkg-query -f '\${Package}|\${Version}' -W kmod-lustre-client-*")
+	controlPlaneUpgrades=$(az aks get-upgrades --resource-group "${ResourceGroup}" --name "${ClusterName}")
+	currentControlPlaneK8sVersion=$(echo "${controlPlaneUpgrades}" | jq -r '.controlPlaneProfile.kubernetesVersion')
+
+	podName=$(kubectl get pods -n kube-system -l app=csi-azurelustre-node -o wide --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp | grep "${PoolName}" | awk '{print $1}' | head -n 1)
+	echo "Get kernel version and Lustre module version from pod ${podName}"
+	kernelVersion=$(kubectl exec -n kube-system -it "${podName}" -c azurelustre -- /bin/bash -c "uname -r")
+	# Detect OS family to use the right package query
+	osID=$(kubectl exec -n kube-system -it "${podName}" -c azurelustre -- /bin/bash -c ". /etc/os-release; echo \${ID:-}")
+	osID=$(echo "${osID}" | tr -d '[:space:]')
+	if [[ "${osID}" == "azurelinux" || "${osID}" == "mariner" ]]; then
+		# Prefer the kmod module package (parity with the Ubuntu branch); fall back to
+		# the amlfs metapackage only if no kmod package is installed. Querying both
+		# patterns together would let head -n 1 nondeterministically pick the metapackage.
+		module=$(kubectl exec -n kube-system -it "${podName}" -c azurelustre -- /bin/bash -c "m=\$(rpm -qa 'kmod-lustre-client-*' --queryformat '%{NAME}|%{VERSION}\n' | head -n 1); [[ -z \"\${m}\" ]] && m=\$(rpm -qa 'amlfs-lustre-client-*' --queryformat '%{NAME}|%{VERSION}\n' | head -n 1); echo \"\${m}\"")
+	else
+		module=$(kubectl exec -n kube-system -it "${podName}" -c azurelustre -- /bin/bash -c "dpkg-query -f '\${Package}|\${Version}' -W kmod-lustre-client-*")
+	fi
 	modulePkgName=${module%|*}
 	modulePkgVersion=${module#*|}
 
-	print_logs_info "Node image version: $currentNodeImageVersion"
-	print_logs_info "Node Kubernetes version: $nodeK8sVersion"
-	print_logs_info "Control-plane Kubernetes version: $currentControlPlaneK8sVersion"
-	print_logs_info "OS kernel version: $kernelVersion"
-	print_logs_info "Lustre client module package name: $modulePkgName"
-	print_logs_info "Lustre client module package version: $modulePkgVersion"	
+	print_logs_info "Node image version: ${currentNodeImageVersion}"
+	print_logs_info "Node Kubernetes version: ${nodeK8sVersion}"
+	print_logs_info "Control-plane Kubernetes version: ${currentControlPlaneK8sVersion}"
+	print_logs_info "OS kernel version: ${kernelVersion}"
+	print_logs_info "Lustre client module package name: ${modulePkgName}"
+	print_logs_info "Lustre client module package version: ${modulePkgVersion}"
 }
 
 print_logs_title "Print versions before"
 print_versions
 
-kubernetesUpgrades=$(az aks get-upgrades --resource-group $ResourceGroup --name $ClusterName | jq -r .controlPlaneProfile.upgrades)
+kubernetesUpgrades=$(az aks get-upgrades --resource-group "${ResourceGroup}" --name "${ClusterName}" | jq -r .controlPlaneProfile.upgrades)
 
-if [[ "$kubernetesUpgrades" != "null" ]]; then
+if [[ "${kubernetesUpgrades}" != "null" ]]; then
 	# Skip preview AKS version and get the latest one
-	latestKubernetesVersion=$(echo "$kubernetesUpgrades" | jq -r '.[] | select (.isPreview == null) | .kubernetesVersion' | tail -n 1)
+	latestKubernetesVersion=$(echo "${kubernetesUpgrades}" | jq -r '.[] | select (.isPreview == null) | .kubernetesVersion' | tail -n 1)
 
-	if [[ ! -z "$latestKubernetesVersion" ]]; then
-		print_logs_info "Upgrading Kubernetes control-plane to version $latestKubernetesVersion"
-		az aks upgrade --resource-group $ResourceGroup --name $ClusterName --yes --kubernetes-version $latestKubernetesVersion
+	if [[ -n "${latestKubernetesVersion}" ]]; then
+		print_logs_info "Upgrading Kubernetes control-plane to version ${latestKubernetesVersion}"
+		az aks upgrade --resource-group "${ResourceGroup}" --name "${ClusterName}" --yes --kubernetes-version "${latestKubernetesVersion}"
+		print_logs_info "Waiting for control-plane upgrade to fully complete"
+		az aks wait --resource-group "${ResourceGroup}" --name "${ClusterName}" --updated --interval 30 --timeout 1800
 	fi
 else
 	echo "Kubernetes control-plane version is the latest"
 fi
 
 print_logs_info "Upgrading node pool to the latest node image"
-az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName --node-image-only -y
+az aks nodepool upgrade --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --name "${PoolName}" --node-image-only -y
+print_logs_info "Waiting for node image upgrade to fully complete"
+az aks nodepool wait --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}" --updated --interval 30 --timeout 1800
 
 print_logs_info "Upgrading node pool to the latest"
-az aks nodepool upgrade --resource-group $ResourceGroup --cluster-name $ClusterName --name $PoolName -y
+az aks nodepool upgrade --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --name "${PoolName}" -y
+print_logs_info "Waiting for node pool upgrade to fully complete"
+az aks nodepool wait --resource-group "${ResourceGroup}" --cluster-name "${ClusterName}" --nodepool-name "${PoolName}" --updated --interval 30 --timeout 1800
 
 print_logs_title "Print versions after"
 print_versions
 
 samplePod=$(get_pod "azurelustre-longhaulsample-deployment")
 
-if [[ ! -z "$samplePod" ]]
+if [[ -n "${samplePod}" ]]
 then
-	podName=$(echo "$samplePod" | awk '{print $2}')
-	podStatus=$(echo "$samplePod" | awk '{print $4}')
-	print_logs_error "find pod $samplePod in $podStatus state, expect no running sample pod"
+	podName=$(echo "${samplePod}" | awk '{print $2}')
+	podStatus=$(echo "${samplePod}" | awk '{print $4}')
+	print_logs_error "find pod ${samplePod} in ${podStatus} state, expect no running sample pod"
 fi
 
 print_logs_title "Start and verify sample workload"
-sleep 60
+# Ensure CSI driver is fully ready after upgrade before starting workload
+kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
+kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
+kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
+kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-azurelinux3 --timeout=600s
 
 start_sample_workload
 

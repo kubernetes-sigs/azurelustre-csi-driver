@@ -1,18 +1,16 @@
-"""
-Copyright 2019 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+# Copyright 2019 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import sys
 import json
 import os
@@ -32,8 +30,8 @@ ROOT_PATH = os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))))
 WORK_PATH = os.path.join(os.path.join(ROOT_PATH, "test"), "scale")
 
-logger.info(f"ROOT_PATH: {ROOT_PATH}")
-logger.info(f"WORK_PATH: {WORK_PATH}")
+logger.info("ROOT_PATH: %s", ROOT_PATH)
+logger.info("WORK_PATH: %s", WORK_PATH)
 
 
 class FuncPerfResult:
@@ -123,31 +121,32 @@ class PerfScaleTest:
     WORKLOAD_YAML_PATH = ""
     TARGET_FUNCS = []
 
-    def __init__(self, args):
+    def __init__(self, test_args):
         self.configurations = {
-            "csi_name": args.csi_name,
-            "mgs_ip_address": args.mgs_ip_address,
-            "fs_name": args.fs_name,
+            "csi_name": test_args.csi_name,
+            "mgs_ip_address": test_args.mgs_ip_address,
+            "fs_name": test_args.fs_name,
             "scale": 0,
             "pod.metadata.name": "${pod.metadata.name}",
         }
-        self._scales = args.scales
-        logger.info(f"test scales {self._scales}")
+        self._scales = test_args.scales
+        logger.info("test scales %s", self._scales)
         self._test_result = None
-        self._provisioning_type = args.provisioning_type
+        self._provisioning_type = test_args.provisioning_type
         self._generated_workload_yaml = os.path.join(WORK_PATH,
                                                      "tmp_workload.yml")
         self._csi_log_path = os.path.join(WORK_PATH, "logs")
         self._result_path = WORK_PATH
-        logger.info(f"template workload yaml {self.WORKLOAD_YAML_PATH} "
-                    f"result path {self._result_path}")
+        logger.info("template workload yaml %s result path %s",
+                    self.WORKLOAD_YAML_PATH, self._result_path)
         self._result_files = []
 
         self._current_scale = 0
+        self._perf_result = PerfResultCollector()
 
     def generate_workload_yaml(self):
-        with open(self.WORKLOAD_YAML_PATH, "r") as source_file, \
-                open(self._generated_workload_yaml, "w") as target_file:
+        with open(self.WORKLOAD_YAML_PATH, "r", encoding="utf-8") as source_file, \
+                open(self._generated_workload_yaml, "w", encoding="utf-8") as target_file:
             for line in source_file:
                 output_line_parts = []
                 status = 0
@@ -194,7 +193,7 @@ class PerfScaleTest:
                             status = 0
 
                 if status != 0:
-                    raise Exception(
+                    raise RuntimeError(
                         f"template in '{line}' doesn't end in one line"
                     )
 
@@ -204,21 +203,21 @@ class PerfScaleTest:
         self.run_command(f"cat {self._generated_workload_yaml}")
 
     def run_command(self, command: str, need_stdout=False, raise_error=True, retries=5):
-        logger.info(f"run command {command}")
+        logger.info("run command %s", command)
         stdout = None
         if need_stdout:
             stdout = subprocess.PIPE
         total_retries = retries # used for calculating sleep later
         while retries > 0:
-            process = subprocess.run(command, shell=True, text=True, stdout=stdout)
+            process = subprocess.run(command, shell=True, text=True, stdout=stdout, check=False)
             retries -=1
             if process.returncode == 0:
                 break
-            elif process.returncode != 0 and raise_error and retries == 0:
+            if process.returncode != 0 and raise_error and retries == 0:
                 raise RuntimeError(f"command {command} exit with error"
                                 f" code {process.returncode}")
-            logger.info(f"command {command} failed, retrying"
-                                f" attempt {retries}")
+            logger.info("command %s failed, retrying attempt %s",
+                        command, retries)
             time.sleep(10 * (total_retries - retries)) # sleep between retries
 
         stdout = process.stdout
@@ -256,13 +255,14 @@ class PerfScaleTest:
         logger.info("workload was ready")
 
     def delete_workload(self):
-        logger.info("deleting workload")
-        """
+        """Delete the workload.
+
         We can use --wait=true to wait for all pods to be deleted. Although
         wait only wait for the deployment object itself to be deleted. But PVC
         needs to wait for all pods to finish properly before it will be
         deleted.
         """
+        logger.info("deleting workload")
         self.run_command(
             f"kubectl delete"
             f" -f {self._generated_workload_yaml}"
@@ -283,7 +283,7 @@ class PerfScaleTest:
             need_stdout=True
         )
         controller_pods = controller_pods.strip('\n').split('\n')
-        logger.info(f"got controller pods {controller_pods}")
+        logger.info("got controller pods %s", controller_pods)
 
         node_pods = self.run_command(
             "kubectl get pods"
@@ -294,10 +294,10 @@ class PerfScaleTest:
             need_stdout=True
         )
         node_pods = node_pods.strip('\n').split('\n')
-        logger.info(f"got nod pods {node_pods}")
+        logger.info("got node pods %s", node_pods)
 
         for pod in chain(controller_pods, node_pods):
-            logger.info(f"collecting pod {pod}")
+            logger.info("collecting pod %s", pod)
             self.run_command(f"kubectl logs {pod}"
                              f" -nkube-system"
                              f" -cazurelustre"
@@ -307,10 +307,10 @@ class PerfScaleTest:
     def parse_result_from_log(self):
         logger.info("parsing log file for perf result")
         for log_file in os.listdir(self._csi_log_path):
-            logger.info(f"parsing {log_file}")
+            logger.info("parsing %s", log_file)
             log_path = os.path.join(self._csi_log_path, log_file)
             if os.path.isfile(log_path):
-                with open(log_path, "r") as f:
+                with open(log_path, "r", encoding="utf-8") as f:
                     self._perf_result.parse_log_file(f)
 
     def write_result(self):
@@ -318,11 +318,11 @@ class PerfScaleTest:
                                         f"result_{self._provisioning_type}"
                                         f"_{self._current_scale}")
         perf_result = json.dumps(self._perf_result.get_result())
-        logger.info(f"perf result for scale {self._current_scale}:")
+        logger.info("perf result for scale %s:", self._current_scale)
         logger.info(perf_result)
-        with open(result_file_path, "w") as f:
+        with open(result_file_path, "w", encoding="utf-8") as f:
             f.write(perf_result)
-        logger.info(f"result have been wrote to {result_file_path}")
+        logger.info("result has been written to %s", result_file_path)
         self._result_files.append(result_file_path)
 
     def clean_up(self):
@@ -340,22 +340,22 @@ class PerfScaleTest:
         logger.info("checking result")
         latency_thresholds = {func.FUNC_NAME: func.LATENCY_THRESHOLD
                               for func in self.TARGET_FUNCS}
-        logger.info(f"latency thresholds are {latency_thresholds}")
+        logger.info("latency thresholds are %s", latency_thresholds)
         for result_file in self._result_files:
-            with open(result_file, "r") as f:
+            with open(result_file, "r", encoding="utf-8") as f:
                 result_data = json.load(f)
             for func_perf_result in result_data["func_results"]:
                 func_name = func_perf_result["func_name"]
                 if func_perf_result["max"] > latency_thresholds[func_name]:
                     raise RuntimeError(f"function {func_name} max latency "
-                                       f"{func_perf_result['max']} exceeds the"
+                                       f"{func_perf_result['max']} exceeds the "
                                        f"threshold "
                                        f"{latency_thresholds[func_name]}")
-        logger.info(f"all passed")
+        logger.info("all passed")
 
     def run(self):
         for scale in self._scales:
-            logger.info(f"run scale test {scale}")
+            logger.info("run scale test %s", scale)
             self.configurations["scale"] = str(scale)
             try:
                 self.setup(scale)
@@ -381,12 +381,12 @@ class StaticPerfScaleTest(PerfScaleTest):
     ]
 
 
-def run_scale_test(args):
-    logger.info(f"test csi perf for {args.provisioning_type} provisioning")
-    if args.provisioning_type == "static":
-        test_class = StaticPerfScaleTest(args)
+def run_scale_test(test_args):
+    logger.info("test csi perf for %s provisioning", test_args.provisioning_type)
+    if test_args.provisioning_type == "static":
+        test_class = StaticPerfScaleTest(test_args)
     else:
-        raise NotImplemented(args.provisioning_type)
+        raise NotImplementedError(test_args.provisioning_type)
 
     test_class.run()
 

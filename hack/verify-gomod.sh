@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -17,16 +17,15 @@
 set -euo pipefail
 
 echo "Verifying gomod"
-export GO111MODULE=on
 echo "go mod tidy"
 go mod tidy
 echo "go mod vendor"
 go mod vendor
-diff=`git diff vendor`
+diff=$(git diff vendor)
 if [[ -n "${diff}" ]]; then
   echo "${diff}"
   echo
-  echo "error"
+  echo "go.mod/vendor is out of date. Run 'go mod tidy && go mod vendor' to fix."
   exit 1
 fi
 echo "Done"

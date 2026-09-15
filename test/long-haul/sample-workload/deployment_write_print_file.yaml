@@ -44,7 +44,7 @@ spec:
         "agentpool": {longhaul_agentpool}
       containers:
         - name: azurelustre-longhaulsample-container
-          image: mcr.microsoft.com/oss/nginx/nginx:1.17.3-alpine
+          image: mcr.microsoft.com/azurelinux/busybox:1.36
           command:
             - "/bin/sh"
             - "-c"

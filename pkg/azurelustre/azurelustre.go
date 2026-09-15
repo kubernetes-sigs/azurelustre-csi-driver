@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -38,7 +39,6 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	csicommon "sigs.k8s.io/azurelustre-csi-driver/pkg/csi-common"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
@@ -76,6 +76,9 @@ const (
 	pvcNameMetadata            = "${pvc.metadata.name}"
 	pvcNamespaceMetadata       = "${pvc.metadata.namespace}"
 	pvNameMetadata             = "${pv.metadata.name}"
+
+	controllerPod podRole = "controller"
+	nodePod       podRole = "node"
 )
 
 var (
@@ -127,12 +130,28 @@ type LustreSkuValue struct {
 	AvailableZones []string
 }
 
+type CSIDriver struct {
+	Name    string
+	NodeID  string
+	Version string
+	Cap     []*csi.ControllerServiceCapability
+	VC      []*csi.VolumeCapability_AccessMode
+	NSCap   []*csi.NodeServiceCapability
+}
+
+// podRole is which pod the driver process was deployed into. Though avoided
+// in practice by sidecar configuration, both pods are currently configured
+// to serve every CSI service. This ensures that the driver only performs
+// the operations appropriate to its pod role.
+type podRole string
+
 // Driver implements all interfaces of CSI drivers
 type Driver struct {
-	csicommon.CSIDriver
-	csicommon.DefaultIdentityServer
-	csicommon.DefaultControllerServer
-	csicommon.DefaultNodeServer
+	CSIDriver
+	csi.UnimplementedControllerServer
+	csi.UnimplementedNodeServer
+	csi.UnimplementedIdentityServer
+	podRole podRole
 	// enableAzureLustreMockMount is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
@@ -151,6 +170,7 @@ type Driver struct {
 	resourceGroup      string
 	location           string
 	dynamicProvisioner DynamicProvisionerInterface
+	pingChecker        clusterPingChecker
 
 	removeNotReadyTaint bool
 	kubeClient          kubernetes.Interface
@@ -160,9 +180,9 @@ type Driver struct {
 	taintRemovalBackoff wait.Backoff
 }
 
-// NewDriver Creates a NewCSIDriver object. Assumes vendor version is equal to driver version &
+// NewDriver creates a new Driver. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
-func NewDriver(options *DriverOptions) *Driver {
+func NewDriver(options *DriverOptions) (*Driver, error) {
 	d := Driver{
 		volLockMap:                   util.NewLockMap(),
 		volumeLocks:                  newVolumeLocks(),
@@ -174,10 +194,11 @@ func NewDriver(options *DriverOptions) *Driver {
 	d.Name = options.DriverName
 	d.Version = driverVersion
 	d.NodeID = options.NodeID
-
-	d.DefaultControllerServer.Driver = &d.CSIDriver
-	d.DefaultIdentityServer.Driver = &d.CSIDriver
-	d.DefaultNodeServer.Driver = &d.CSIDriver
+	// Only the node DaemonSet passes --nodeid, so its presence identifies the pod.
+	d.podRole = controllerPod
+	if d.NodeID != "" {
+		d.podRole = nodePod
+	}
 
 	ctx := context.Background()
 
@@ -204,18 +225,14 @@ func NewDriver(options *DriverOptions) *Driver {
 			d.dynamicProvisioner = &DynamicProvisioner{}
 			d.cloud = az
 		} else {
-			klog.Fatalf("no cloud config provided, error")
+			return nil, errors.New("no cloud config provided")
 		}
 	} else {
 		config.UserAgent = GetUserAgent(d.Name, "", "")
-		if clientID := os.Getenv("AZURE_CLIENT_ID"); clientID != "" {
-			config.AADClientID = clientID
-		} else if config.UseManagedIdentityExtension && config.UserAssignedIdentityID != "" {
-			err = os.Setenv("AZURE_CLIENT_ID", config.UserAssignedIdentityID)
-			if err != nil {
-				klog.Warningf("failed to set AZURE_CLIENT_ID env var: %v", err)
+		if d.podRole == controllerPod {
+			if err = resolveControllerIdentity(config); err != nil {
+				return nil, err
 			}
-			config.AADClientID = config.UserAssignedIdentityID
 		}
 		if err = az.InitializeCloudFromConfig(ctx, config, false, false); err != nil {
 			klog.Warningf("InitializeCloudFromConfig failed with error: %v", err)
@@ -235,43 +252,93 @@ func NewDriver(options *DriverOptions) *Driver {
 			Factor:   2,
 			Steps:    10, // Max delay = 0.5 * 2^9 = ~4 minutes
 		}
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			klog.Warningf("failed to obtain a credential: %v", err)
-		}
-		storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, nil)
-		if err != nil {
-			klog.Warningf("failed to create storage client factory: %v", err)
-		}
-		subsID := d.cloud.SubscriptionID
-		if len(d.cloud.NetworkResourceSubscriptionID) > 0 {
-			subsID = d.cloud.NetworkResourceSubscriptionID
-		}
-		networkClientFactory, err := armnetwork.NewClientFactory(subsID, cred, nil)
-		if err != nil {
-			klog.Warningf("failed to create network client factory: %v", err)
-		}
-		vnetClient := networkClientFactory.NewVirtualNetworksClient()
-		skusClient := storageClientFactory.NewSKUsClient()
-		mgmtClient := storageClientFactory.NewManagementClient()
-		amlFilesystemsClient := storageClientFactory.NewAmlFilesystemsClient()
-		d.dynamicProvisioner = &DynamicProvisioner{
-			amlFilesystemsClient: amlFilesystemsClient,
-			mgmtClient:           mgmtClient,
-			vnetClient:           vnetClient,
-			skusClient:           skusClient,
+		if d.podRole == controllerPod {
+			if err = d.initDynamicProvisioner(config); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	return &d
+	if d.pingChecker, err = newClusterPingCache(&util.DefaultCommandRunner{}); err != nil {
+		klog.Fatalf("%v", err)
+	}
+
+	return &d, nil
+}
+
+// resolveControllerIdentity settles which identity the ARM clients authenticate with.
+func resolveControllerIdentity(config *azureconfig.Config) error {
+	if clientID := os.Getenv("AZURE_CLIENT_ID"); clientID != "" {
+		config.AADClientID = clientID
+		return nil
+	}
+	if requiresWorkloadIdentity() || !config.UseManagedIdentityExtension || config.UserAssignedIdentityID == "" {
+		return nil
+	}
+	// azure.json holds the node's identity, which must not stand in for the workload identity the webhook injects.
+	if err := os.Setenv("AZURE_CLIENT_ID", config.UserAssignedIdentityID); err != nil {
+		return fmt.Errorf("failed to set AZURE_CLIENT_ID env var: %w", err)
+	}
+	config.AADClientID = config.UserAssignedIdentityID
+	return nil
+}
+
+// networkSubscriptionID is the subscription owning the virtual network, which
+// may differ from the one owning the filesystem.
+func (d *Driver) networkSubscriptionID() string {
+	if len(d.cloud.NetworkResourceSubscriptionID) > 0 {
+		return d.cloud.NetworkResourceSubscriptionID
+	}
+	return d.cloud.SubscriptionID
+}
+
+// initDynamicProvisioner builds the Azure credential and ARM clients. Node pods
+// never call ARM, so they leave the provisioner unset.
+func (d *Driver) initDynamicProvisioner(config *azureconfig.Config) error {
+	klog.Infof("%s", azureIdentityConfigurationMessage())
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return fmt.Errorf("failed to obtain a credential: %w", err)
+	}
+	storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create storage client factory: %w", err)
+	}
+	networkClientFactory, err := armnetwork.NewClientFactory(d.networkSubscriptionID(), cred, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create network client factory: %w", err)
+	}
+	d.dynamicProvisioner = &DynamicProvisioner{
+		amlFilesystemsClient: storageClientFactory.NewAmlFilesystemsClient(),
+		mgmtClient:           storageClientFactory.NewManagementClient(),
+		vnetClient:           networkClientFactory.NewVirtualNetworksClient(),
+		skusClient:           storageClientFactory.NewSKUsClient(),
+	}
+	return nil
+}
+
+// AZURE_TOKEN_CREDENTIALS is what azidentity obeys, and the chart sets it per identity mode.
+func requiresWorkloadIdentity() bool {
+	return strings.EqualFold(os.Getenv("AZURE_TOKEN_CREDENTIALS"), "WorkloadIdentityCredential")
+}
+
+func azureIdentityConfigurationMessage() string {
+	clientID := os.Getenv("AZURE_CLIENT_ID")
+	if requiresWorkloadIdentity() {
+		// Same order azidentity checks them, so this names whichever it would report first.
+		for _, name := range []string{"AZURE_CLIENT_ID", "AZURE_FEDERATED_TOKEN_FILE", "AZURE_TENANT_ID"} {
+			if os.Getenv(name) == "" {
+				return fmt.Sprintf("configured for workload identity but %s is not set; token acquisition will fail until the webhook injects it", name)
+			}
+		}
+		return fmt.Sprintf("authenticating with workload identity (client ID %q)", clientID)
+	}
+	return fmt.Sprintf("authenticating with managed identity (client ID %q)", clientID)
 }
 
 func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProperties) SubnetProperties {
 	subnetProperties := subnetInfo
-	subsID := d.cloud.SubscriptionID
-	if len(d.cloud.NetworkResourceSubscriptionID) > 0 {
-		subsID = d.cloud.NetworkResourceSubscriptionID
-	}
+	subsID := d.networkSubscriptionID()
 
 	if len(subnetInfo.VnetResourceGroup) == 0 {
 		subnetProperties.VnetResourceGroup = d.cloud.ResourceGroup
@@ -295,38 +362,79 @@ func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProper
 }
 
 // Run driver initialization
-func (d *Driver) Run(endpoint string, testBool bool) {
+func (d *Driver) Run(endpoint string, testBool bool) error {
 	versionMeta, err := GetVersionYAML(d.Name)
 	if err != nil {
-		klog.Fatalf("%v", err)
+		return fmt.Errorf("failed to get driver version: %w", err)
 	}
 	klog.Infof("\nDRIVER INFORMATION:\n-------------------\n%s\n\nStreaming logs below:", versionMeta)
 
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: mount.New(""),
-		Exec:      utilexec.New(),
-	}
-	forceUnmounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
-	if ok {
-		klog.V(4).Infof("Using force unmounter interface")
-		d.forceMounter = &forceUnmounter
-	} else {
-		klog.Fatalf("Mounter does not support force unmount")
+	// Only node pods mount filesystems. Constructing the host mounter runs a
+	// one-time umount capability probe that requires mount privileges.
+	if d.podRole == nodePod {
+		d.mounter = &mount.SafeFormatAndMount{
+			Interface: mount.New(""),
+			Exec:      utilexec.New(),
+		}
+		forceUnmounter, err := selectForceUnmounter(d.mounter.Interface)
+		if err != nil {
+			return err
+		}
+		d.forceMounter = forceUnmounter
 	}
 
-	// TODO_JUSJIN: revisit these caps
 	// Initialize default library driver
-	// TODO_CHYIN: move this to {service}.go
 	d.AddControllerServiceCapabilities(controllerServiceCapabilities)
 	d.AddVolumeCapabilityAccessModes(volumeCapabilities)
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
 	d.removeNotReadyTaintIfNeeded()
 
-	s := csicommon.NewNonBlockingGRPCServer()
-	// Driver d act as IdentityServer, ControllerServer and NodeServer
+	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, d, d, d, testBool)
 	s.Wait()
+
+	return nil
+}
+
+// selectForceUnmounter returns the force-unmount capable view of the given
+// mounter. It returns an error if the mounter does not implement
+// mount.MounterForceUnmounter.
+func selectForceUnmounter(mounter mount.Interface) (*mount.MounterForceUnmounter, error) {
+	forceUnmounter, ok := mounter.(mount.MounterForceUnmounter)
+	if !ok {
+		return nil, errors.New("mounter does not support force unmount")
+	}
+	klog.V(4).Infof("Using force unmounter interface")
+	return &forceUnmounter, nil
+}
+
+func (d *Driver) AddControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) {
+	csc := make([]*csi.ControllerServiceCapability, 0, len(cl))
+
+	for _, c := range cl {
+		klog.Infof("Enabling controller service capability: %v", c.String())
+		csc = append(csc, NewControllerServiceCapability(c))
+	}
+	d.Cap = csc
+}
+
+func (d *Driver) AddNodeServiceCapabilities(nl []csi.NodeServiceCapability_RPC_Type) {
+	nsc := make([]*csi.NodeServiceCapability, 0, len(nl))
+	for _, n := range nl {
+		klog.V(2).Infof("Enabling node service capability: %v", n.String())
+		nsc = append(nsc, NewNodeServiceCapability(n))
+	}
+	d.NSCap = nsc
+}
+
+func (d *Driver) AddVolumeCapabilityAccessModes(vc []csi.VolumeCapability_AccessMode_Mode) {
+	vca := make([]*csi.VolumeCapability_AccessMode, 0, len(vc))
+	for _, c := range vc {
+		klog.Infof("Enabling volume access mode: %v", c.String())
+		vca = append(vca, NewVolumeCapabilityAccessMode(c))
+	}
+	d.VC = vca
 }
 
 func IsCorruptedDir(dir string) bool {
@@ -383,7 +491,7 @@ type JSONPatch struct {
 func (d *Driver) removeNotReadyTaintIfNeeded() {
 	// Remove taint from node to indicate driver startup success
 	// This is done at the last possible moment to prevent race conditions or false positive removals
-	if d.kubeClient != nil && d.removeNotReadyTaint && d.NodeID != "" {
+	if d.kubeClient != nil && d.removeNotReadyTaint && d.podRole == nodePod {
 		time.AfterFunc(d.taintRemovalInitialDelay, func() {
 			removeTaintInBackground(d.kubeClient, d.NodeID, d.Name, d.taintRemovalBackoff, removeNotReadyTaint)
 		})

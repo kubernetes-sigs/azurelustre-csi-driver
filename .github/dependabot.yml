@@ -1,0 +1,59 @@
+---
+version: 2
+updates:
+  # GitHub Actions — keep workflow action versions current
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "development"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "development"
+    labels:
+      - "dependencies"
+      - "go"
+    ignore:
+      # k8s.io staging modules use replace directives in go.mod that
+      # dependabot cannot update. Bumping require without updating
+      # replace produces a broken build. Handle these manually with
+      # hack/update-gomod.sh instead.
+      - dependency-name: "k8s.io/*"
+    groups:
+      azure-sdk:
+        patterns:
+          - "github.com/Azure/azure-sdk-for-go/*"
+          - "github.com/Azure/go-autorest/*"
+        update-types:
+          - "minor"
+          - "patch"
+      csi-libs:
+        patterns:
+          - "github.com/kubernetes-csi/*"
+          - "github.com/container-storage-interface/*"
+        update-types:
+          - "minor"
+          - "patch"
+      golang-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "github.com/Azure/azure-sdk-for-go/*"
+          - "github.com/Azure/go-autorest/*"
+          - "github.com/kubernetes-csi/*"
+          - "github.com/container-storage-interface/*"

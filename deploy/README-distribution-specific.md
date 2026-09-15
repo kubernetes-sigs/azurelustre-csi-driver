@@ -2,19 +2,20 @@
 
 ## Overview
 
-This directory contains distribution-specific DaemonSet deployments for the Azure Lustre CSI driver. Each deployment targets a specific Ubuntu version to ensure proper Lustre client compatibility.
+This directory contains distribution-specific DaemonSet deployments for the Azure Lustre CSI driver. Each deployment targets a specific OS version to ensure proper Lustre client compatibility.
 
 ## Files
 
 - `csi-azurelustre-node-jammy.yaml` - Ubuntu 22.04 (Jammy) nodes
 - `csi-azurelustre-node-noble.yaml` - Ubuntu 24.04 (Noble) nodes
+- `csi-azurelustre-node-azurelinux3.yaml` - Azure Linux 3 nodes
 
 ## Distribution Targeting
 
 Each deployment uses:
 
 1. **Node Targeting**: Uses node affinity and selectors to match correct node OS flavors
-2. **Container Image**: Version-specific image tags like `v0.4.0-jammy`, `v0.4.0-noble`
+2. **Container Image**: Version-specific image tags like `v0.6.0-jammy`, `v0.6.0-noble`, `v0.6.0-azurelinux3`
 3. **Unique Names**: Each DaemonSet has a unique name (`csi-azurelustre-node-jammy`) to prevent conflicts
 
 ## Installation
@@ -36,6 +37,7 @@ Your AKS cluster nodes must have the `kubernetes.azure.com/os-sku-effective` lab
 
 - `Ubuntu2204`
 - `Ubuntu2404`
+- `AzureLinux3`
 
 AKS automatically sets this label based on the node pool's OS configuration.
 
@@ -43,10 +45,36 @@ AKS automatically sets this label based on the node pool's OS configuration.
 
 Container images follow the pattern:
 
-- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy`
-- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-azurelinux3`
 
-Each image contains an Ubuntu version capable of installing the Lustre client packages compiled for the target distribution.
+Ubuntu images use `apt-get` to install Lustre client deb packages. The Azure Linux 3 image
+uses `tdnf` to install Lustre client RPM packages. The `lustre-loader` sidecar installs the
+full `amlfs-lustre-client-*` metapackage (kernel modules + userspace tools), while the
+`azurelustre` driver container installs only the userspace tools; both come from the same
+package family so kernel modules and userspace tools stay in sync.
+
+## Node pod containers
+
+Every node pod (all three flavors) runs the same four-container layout, and the
+same per-flavor image is reused across the first two — the behavior is selected
+at runtime via the `AZURELUSTRE_CSI_ROLE` environment variable:
+
+1. **`lustre-loader`** — a native sidecar (an init container with
+   `restartPolicy: Always`, `AZURELUSTRE_CSI_ROLE=loader`). Installs the full
+   `amlfs-lustre-client-*` metapackage, loads the Lustre kernel modules into the
+   shared host kernel, configures LNet, then runs an LNet-config reconcile loop
+   for the life of the pod. Its `startupProbe` gates the remaining containers
+   until LNet is up, and on termination its `SIGTERM` handler unloads the
+   modules so nothing is left behind on the host. The unload is best effort: the
+   kernel refuses to remove modules that are still in use, so on a node with a
+   mounted Lustre filesystem the modules stay resident and the loader logs a
+   `WARNING:`.
+2. **`azurelustre`** — the CSI driver (`AZURELUSTRE_CSI_ROLE=driver`). Installs
+   only the kernel-agnostic userspace tools, then serves the CSI gRPC socket.
+3. **`liveness-probe`** and **`node-driver-registrar`** — the standard
+   kubernetes-csi sidecars.
 
 ## Troubleshooting
 
@@ -61,4 +89,5 @@ To check DaemonSet pod distribution:
 ```bash
 kubectl get pods -n kube-system -l app=csi-azurelustre-node,flavor=jammy -o wide
 kubectl get pods -n kube-system -l app=csi-azurelustre-node,flavor=noble -o wide
+kubectl get pods -n kube-system -l app=csi-azurelustre-node,flavor=azurelinux3 -o wide
 ```

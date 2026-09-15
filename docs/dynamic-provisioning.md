@@ -12,7 +12,24 @@ using the Lustre CSI driver.
 kubelet identity must have the correct permissions granted to it.
 
 Ensure that the kubelet identity has all of the permissions that are listed in the section
-on [Permissions For Kubelet Identity](driver-parameters.md#Permissions%20For%20Kubelet%20Identity).
+on [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
+
+### Network Egress
+
+> [!IMPORTANT]
+> The CSI driver controller pod requires outbound HTTPS access to Azure Resource Manager
+> (`management.azure.com`) and Microsoft Entra ID (`login.microsoftonline.com`) for dynamic
+> provisioning operations (creating, deleting, and querying AMLFS clusters).
+>
+> The controller pod does **not** use host networking, so it relies on the cluster's pod
+> network egress path. If your AKS cluster restricts outbound traffic (e.g., private clusters,
+> UDR-based egress, or clusters created after March 2026 when AKS
+> [retired default outbound access](https://learn.microsoft.com/en-us/azure/aks/outbound-rules-control-egress)),
+> you must ensure that the controller pod can reach these endpoints through a NAT Gateway,
+> Azure Load Balancer, or firewall/proxy rule.
+>
+> **Static provisioning is not affected** — the node pod mounts Lustre filesystems directly
+> over the host network and does not require these Azure management endpoints.
 
 ## Create an Azure Managed Lustre cluster bound to a Persistent Volume Claim
 

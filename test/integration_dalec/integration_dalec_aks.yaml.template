@@ -4,17 +4,40 @@ kind: Pod
 metadata:
   name: azurelustre-integration-dalec
 spec:
+  # The driver under test and the test client run as two containers sharing the
+  # CSI socket via an emptyDir. The driver image (${IMAGE_NAME}) is used exactly
+  # as shipped -- it runs only the plugin. The tester image (${CSC_IMAGE_NAME})
+  # carries the csc client and runs the integration script. This decoupling lets
+  # one harness cover jammy/noble/azlinux3 without installing any test tooling
+  # into the distro images (the Azure Linux 3 image is distroless).
   containers:
-    - name: integration-dalec
+    - name: driver
       image: ${IMAGE_NAME}
+      imagePullPolicy: IfNotPresent
+      command:
+        - /app/azurelustreplugin
+        - --v=5
+        - --endpoint=unix:///csi/csi.sock
+        - --enable-azurelustre-mock-mount
+        - --enable-azurelustre-mock-dyn-prov
+        - --nodeid=integrationtestnode
+      volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+    - name: tester
+      image: ${CSC_IMAGE_NAME}
       imagePullPolicy: IfNotPresent
       command: ["bash", "/test/run_integration_test.sh"]
       volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
         - name: script-volume
           mountPath: /test/run_integration_test.sh
           subPath: run_integration_test.sh
           readOnly: true
   volumes:
+    - name: socket-dir
+      emptyDir: {}
     - name: script-volume
       configMap:
         name: integration-dalec-script

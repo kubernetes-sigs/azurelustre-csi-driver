@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2025 The Kubernetes Authors.
 #
@@ -14,49 +14,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This script runs in the "tester" sidecar container, which carries a prebuilt
+# `csc` client. The driver under test runs in a separate container in the same
+# pod; the two share the CSI socket via an emptyDir mounted at /csi. This keeps
+# the shipped driver image (azlinux3/jammy/noble) unmodified -- no package
+# manager, Go toolchain, or csc is installed into it -- so the same harness
+# works across all distro variants, including the distroless Azure Linux 3 image.
+
 set -o xtrace
 set -o errexit
 set -o pipefail
 set -o nounset
 
-readonly volname="citest-$(date +%s)"
+volname="citest-$(date +%s)"
+readonly volname
 readonly volsize="2147483648"
 readonly endpoint="unix:///csi/csi.sock"
 readonly target_path="/tmp/target_path"
 readonly lustre_fs_ip=1.2.3.4
 
-mkdir -p $target_path
+mkdir -p "${target_path}"
 
-apt-get update
-apt-get install -y --no-install-recommends kmod wget git ca-certificates lsb-release gpg curl
-update-ca-certificates
+# csc is baked into this sidecar image. Verify it is present and executable up
+# front so a broken/missing image fails immediately with a clear message
+command -v csc >/dev/null 2>&1 || { echo "ERROR: csc not found in tester image" >&2; exit 1; }
 
-curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
-echo "deb [arch=amd64,arm64,armhf] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" | tee /etc/apt/sources.list.d/amlfs.list
-apt-get update
+# Wait for the driver container to create the CSI socket on the shared volume.
+echo "$(date -u) Waiting for CSI socket ${endpoint}"
+for _ in $(seq 1 60); do
+    if [[ -S /csi/csi.sock ]]; then
+        break
+    fi
+    sleep 1
+done
 
-apt install -y msft-golang
+if [[ ! -S /csi/csi.sock ]]; then
+    echo "ERROR: CSI socket /csi/csi.sock did not appear within 60s" >&2
+    exit 1
+fi
 
-go version
-
-echo "$(date -u) Enabled Lustre client kernel modules."
-
-echo "$(date -u) Entering Lustre CSI driver"
-
-echo "$(date -u) install csc"
-go install github.com/dell/gocsi/csc@v1.13.0
-export PATH=$PATH:/root/go/bin # add csc to path
-
-mkdir /csi
-echo "$(date -u) Exiting Lustre CSI driver"
-nohup 2>&1 /app/azurelustreplugin --v=5 \
-              --endpoint=${endpoint} \
-              --enable-azurelustre-mock-mount \
-	      --nodeid=integrationtestnode >csi.log &
-
-sleep 5
-
-echo "====: $(date -u) Exiting integration test"
+echo "====: $(date -u) Starting integration test"
 export X_CSI_DEBUG=true
 echo "====: $(date -u) Create volume test:"
 value="$(csc controller new --endpoint "${endpoint}" \
@@ -64,35 +61,32 @@ value="$(csc controller new --endpoint "${endpoint}" \
                             "${volname}" \
                             --req-bytes "${volsize}" \
                             --params fs-name=lustrefs,mgs-ip-address="${lustre_fs_ip}")"
-sleep 5
 
-volumeid="$(echo "$value" | awk '{print $1}' | sed 's/"//g')"
-echo "====: $(date -u) Volume ID is $volumeid"
+volumeid="$(echo "${value}" | awk '{print $1}' | sed 's/"//g')"
+echo "====: $(date -u) Volume ID is ${volumeid}"
 
 echo "====: $(date -u) Validate volume capabilities test:"
 csc controller validate-volume-capabilities --endpoint "${endpoint}" \
                                             --cap MULTI_NODE_MULTI_WRITER,mount,,, \
-                                            "$volumeid"
+                                            "${volumeid}"
 
-echo "====: $(date -u) stats test:"
-csc node stats --endpoint "${endpoint}" "${volumeid}:${target_path}"
-sleep 2
-
-echo "====: $(date -u) Node publish volume test:"  # Requires routng to amlfs
+echo "====: $(date -u) Node publish volume test:"  # Requires routing to amlfs
 csc node publish --endpoint "${endpoint}" \
                  --cap MULTI_NODE_MULTI_WRITER,mount,,, \
                  --target-path "${target_path}" \
                  --vol-context "fs-name=lustrefs,mgs-ip-address=${lustre_fs_ip}" \
                  "${volumeid}"
-sleep 3
 
-echo "====: $(date -u) Node unpublish volume test:"  # Requires routng to amlfs
+echo "====: $(date -u) stats test:"
+csc node stats --endpoint "${endpoint}" "${volumeid}:${target_path}"
+
+echo "====: $(date -u) Node unpublish volume test:"  # Requires routing to amlfs
 csc node unpublish --endpoint "${endpoint}" \
-                   --target-path "$target_path" \
-                   "$volumeid"
+                   --target-path "${target_path}" \
+                   "${volumeid}"
 
 echo "====: $(date -u) Delete volume test:"
-csc controller del --endpoint "${endpoint}" "$volumeid"
+csc controller del --endpoint "${endpoint}" "${volumeid}"
 
 echo "====: $(date -u) Identity test:"
 csc identity plugin-info --endpoint "${endpoint}"
@@ -100,4 +94,4 @@ csc identity plugin-info --endpoint "${endpoint}"
 echo "====: $(date -u) Node get info test:"
 csc node get-info --endpoint "${endpoint}"
 
-echo "$(date -u) Integration test on aks is completed."
+echo "$(date -u) Integration test is completed."

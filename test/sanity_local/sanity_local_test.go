@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
@@ -47,9 +48,14 @@ func TestSanity(t *testing.T) {
 		EnableAzureLustreMockMount:   true,
 		EnableAzureLustreMockDynProv: true,
 	}
-	driver := azurelustre.NewDriver(&driverOptions)
+	driver, err := azurelustre.NewDriver(&driverOptions)
+	if err != nil {
+		t.Fatalf("failed to create driver: %v", err)
+	}
 	go func() {
-		driver.Run(socketEndpoint, true)
+		if err := driver.Run(socketEndpoint, true); err != nil {
+			klog.Errorf("driver.Run returned error: %v", err)
+		}
 	}()
 	sanity.Test(t, config)
 }

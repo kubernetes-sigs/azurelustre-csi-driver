@@ -1,3 +1,4 @@
+---
 version: "2"
 linters:
   enable:
@@ -72,9 +73,9 @@ linters:
   exclusions:
     presets:
       - comments
-      #- common-false-positives
-      #- legacy
-      #- std-error-handling
+      # - common-false-positives
+      # - legacy
+      # - std-error-handling
     paths:
       - third_party$
       - builtin$

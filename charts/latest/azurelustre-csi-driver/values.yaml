@@ -1,0 +1,191 @@
+# Default values for azurelustre-csi-driver (latest).
+image:
+  repository: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi
+  tag: latest
+  pullPolicy: Always
+
+sidecars:
+  provisioner:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner
+    tag: v5.2.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 300Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+  livenessProbe:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/livenessprobe
+    tag: v2.15.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    controller:
+      healthPort: 29762
+    node:
+      # All node DaemonSet flavors share this port. This is safe because
+      # nodeAffinity ensures each flavor runs on distinct nodes.
+      healthPort: 29763
+  nodeDriverRegistrar:
+    repository: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar
+    tag: v2.13.0
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+
+controller:
+  replicas: 2
+  resources:
+    limits:
+      cpu: 1
+      memory: 200Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+  nodeSelector:
+    kubernetes.io/os: linux
+  # The controller does no host/kernel work, so it only tolerates control-plane
+  # taints. It intentionally does NOT carry the node plugin's user-pool (spot/GPU)
+  # tolerations: it should land on stable, general-purpose capacity rather than
+  # chase pre-emptible/accelerated nodes. On AKS it relies on an untainted node
+  # being available (AKS Standard keeps an untainted system pool by default; on
+  # AKS Automatic, node auto-provisioning creates an untainted user node for the
+  # pending controller). The CriticalAddonsOnly toleration is deliberately omitted
+  # so the controller is not admitted onto AKS-managed reserved system nodes and
+  # stays compliant with the aks-managed-critical-addons-only admission policy.
+  tolerations:
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/controlplane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+  priorityClassName: system-cluster-critical
+  extraArgs: ["-v=5"]
+
+node:
+  # The node plugin is deliberately kept off AKS-managed *reserved* system node
+  # pools by NOT tolerating the CriticalAddonsOnly taint (the AKS-recommended way
+  # to keep a DaemonSet off system pools; see aka.ms/aks/use-system-pools). This
+  # also keeps it off AKS Automatic system nodes, which are tainted
+  # CriticalAddonsOnly. On an untainted single system-pool cluster the plugin
+  # still runs, so Lustre volumes can mount there.
+  #
+  # A blanket `{operator: Exists}` toleration is intentionally avoided: it is
+  # rejected on AKS Automatic by the aks-managed-critical-addons-only admission
+  # policy. Instead we tolerate the common AKS user-pool taints (spot and GPU) so
+  # the plugin runs where Lustre HPC/AI workloads schedule. Customers with other
+  # custom user-pool taints should add matching tolerations here.
+  tolerations:
+    - key: "kubernetes.azure.com/scalesetpriority"
+      operator: "Equal"
+      value: "spot"
+      effect: "NoSchedule"
+    - key: "sku"
+      operator: "Equal"
+      value: "gpu"
+      effect: "NoSchedule"
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+  updateStrategy:
+    maxUnavailable: 10%
+  priorityClassName: system-node-critical
+  extraArgs: ["-v=5"]
+  jammy:
+    affinityOsSkus:
+      - Ubuntu2204
+      - Ubuntu2004
+    nodeSelector:
+      kubernetes.io/os: linux
+      kubernetes.io/arch: amd64
+    resources:
+      limits:
+        cpu: 1
+        memory: 200Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    lustreClient:
+      version: 2.15.8
+      shaSuffix: 39-g2d32b59
+  noble:
+    affinityOsSkus:
+      - Ubuntu2404
+    nodeSelector:
+      kubernetes.io/os: linux
+    resources:
+      limits:
+        cpu: 1
+        memory: 200Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    lustreClient:
+      version: 2.17.0
+      shaSuffix: 24-gf517bc4
+  azurelinux3:
+    affinityOsSkus:
+      - AzureLinux3
+    nodeSelector:
+      kubernetes.io/os: linux
+      kubernetes.io/arch: amd64
+    resources:
+      limits:
+        cpu: 1
+        memory: 500Mi
+      requests:
+        cpu: 10m
+        memory: 20Mi
+    lustreClient:
+      version: 2.17.0
+      shaSuffix: 24-gf517bc4
+
+rbac:
+  create: true
+
+csidriver:
+  name: azurelustre.csi.azure.com
+  fsGroupPolicy: File
+  attachRequired: false
+  podInfoOnMount: true
+
+# Microsoft Entra Workload Identity.
+#
+# For direct Helm installs, set IsWorkloadIdentityEnabled to "Enabled" and
+# IdentityClientId to the client ID of a user-assigned managed identity that has
+# a federated credential for the controller service account. IdentityTenantId is
+# optional for cross-tenant scenarios. These value names also match the AKS
+# extension workload identity contract so the chart remains compatible with
+# platform-managed value injection.
+#
+# Workload identity is only used for dynamic provisioning (ARM calls to create
+# and delete AMLFS filesystems). When IsWorkloadIdentityEnabled is "Disabled",
+# no workload identity label or annotation is rendered. IdentityClientId is
+# required when IsWorkloadIdentityEnabled is "Enabled".
+IsWorkloadIdentityEnabled: "Disabled"
+IdentityClientId: ""
+IdentityTenantId: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+podAnnotations: {}
+podLabels: {}
+paths:
+  kubelet: /var/lib/kubelet
+  kubernetes: /etc/kubernetes
+  dev: /dev
+  osRelease: /etc/os-release
