@@ -45,6 +45,7 @@ import (
 	ipgroupclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/ipgroupclient"
 	loadbalancerclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/loadbalancerclient"
 	managedclusterclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/managedclusterclient"
+	natgatewayclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/natgatewayclient"
 	privatednszonegroupclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatednszonegroupclient"
 	privateendpointclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/privateendpointclient"
 	privatelinkserviceclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatelinkserviceclient"
@@ -58,6 +59,7 @@ import (
 	routetableclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/routetableclient"
 	secretclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/secretclient"
 	securitygroupclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/securitygroupclient"
+	servicegatewayclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/servicegatewayclient"
 	snapshotclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/snapshotclient"
 	sshpublickeyresourceclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/sshpublickeyresourceclient"
 	subnetclient "sigs.k8s.io/cloud-provider-azure/pkg/azclient/subnetclient"
@@ -379,6 +381,20 @@ func (mr *MockClientFactoryMockRecorder) GetManagedClusterClient() *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetManagedClusterClient", reflect.TypeOf((*MockClientFactory)(nil).GetManagedClusterClient))
 }
 
+// GetNatGatewayClient mocks base method.
+func (m *MockClientFactory) GetNatGatewayClient() natgatewayclient.Interface {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNatGatewayClient")
+	ret0, _ := ret[0].(natgatewayclient.Interface)
+	return ret0
+}
+
+// GetNatGatewayClient indicates an expected call of GetNatGatewayClient.
+func (mr *MockClientFactoryMockRecorder) GetNatGatewayClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNatGatewayClient", reflect.TypeOf((*MockClientFactory)(nil).GetNatGatewayClient))
+}
+
 // GetPrivateDNSZoneGroupClient mocks base method.
 func (m *MockClientFactory) GetPrivateDNSZoneGroupClient() privatednszonegroupclient.Interface {
 	m.ctrl.T.Helper()
@@ -573,6 +589,20 @@ func (m *MockClientFactory) GetSecurityGroupClient() securitygroupclient.Interfa
 func (mr *MockClientFactoryMockRecorder) GetSecurityGroupClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSecurityGroupClient", reflect.TypeOf((*MockClientFactory)(nil).GetSecurityGroupClient))
+}
+
+// GetServiceGatewayClient mocks base method.
+func (m *MockClientFactory) GetServiceGatewayClient() servicegatewayclient.Interface {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServiceGatewayClient")
+	ret0, _ := ret[0].(servicegatewayclient.Interface)
+	return ret0
+}
+
+// GetServiceGatewayClient indicates an expected call of GetServiceGatewayClient.
+func (mr *MockClientFactoryMockRecorder) GetServiceGatewayClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServiceGatewayClient", reflect.TypeOf((*MockClientFactory)(nil).GetServiceGatewayClient))
 }
 
 // GetSnapshotClient mocks base method.

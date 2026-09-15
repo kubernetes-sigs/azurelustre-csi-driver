@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/ipgroupclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/loadbalancerclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/managedclusterclient"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/natgatewayclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/policy/ratelimit"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatednszonegroupclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/privateendpointclient"
@@ -54,6 +55,7 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/routetableclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/secretclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/securitygroupclient"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/servicegatewayclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/snapshotclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/sshpublickeyresourceclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/subnetclient"
@@ -86,6 +88,7 @@ type ClientFactoryImpl struct {
 	ipgroupclientInterface                  ipgroupclient.Interface
 	loadbalancerclientInterface             loadbalancerclient.Interface
 	managedclusterclientInterface           managedclusterclient.Interface
+	natgatewayclientInterface               natgatewayclient.Interface
 	privatednszonegroupclientInterface      privatednszonegroupclient.Interface
 	privateendpointclientInterface          privateendpointclient.Interface
 	privatelinkserviceclientInterface       privatelinkserviceclient.Interface
@@ -99,6 +102,7 @@ type ClientFactoryImpl struct {
 	routetableclientInterface               routetableclient.Interface
 	secretclientInterface                   secretclient.Interface
 	securitygroupclientInterface            securitygroupclient.Interface
+	servicegatewayclientInterface           servicegatewayclient.Interface
 	snapshotclientInterface                 sync.Map
 	sshpublickeyresourceclientInterface     sshpublickeyresourceclient.Interface
 	subnetclientInterface                   subnetclient.Interface
@@ -212,6 +216,12 @@ func NewClientFactory(config *ClientFactoryConfig, armConfig *ARMClientConfig, c
 		return nil, err
 	}
 
+	//initialize natgatewayclient
+	factory.natgatewayclientInterface, err = factory.createNatGatewayClient(config.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
 	//initialize privatednszonegroupclient
 	factory.privatednszonegroupclientInterface, err = factory.createPrivateDNSZoneGroupClient(config.SubscriptionID)
 	if err != nil {
@@ -286,6 +296,12 @@ func NewClientFactory(config *ClientFactoryConfig, armConfig *ARMClientConfig, c
 
 	//initialize securitygroupclient
 	factory.securitygroupclientInterface, err = factory.createSecurityGroupClient(config.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	//initialize servicegatewayclient
+	factory.servicegatewayclientInterface, err = factory.createServiceGatewayClient(config.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -804,6 +820,31 @@ func (factory *ClientFactoryImpl) GetManagedClusterClient() managedclusterclient
 	return factory.managedclusterclientInterface
 }
 
+func (factory *ClientFactoryImpl) createNatGatewayClient(subscription string) (natgatewayclient.Interface, error) {
+	//initialize natgatewayclient
+	options, err := GetDefaultResourceClientOption(factory.armConfig)
+	if err != nil {
+		return nil, err
+	}
+	options.Cloud = factory.cloudConfig
+	//add ratelimit policy
+	ratelimitOption := factory.factoryConfig.GetRateLimitConfig("natGatewayRateLimit")
+	rateLimitPolicy := ratelimit.NewRateLimitPolicy(ratelimitOption)
+	if rateLimitPolicy != nil {
+		options.ClientOptions.PerCallPolicies = append(options.ClientOptions.PerCallPolicies, rateLimitPolicy)
+	}
+	for _, optionMutFn := range factory.clientOptionsMutFn {
+		if optionMutFn != nil {
+			optionMutFn(options)
+		}
+	}
+	return natgatewayclient.New(subscription, factory.cred, options)
+}
+
+func (factory *ClientFactoryImpl) GetNatGatewayClient() natgatewayclient.Interface {
+	return factory.natgatewayclientInterface
+}
+
 func (factory *ClientFactoryImpl) createPrivateDNSZoneGroupClient(subscription string) (privatednszonegroupclient.Interface, error) {
 	//initialize privatednszonegroupclient
 	options, err := GetDefaultResourceClientOption(factory.armConfig)
@@ -1103,6 +1144,31 @@ func (factory *ClientFactoryImpl) createSecurityGroupClient(subscription string)
 
 func (factory *ClientFactoryImpl) GetSecurityGroupClient() securitygroupclient.Interface {
 	return factory.securitygroupclientInterface
+}
+
+func (factory *ClientFactoryImpl) createServiceGatewayClient(subscription string) (servicegatewayclient.Interface, error) {
+	//initialize servicegatewayclient
+	options, err := GetDefaultResourceClientOption(factory.armConfig)
+	if err != nil {
+		return nil, err
+	}
+	options.Cloud = factory.cloudConfig
+	//add ratelimit policy
+	ratelimitOption := factory.factoryConfig.GetRateLimitConfig("serviceGatewayRateLimit")
+	rateLimitPolicy := ratelimit.NewRateLimitPolicy(ratelimitOption)
+	if rateLimitPolicy != nil {
+		options.ClientOptions.PerCallPolicies = append(options.ClientOptions.PerCallPolicies, rateLimitPolicy)
+	}
+	for _, optionMutFn := range factory.clientOptionsMutFn {
+		if optionMutFn != nil {
+			optionMutFn(options)
+		}
+	}
+	return servicegatewayclient.New(subscription, factory.cred, options)
+}
+
+func (factory *ClientFactoryImpl) GetServiceGatewayClient() servicegatewayclient.Interface {
+	return factory.servicegatewayclientInterface
 }
 
 func (factory *ClientFactoryImpl) createSnapshotClient(subscription string) (snapshotclient.Interface, error) {
