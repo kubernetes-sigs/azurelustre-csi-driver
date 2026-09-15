@@ -17,6 +17,23 @@ set -euo pipefail
 
 CONFIGMAP_NAME="csi-azurelustre-entrypoint"
 
+# Namespace the driver is installed into. Defaults to kube-system to preserve
+# historical behavior. Override (e.g. NAMESPACE=azurelustre-system) to install
+# into a dedicated namespace; the manifests' hardcoded namespace is rewritten at
+# apply time and the namespace is created if it does not already exist.
+NAMESPACE="${NAMESPACE:-kube-system}"
+
+# Apply a manifest, rewriting its `namespace: kube-system` references to the
+# configured NAMESPACE. Handles both local file paths and remote URLs.
+function apply_manifest {
+  local src="$1"
+  if [[ "${src}" == http* ]]; then
+    curl -fsSL "${src}"
+  else
+    cat "${src}"
+  fi | sed "s/namespace: kube-system/namespace: ${NAMESPACE}/g" | kubectl apply -f -
+}
+
 function usage {
     echo "Usage: $0 [--custom-entrypoint <file>] [branch|local|url]"
     echo
@@ -91,6 +108,28 @@ fi
 
 echo
 echo "Installing Azure Lustre CSI Driver branch: ${branch}, repo: ${repo} ..."
+echo "Target namespace: ${NAMESPACE}"
+
+# Guard against stacking a second install in a different namespace. The CSI node
+# DaemonSets bind-mount shared host paths and register against a single kubelet
+# plugin socket, so two installs on one cluster collide. Re-running in the SAME
+# namespace is a supported in-place upgrade and is allowed.
+existing_ns="$(kubectl get deploy -A -l app=csi-azurelustre-controller \
+  -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null \
+  | sort -u | grep -vx "${NAMESPACE}" || true)"
+if [[ -n "${existing_ns}" ]]; then
+  echo "Error: Azure Lustre CSI driver already installed in namespace(s): ${existing_ns//$'\n'/ }" >&2
+  echo "Uninstall it first (NAMESPACE=<ns> ./deploy/uninstall-driver.sh) or set" >&2
+  echo "NAMESPACE to that namespace to upgrade in place. Concurrent installs in" >&2
+  echo "multiple namespaces are not supported (cluster-scoped CSIDriver/RBAC are shared)." >&2
+  exit 1
+fi
+
+# Ensure the target namespace exists (kube-system always does; a custom
+# namespace may not). Idempotent via server-side apply of a dry-run manifest.
+if [[ "${NAMESPACE}" != "kube-system" ]]; then
+  kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 # Handle custom entrypoint ConfigMap
 configmap_changed="false"
@@ -102,11 +141,11 @@ if [[ -n "${custom_entrypoint}" ]]; then
   echo "Creating ConfigMap '${CONFIGMAP_NAME}' from custom entrypoint: ${custom_entrypoint}"
   kubectl create configmap "${CONFIGMAP_NAME}" \
     --from-file=entrypoint.sh="${custom_entrypoint}" \
-    -n kube-system --dry-run=client -o yaml | kubectl apply -f - | grep -q "configured\|created" && configmap_changed="true"
+    -n "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - | grep -q "configured\|created" && configmap_changed="true"
 else
   # Clean up any previously created custom entrypoint ConfigMap
-  if kubectl get configmap "${CONFIGMAP_NAME}" -n kube-system &>/dev/null; then
-    kubectl delete configmap "${CONFIGMAP_NAME}" -n kube-system
+  if kubectl get configmap "${CONFIGMAP_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+    kubectl delete configmap "${CONFIGMAP_NAME}" -n "${NAMESPACE}"
     configmap_changed="true"
   fi
 fi
@@ -117,8 +156,8 @@ fi
 #     existing controller fails ("field is immutable"). Delete and recreate it.
 #   - the old monolithic node DaemonSet (now per-flavor csi-azurelustre-node-<flavor>)
 #   - the un-prefixed RBAC role/binding (now fullname-prefixed csi-azurelustre-*)
-kubectl delete -n kube-system deployment csi-azurelustre-controller --ignore-not-found
-kubectl delete -n kube-system daemonset csi-azurelustre-node --ignore-not-found
+kubectl delete -n "${NAMESPACE}" deployment csi-azurelustre-controller --ignore-not-found
+kubectl delete -n "${NAMESPACE}" daemonset csi-azurelustre-node --ignore-not-found
 kubectl delete clusterrolebinding azurelustre-csi-provisioner-binding --ignore-not-found
 kubectl delete clusterrole azurelustre-external-provisioner-role --ignore-not-found
 # Remove legacy secret RBAC (renamed without the -secret suffix after v0.4.0) so
@@ -128,27 +167,27 @@ kubectl delete clusterrolebinding csi-azurelustre-controller-secret-binding --ig
 kubectl delete clusterrole csi-azurelustre-node-secret-role --ignore-not-found
 kubectl delete clusterrolebinding csi-azurelustre-node-secret-binding --ignore-not-found
 
-kubectl apply -f "${repo}/rbac-csi-azurelustre-controller.yaml"
-kubectl apply -f "${repo}/rbac-csi-azurelustre-node.yaml"
-kubectl apply -f "${repo}/csi-azurelustre-driver.yaml"
-kubectl apply -f "${repo}/csi-azurelustre-controller.yaml"
-kubectl apply -f "${repo}/pdb-csi-azurelustre-controller.yaml"
-kubectl apply -f "${repo}/csi-azurelustre-node-jammy.yaml"
-kubectl apply -f "${repo}/csi-azurelustre-node-noble.yaml"
-kubectl apply -f "${repo}/csi-azurelustre-node-azurelinux3.yaml"
+apply_manifest "${repo}/rbac-csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/rbac-csi-azurelustre-node.yaml"
+apply_manifest "${repo}/csi-azurelustre-driver.yaml"
+apply_manifest "${repo}/csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/pdb-csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/csi-azurelustre-node-jammy.yaml"
+apply_manifest "${repo}/csi-azurelustre-node-noble.yaml"
+apply_manifest "${repo}/csi-azurelustre-node-azurelinux3.yaml"
 
 # Restart node DaemonSet pods only if the ConfigMap state changed.
 # The custom entrypoint ConfigMap is only mounted into node DaemonSets,
 # not the controller, so only node pods need restarting.
 if [[ "${configmap_changed}" == "true" ]]; then
   echo "Custom entrypoint configuration changed, restarting node pods..."
-  kubectl rollout restart daemonset csi-azurelustre-node-jammy -n kube-system
-  kubectl rollout restart daemonset csi-azurelustre-node-noble -n kube-system
-  kubectl rollout restart daemonset csi-azurelustre-node-azurelinux3 -n kube-system
+  kubectl rollout restart daemonset csi-azurelustre-node-jammy -n "${NAMESPACE}"
+  kubectl rollout restart daemonset csi-azurelustre-node-noble -n "${NAMESPACE}"
+  kubectl rollout restart daemonset csi-azurelustre-node-azurelinux3 -n "${NAMESPACE}"
 fi
 
-kubectl rollout status deployment csi-azurelustre-controller -nkube-system --timeout=300s
-kubectl rollout status daemonset csi-azurelustre-node-jammy -nkube-system --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-noble -nkube-system --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-azurelinux3 -nkube-system --timeout=1800s
+kubectl rollout status deployment csi-azurelustre-controller -n "${NAMESPACE}" --timeout=300s
+kubectl rollout status daemonset csi-azurelustre-node-jammy -n "${NAMESPACE}" --timeout=1800s
+kubectl rollout status daemonset csi-azurelustre-node-noble -n "${NAMESPACE}" --timeout=1800s
+kubectl rollout status daemonset csi-azurelustre-node-azurelinux3 -n "${NAMESPACE}" --timeout=1800s
 echo 'Azure Lustre CSI driver installed successfully.'
