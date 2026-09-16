@@ -111,8 +111,8 @@ separate templates for Azure Linux 3, Ubuntu Jammy, and Ubuntu Noble, with a
 an upstream CSI tag and builds with `make azurelustre-dalec`.
 
 Stable and prerelease tags trigger separate generated-spec PRs. For example,
-`v0.5.0-rc.1` is represented as `0.5.0~rc.1` in the DALEC spec and produces
-images tagged `v0.5.0-rc.1-<flavor>`. Generated-spec PRs require human review.
+`v0.6.0-rc.1` is represented as `0.6.0~rc.1` in the DALEC spec and produces
+images tagged `v0.6.0-rc.1-<flavor>`. Generated-spec PRs require human review.
 The project also opts into Go module vulnerability scanning; its CVE remediation
 PRs require human review as well.
 

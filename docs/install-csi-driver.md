@@ -8,15 +8,15 @@ This document explains how to install Azure Lustre CSI driver on a kubernetes cl
 
 Helm is the recommended installation method for production clusters. Released
 charts are OCI artifacts in MCR. Set `CHART_VERSION` to the exact Helm chart
-version (`A.B.C`) in the Helm README's
+version (for example: `0.6.0`) in the Helm README's
 [released-chart table](../charts/README.md#released-chart-versions).
 The table maps each chart version to its independent driver image family.
 The chart's `appVersion` reports that driver release as informational metadata;
 `image.tag` selects the driver image family.
 
 ```shell
-CHART_VERSION=A.B.C
-helm install azurelustre \
+CHART_VERSION=0.6.0
+helm install azurelustre --wait \
   oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
   --namespace kube-system --create-namespace \
   --version "${CHART_VERSION}"
@@ -31,8 +31,8 @@ To upgrade:
 > and the kernel refuses to unload them while any Lustre filesystem is mounted.
 
 ```shell
-CHART_VERSION=A.B.C
-helm upgrade azurelustre \
+CHART_VERSION=0.6.0
+helm upgrade azurelustre --wait \
   oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
   --namespace kube-system \
   --version "${CHART_VERSION}"
@@ -55,8 +55,8 @@ helm uninstall azurelustre -n kube-system
 >
 > ```shell
 > ./deploy/uninstall-driver.sh
-> CHART_VERSION=A.B.C
-> helm install azurelustre \
+> CHART_VERSION=0.6.0
+> helm install azurelustre --wait \
 >   oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
 >   --namespace kube-system --create-namespace \
 >   --version "${CHART_VERSION}"

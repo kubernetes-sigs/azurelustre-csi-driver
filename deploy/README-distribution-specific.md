@@ -15,7 +15,7 @@ This directory contains distribution-specific DaemonSet deployments for the Azur
 Each deployment uses:
 
 1. **Node Targeting**: Uses node affinity and selectors to match correct node OS flavors
-2. **Container Image**: Version-specific image tags like `v0.5.0-jammy`, `v0.5.0-noble`, `v0.5.0-azurelinux3`
+2. **Container Image**: Version-specific image tags like `v0.6.0-jammy`, `v0.6.0-noble`, `v0.6.0-azurelinux3`
 3. **Unique Names**: Each DaemonSet has a unique name (`csi-azurelustre-node-jammy`) to prevent conflicts
 
 ## Installation
@@ -45,9 +45,9 @@ AKS automatically sets this label based on the node pool's OS configuration.
 
 Container images follow the pattern:
 
-- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.5.0-jammy`
-- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.5.0-noble`
-- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.5.0-azurelinux3`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble`
+- `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-azurelinux3`
 
 Ubuntu images use `apt-get` to install Lustre client deb packages. The Azure Linux 3 image
 uses `tdnf` to install Lustre client RPM packages. The `lustre-loader` sidecar installs the
