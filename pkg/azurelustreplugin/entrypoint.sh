@@ -24,18 +24,6 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# Exit promptly if terminated during startup (package install, CA-trust refresh,
-# module load) before the loader installs its module-unloading handler further
-# down. As PID 1 the shell gets no default SIGTERM action, so without a handler
-# the kubelet's SIGTERM is ignored until the grace period expires and a SIGKILL
-# lands. Nothing is loaded to clean up this early, so just exit; the loader role
-# upgrades this to a teardown handler once it owns loaded modules. NOTE: bash
-# runs a trap only after the current foreground command returns, so a signal
-# arriving deep inside a single long-running install command still waits for
-# that command to finish; this handler bounds the delay for the gaps between
-# install steps and the retry backoff sleeps.
-trap 'echo "$(date -u) Termination signal received during startup; exiting."; exit 0' TERM INT
-
 # add_net_interfaces discovers the host ethernet interfaces and adds any that
 # are missing from the LNet tcp network. Pass "quiet" to suppress the per-cycle
 # diagnostics (route table, per-interface decisions, "already added") for the
@@ -181,7 +169,7 @@ function teardown_lnet() {
   fi
 
   echo "$(date -u) Unloading Lustre client kernel modules on teardown."
-  if timeout 15 lustre_rmmod; then
+  if unload_lustre_modules; then
     echo "$(date -u) Lustre client kernel modules unloaded on teardown."
   else
     echo "$(date -u) WARNING: Lustre kernel modules could not be unloaded and remain loaded on this node, most likely because a Lustre filesystem is still mounted."
@@ -189,6 +177,12 @@ function teardown_lnet() {
 }
 
 # ---- OS / environment helpers ----
+
+# unload_lustre_modules bounds lustre_rmmod so module teardown cannot hold pod
+# termination or package replacement indefinitely.
+function unload_lustre_modules() {
+  timeout 15 lustre_rmmod
+}
 
 # detect_os_family sets osFamily ("azurelinux" or "ubuntu") from the container's
 # /etc/os-release, or exits if the OS is unsupported.
@@ -439,48 +433,63 @@ function install_pkg() {
   fi
 }
 
-# evict_old_lustre is the loader's on-failure hook: it removes existing Lustre
-# client packages so a retry can install cleanly, and unloads the running
-# modules only when their version differs from the one being installed. The
-# driver never calls this -- the modules belong to the kernel and were loaded by
-# the loader sidecar.
-function evict_old_lustre() {
+# remove_installed_lustre_packages removes the loader container's existing
+# Lustre packages after evict_old_lustre has proved that no resident module
+# depends on them.
+function remove_installed_lustre_packages() {
   local -a existing_pkgs=()
   local existing_versions=""
-  local loaded
-  echo "$(date -u) Will try removing existing versions"
-  # Unloading is destructive and the install may have failed for a reason that
-  # has nothing to do with the modules (an unreachable repo, say), so a module
-  # that already matches the requested version is left running.
-  loaded="$(loaded_lustre_version)"
-  if [[ -z "${loaded}" ]]; then
-    echo "$(date -u) No Lustre kernel module is loaded; nothing to unload."
-  elif [[ "${loaded}" == "$(wanted_module_version)" ]]; then
-    echo "$(date -u) Loaded Lustre kernel module ${loaded} already matches the requested version; leaving it loaded."
-  elif ! type lustre_rmmod >/dev/null 2>&1; then
-    echo "$(date -u) WARNING: loaded Lustre kernel module ${loaded} does not match the requested version, but lustre_rmmod is not installed so it cannot be unloaded; the old client will keep running."
-  elif ! lustre_rmmod; then
-    echo "$(date -u) WARNING: could not unload Lustre kernel module ${loaded} (module refcnt $(lustre_module_refcnt)); the old client will keep running."
-  fi
+
   if [[ "${osFamily}" == "azurelinux" ]]; then
     mapfile -t existing_pkgs < <(rpm -qa '*lustre-client*' 2>/dev/null || true)
     if [[ ${#existing_pkgs[@]} -gt 0 ]]; then
       echo "$(date -u) The following existing versions of the Lustre client are installed and will be removed: ${existing_pkgs[*]}"
       echo "$(date -u) Uninstalling existing Lustre client versions."
-      tdnf remove -y "${existing_pkgs[@]}" || true
+      tdnf remove -y "${existing_pkgs[@]}"
     fi
   else
-    if existing_versions=$(dpkg-query --showformat=' ${Package}=${Version}' --show '*lustre-client*'); then
+    if existing_versions=$(dpkg-query --showformat=' ${Package}=${Version}' --show '*lustre-client*' 2>/dev/null); then
       echo  "$(date -u) The following existing versions of the Lustre client are installed and will be removed:${existing_versions}"
     fi
     echo "$(date -u) Uninstalling existing Lustre client versions."
-    apt-get remove --purge -y '*lustre-client*' || true
+    apt-get remove --purge -y '*lustre-client*'
   fi
 }
 
+# evict_old_lustre is the loader's on-failure hook. It removes existing Lustre
+# packages only when no loaded module remains dependent on them. A matching
+# resident module is preserved because the install failure may be transient. A
+# mismatched resident module must unload successfully before its packages can be
+# removed; failure commonly means a Lustre mount is still active.
+#
+# Returns non-zero when eviction is intentionally refused. retry_install treats
+# that as a safety decision and continues its remaining non-destructive retries.
+function evict_old_lustre() {
+  local loaded
+  loaded="$(loaded_lustre_version)"
+
+  if [[ -z "${loaded}" ]]; then
+    echo "$(date -u) No Lustre kernel module is loaded; existing packages may be safely replaced."
+  elif [[ "${loaded}" == "$(wanted_module_version)" ]]; then
+    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} already matches the requested version; the install failure may be transient."
+    return 1
+  elif ! type lustre_rmmod >/dev/null 2>&1; then
+    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} does not match the requested version and lustre_rmmod is unavailable."
+    return 1
+  elif ! unload_lustre_modules; then
+    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} could not be unloaded (module refcnt $(lustre_module_refcnt)); a Lustre filesystem may still be mounted."
+    return 1
+  fi
+
+  remove_installed_lustre_packages
+}
+
 # retry_install runs an install command with bounded retries and exponential
-# backoff. On each failure it invokes the named on-failure hook (if any) before
-# retrying. Returns non-zero if all attempts fail.
+# backoff. Before each retry it invokes the named on-failure hook (if any).
+# Refusal or failure by the hook leaves the resident client intact and does not
+# prevent the remaining non-destructive install attempts. The hook is never run
+# after the final failure because there is no subsequent attempt to repair.
+# Returns non-zero if all attempts fail.
 #   $1     - name of on-failure hook function, or "" for none
 #   $2...  - install command and arguments
 function retry_install() {
@@ -494,10 +503,10 @@ function retry_install() {
     fi
     tries=$((tries - 1))
     echo "$(date -u) Error installing Lustre client packages. Tries left: ${tries}."
-    if [[ -n "${on_failure}" ]]; then
-      "${on_failure}"
-    fi
     if [[ tries -gt 0 ]]; then
+      if [[ -n "${on_failure}" ]] && ! "${on_failure}"; then
+        echo "$(date -u) Existing Lustre client eviction did not complete; retrying installation without further removal."
+      fi
       sleep "${sleep_before_retry}"
       sleep_before_retry=$((sleep_before_retry * 2))
     fi
@@ -591,27 +600,38 @@ function run_controller() {
   exec_csi_driver "$@"
 }
 
-# ---- dispatch ----
+# main configures process-level behavior and dispatches the selected container
+# role. Keeping dispatch behind a source guard allows focused shell tests to
+# exercise the safety functions without performing host setup.
+function main() {
+  # Exit promptly if terminated during startup (package install, CA-trust
+  # refresh, module load) before the loader installs its module-unloading
+  # handler. As PID 1 the shell gets no default SIGTERM action.
+  trap 'echo "$(date -u) Termination signal received during startup; exiting."; exit 0' TERM INT
 
-detect_os_family
+  detect_os_family
+  update_ca_trust
 
-update_ca_trust
+  # RECONCILE_INTERVAL_SECONDS controls how often the loader sidecar re-checks
+  # and re-applies LNet configuration. Overridable via env for testing.
+  RECONCILE_INTERVAL_SECONDS="${AZURELUSTRE_CSI_LNET_RECONCILE_INTERVAL:-30}"
 
-# RECONCILE_INTERVAL_SECONDS controls how often the loader sidecar re-checks
-# and re-applies LNet configuration. Overridable via env for testing.
-RECONCILE_INTERVAL_SECONDS="${AZURELUSTRE_CSI_LNET_RECONCILE_INTERVAL:-30}"
+  # Role is REQUIRED; an unset or unknown value is a deployment error, not a
+  # silent no-op. See run_loader / run_driver / run_controller.
+  role="${AZURELUSTRE_CSI_ROLE:-}"
+  echo "role: ${role:-<unset>}"
+  echo "$(date -u) Command line arguments: $*"
+  case "${role}" in
+    loader)     run_loader ;;
+    driver)     run_driver "$@" ;;
+    controller) run_controller "$@" ;;
+    *)
+      echo "$(date -u) Error: AZURELUSTRE_CSI_ROLE must be one of loader, driver, controller (got '${role}')."
+      exit 1
+      ;;
+  esac
+}
 
-# Role is REQUIRED; an unset or unknown value is a deployment error, not a silent
-# no-op. See run_loader / run_driver / run_controller for what each one does.
-role="${AZURELUSTRE_CSI_ROLE:-}"
-echo "role: ${role:-<unset>}"
-echo "$(date -u) Command line arguments: $*"
-case "${role}" in
-  loader)     run_loader ;;
-  driver)     run_driver "$@" ;;
-  controller) run_controller "$@" ;;
-  *)
-    echo "$(date -u) Error: AZURELUSTRE_CSI_ROLE must be one of loader, driver, controller (got '${role}')."
-    exit 1
-    ;;
-esac
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
