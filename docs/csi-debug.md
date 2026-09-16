@@ -321,6 +321,10 @@ kubectl get events -n kube-system --field-selector involvedObject.kind=DaemonSet
 
    Uninstall the old driver before deploying the new OS-specific DaemonSets:
 
+   This is disruptive: first shut down affected consumers and complete the
+   mount/reference inspection above on every affected node. Do not uninstall
+   a driver supporting live mounts as a way to bypass staged activation.
+
    ```sh
    # Uninstall the previous driver version
    ./deploy/uninstall-driver.sh
@@ -524,7 +528,8 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 
 **Possible Causes:**
 
-- DaemonSet update in progress (rolling update)
+- An `OnDelete` DaemonSet has a newer desired template while existing pods
+  intentionally remain on their current revision
 - Different image tags configured for jammy, noble, or azurelinux3 DaemonSets
 - Failed DaemonSet updates leaving some pods on old versions
 - Manual pod restarts using different images
@@ -532,12 +537,7 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 **Debugging Steps:**
 
 ```sh
-# Check DaemonSet rollout status
-kubectl rollout status ds/csi-azurelustre-node-jammy -n kube-system
-kubectl rollout status ds/csi-azurelustre-node-noble -n kube-system
-kubectl rollout status ds/csi-azurelustre-node-azurelinux3 -n kube-system
-
-# Check for stuck rollouts
+# Compare desired and current pod state
 kubectl get ds -n kube-system -l app=csi-azurelustre-node -o wide
 
 # Review DaemonSet update history
@@ -551,21 +551,27 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
 
 **Resolution:**
 
-1. **Complete ongoing rollout:**
+1. **Identify nodes that still run an older pod revision:**
 
    ```sh
-   # Wait for rollout to complete
-   kubectl rollout status ds/csi-azurelustre-node-jammy -n kube-system --timeout=10m
-   kubectl rollout status ds/csi-azurelustre-node-noble -n kube-system --timeout=10m
-   kubectl rollout status ds/csi-azurelustre-node-azurelinux3 -n kube-system --timeout=10m
+   kubectl get pods -n kube-system -l app=csi-azurelustre-node \
+     -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,IMAGE:.spec.containers[0].image,CREATED:.metadata.creationTimestamp
    ```
 
-2. **Force pod recreation if stuck:**
+2. **Safely replace an old node pod:**
 
    ```sh
-   # Delete stuck pods to trigger recreation with new image
-   kubectl delete pod -n kube-system <stuck-pod-name>
+   kubectl cordon <node-name>
+   kubectl drain <node-name> --ignore-daemonsets
+   # Verify that no Lustre mounts remain on the node before continuing.
+   kubectl delete pod -n kube-system <drained-node-csi-pod>
+   kubectl wait -n kube-system --for=condition=Ready \
+     pod/<replacement-node-csi-pod> --timeout=10m
+   kubectl uncordon <node-name>
    ```
+
+   Do not delete or restart an AMLFS node pod while Lustre workloads remain on
+   its node.
 
 3. **Align image versions:**
 
@@ -593,17 +599,39 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
 5. **Verify update strategy:**
 
    ```sh
-   # Check maxUnavailable setting
+   # Check the node-pod update strategy
    kubectl get ds -n kube-system csi-azurelustre-node-jammy -o jsonpath='{.spec.updateStrategy}'
    ```
 
    Should be:
 
    ```yaml
-   rollingUpdate:
-     maxUnavailable: 10%
-   type: RollingUpdate
+   type: OnDelete
    ```
+
+   `OnDelete` stages a new template without automatically replacing existing
+   node pods.
+
+**Long-haul lifecycle validation prerequisites:**
+
+[`test/long-haul/update-test.sh`](../test/long-haul/update-test.sh) is a disruptive
+test for an approved test pool, not a production convergence command. Before
+running it, every active node DaemonSet must already be observed, fully
+converged to its current template, and have Ready/available pods, with exactly
+one CSI pod per pool node. For the migration case, arrange the original
+`RollingUpdate` baseline on an empty test pool **before mounting workloads**;
+the script also accepts a converged `OnDelete` baseline. A pending `OnDelete`
+baseline requires a separate approved drained-node lifecycle, not a strategy
+flip or bulk pod deletion. Pause competing chart updates and pool scaling.
+
+The test matches controller-owned `ControllerRevisions` to the actual desired
+pod template after the DaemonSet observes its generation, then pins that hash.
+It verifies staging retains pod UIDs/readiness and lifecycle activation has
+new pod UIDs, the pinned revision, and changed node UID or boot ID. An AKS
+upgrade that does not actually recycle the nodes cannot supply this evidence
+and fails the test. The synthetic template annotation proves staged-template
+activation, not a client-version change or zero downtime; application recovery
+and real client compatibility require their own validation.
 
 ---
 
@@ -1193,14 +1221,18 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
 
 ### Other Possible Resolution Steps
 
-1. **Restart CSI Driver Pods**
+1. **Restart the controller or safely replace a node pod**
 
    ```bash
    kubectl rollout restart -n kube-system deployment/csi-azurelustre-controller
-   kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-jammy
-   kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-noble
-   kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-azurelinux3
    ```
+
+   For node pods, follow the complete
+   [one-node activation procedure](#inconsistent-driver-versions-across-nodes),
+   including drain, host mount/reference inspection, replacement evidence,
+   and admission verification **before** uncordoning. A controller restart
+   does not activate a staged node client. Do not restart all node pods or
+   bypass these gates to troubleshoot a mount failure.
 
 2. **Force PVC Recreation**
 
