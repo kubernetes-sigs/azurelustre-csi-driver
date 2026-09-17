@@ -81,6 +81,16 @@ for flavor in ${ALL_FLAVORS}; do
   CHARTS_FOR_DEPLOY_FILE["deploy/csi-azurelustre-node-${flavor}.yaml"]="templates/node-daemonset-${flavor}.yaml"
 done
 
+# Templates that intentionally have NO deploy/ equivalent. These are Helm
+# lifecycle hooks (helm.sh/hook) that only run inside `helm install/uninstall`;
+# there is no meaningful `kubectl apply` static manifest for them, so they are
+# exempt from the deploy<->charts mirror enforced by check_unlisted_files.
+# Keyed by template basename.
+declare -A CHART_ONLY_TEMPLATES=(
+  ["predelete-guard-job.yaml"]=1
+  ["predelete-guard-rbac.yaml"]=1
+)
+
 yq_format() {
   # Format yaml for diffing
   yq eval -o=props --properties-array-brackets '
@@ -127,6 +137,10 @@ check_unlisted_files() {
     fi
   done
   for file in ${all_charts_files}; do
+    # Helm-only lifecycle hooks have no deploy/ counterpart by design; skip them.
+    if [[ -n "${CHART_ONLY_TEMPLATES[$(basename "${file}")]:-}" ]]; then
+      continue
+    fi
     # Check for all actual chart files in deploy references
     if ! grep -q -R -F "templates/$(basename "${file}")" - <<<"${referenced_charts_files}"; then
       echo "File ${file} missing from list of deploy files!"
