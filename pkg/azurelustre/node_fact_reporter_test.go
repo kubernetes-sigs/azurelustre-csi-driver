@@ -24,10 +24,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func TestPublishNodeFact(t *testing.T) {
@@ -154,6 +157,67 @@ func TestDesiredClientIdentity(t *testing.T) {
 	assert.Equal(t, "2.17.0_24_gf517bc4", desiredClientIdentity(" 2.17.0 ", "24-gf517bc4 "))
 	assert.Empty(t, desiredClientIdentity("", "24-gf517bc4"))
 	assert.Empty(t, desiredClientIdentity("2.17.0", ""))
+}
+
+func TestPublishNodeFactReplacesPreviousEvidence(t *testing.T) {
+	node, pod, lease, _, _ := testNodeStatusObjects("driver")
+	lease.Name = nodeFactLeaseName(node.Name, string(node.UID))
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now().Add(-time.Hour)}
+	lease.Spec.HolderIdentity = ptr("previous-pod")
+	lease.Annotations[nodeFactAnnotationPrefix+"desired-client"] = "previous-client"
+	pod.Status.InitContainerStatuses = nil
+	client := fake.NewSimpleClientset(node, pod, lease)
+	driver := &Driver{
+		CSIDriver: CSIDriver{NodeID: node.Name}, kubeClient: client,
+		podName: pod.Name, podNamespace: pod.Namespace,
+	}
+
+	require.NoError(t, driver.publishNodeFact(t.Context()))
+	updated, err := client.CoordinationV1().Leases(pod.Namespace).Get(t.Context(), lease.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, string(pod.UID), *updated.Spec.HolderIdentity)
+	assert.Equal(t, nodeFactLeaseDuration, *updated.Spec.LeaseDurationSeconds)
+	assert.WithinDuration(t, time.Now(), updated.Spec.RenewTime.Time, time.Second)
+	assert.Equal(t, lease.Labels, updated.Labels)
+	assert.Equal(t, pod.Status.ContainerStatuses[0].ContainerID, updated.Annotations[nodeFactAnnotationPrefix+"driver-container-id"])
+	for _, field := range []string{"loaded-client", "desired-client", "boot-id", "loader-container-id", "loader-image-id"} {
+		assert.NotContains(t, updated.Annotations, nodeFactAnnotationPrefix+field, "unavailable evidence must not survive a renewal")
+	}
+}
+
+func TestPublishNodeFactPropagatesAPIFailures(t *testing.T) {
+	for _, test := range []struct {
+		name, verb, resource, message string
+		existingLease                 bool
+	}{
+		{"node lookup", "get", "nodes", "get node", false},
+		{"lease lookup", "get", "leases", "write node fact lease", false},
+		{"lease creation", "create", "leases", "write node fact lease", false},
+		{"lease renewal", "update", "leases", "write node fact lease", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node, pod, _, _, _ := testNodeStatusObjects("driver")
+			objects := []runtime.Object{node, pod}
+			if test.existingLease {
+				objects = append(objects, &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+					Name: nodeFactLeaseName(node.Name, string(node.UID)), Namespace: pod.Namespace,
+				}})
+			}
+
+			client := fake.NewSimpleClientset(objects...)
+			failure := errors.New("injected API failure")
+			client.PrependReactor(test.verb, test.resource, func(clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, failure
+			})
+			driver := &Driver{
+				CSIDriver: CSIDriver{NodeID: node.Name}, kubeClient: client,
+				podName: pod.Name, podNamespace: pod.Namespace,
+			}
+			err := driver.publishNodeFact(t.Context())
+			require.ErrorIs(t, err, failure)
+			assert.ErrorContains(t, err, test.message)
+		})
+	}
 }
 
 func TestNodeFactReporterRequiresNodeIdentity(t *testing.T) {

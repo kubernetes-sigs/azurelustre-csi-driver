@@ -34,6 +34,7 @@ var (
 	enableAzureLustreMockDynProv = flag.Bool("enable-azurelustre-mock-dyn-prov", false, "Whether enable mock dynamic provisioning(only for testing)")
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
+	statusControllerOnly         = flag.Bool("status-controller-only", false, "run only the Azure Lustre node status controller")
 
 	errDriverInitFailed       = errors.New("failed to initialize Azure Lustre CSI driver")
 	errDriverRunReturnedEarly = errors.New("driver.Run returned unexpectedly")
@@ -74,13 +75,23 @@ func handle() error {
 		EnableAzureLustreMockDynProv: *enableAzureLustreMockDynProv,
 		WorkingMountDir:              *workingMountDir,
 		RemoveNotReadyTaint:          *removeNotReadyTaint,
+		StatusControllerOnly:         *statusControllerOnly,
 	}
 	driver, err := azurelustre.NewDriver(&driverOptions)
 	if err != nil {
 		return errors.Join(errDriverInitFailed, err)
 	}
-	if err := driver.Run(*endpoint, false); err != nil {
+	return driverRunError(driver.Run(*endpoint, false), driverOptions.StatusControllerOnly)
+}
+
+func driverRunError(err error, isStatusController bool) error {
+	if err != nil {
 		return err
+	}
+	// Only the status-controller service returns nil on an explicit shutdown
+	// signal. Leadership loss and health-server failure return errors above.
+	if isStatusController {
+		return nil
 	}
 	// driver.Run is expected to block forever serving the CSI gRPC endpoint;
 	// returning means the server stopped without an explicit shutdown signal,

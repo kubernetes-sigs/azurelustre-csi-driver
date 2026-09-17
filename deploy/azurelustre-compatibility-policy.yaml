@@ -15,6 +15,29 @@ data:
     kind: AzureLustreCompatibilityPolicy
     clientSetRevision: 1
     cacheTTLSeconds: 3600
+    mountAdmission:
+      enforce: false
+    images:
+      driver:
+        jammy:
+          desiredDigest: ""
+          approvedDigests: []
+        noble:
+          desiredDigest: ""
+          approvedDigests: []
+        azurelinux3:
+          desiredDigest: ""
+          approvedDigests: []
+      loader:
+        jammy:
+          desiredDigest: ""
+          approvedDigests: []
+        noble:
+          desiredDigest: ""
+          approvedDigests: []
+        azurelinux3:
+          desiredDigest: ""
+          approvedDigests: []
     clients:
       jammy:
         desired:
@@ -38,7 +61,9 @@ data:
           - version: "2.17.0"
             shaSuffix: "24-gf517bc4"
     bootstrap:
-      enabled: true
+      enabled: false
+      expiresAt: ""
       csiImage:
-        repository: "mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi"
-        tag: "v0.6.0"
+        repository: ""
+        tag: ""
+        digest: ""

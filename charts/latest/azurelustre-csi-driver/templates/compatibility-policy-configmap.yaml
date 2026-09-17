@@ -1,3 +1,4 @@
+{{- include "azurelustre.validateImagePolicies" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,6 +13,29 @@ data:
     kind: AzureLustreCompatibilityPolicy
     clientSetRevision: {{ .Values.compatibilityPolicy.clientSetRevision }}
     cacheTTLSeconds: {{ .Values.compatibilityPolicy.cacheTTLSeconds }}
+    mountAdmission:
+      enforce: {{ .Values.compatibilityPolicy.mountAdmission.enforce }}
+    images:
+      driver:
+        jammy:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.driver.jammy.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.driver.jammy.approvedDigests | toJson }}
+        noble:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.driver.noble.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.driver.noble.approvedDigests | toJson }}
+        azurelinux3:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.driver.azurelinux3.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.driver.azurelinux3.approvedDigests | toJson }}
+      loader:
+        jammy:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.loader.jammy.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.loader.jammy.approvedDigests | toJson }}
+        noble:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.loader.noble.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.loader.noble.approvedDigests | toJson }}
+        azurelinux3:
+          desiredDigest: {{ .Values.compatibilityPolicy.images.loader.azurelinux3.desiredDigest | quote }}
+          approvedDigests: {{ .Values.compatibilityPolicy.images.loader.azurelinux3.approvedDigests | toJson }}
     clients:
       jammy:
         desired:
@@ -20,6 +44,10 @@ data:
         compatible:
           - version: {{ .Values.node.jammy.lustreClient.version | quote }}
             shaSuffix: {{ .Values.node.jammy.lustreClient.shaSuffix | quote }}
+          {{- range .Values.node.jammy.lustreClient.compatible }}
+          - version: {{ .version | quote }}
+            shaSuffix: {{ .shaSuffix | quote }}
+          {{- end }}
       noble:
         desired:
           version: {{ .Values.node.noble.lustreClient.version | quote }}
@@ -27,6 +55,10 @@ data:
         compatible:
           - version: {{ .Values.node.noble.lustreClient.version | quote }}
             shaSuffix: {{ .Values.node.noble.lustreClient.shaSuffix | quote }}
+          {{- range .Values.node.noble.lustreClient.compatible }}
+          - version: {{ .version | quote }}
+            shaSuffix: {{ .shaSuffix | quote }}
+          {{- end }}
       azurelinux3:
         desired:
           version: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
@@ -34,8 +66,14 @@ data:
         compatible:
           - version: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
             shaSuffix: {{ .Values.node.azurelinux3.lustreClient.shaSuffix | quote }}
+          {{- range .Values.node.azurelinux3.lustreClient.compatible }}
+          - version: {{ .version | quote }}
+            shaSuffix: {{ .shaSuffix | quote }}
+          {{- end }}
     bootstrap:
       enabled: {{ .Values.compatibilityPolicy.bootstrap.enabled }}
+      expiresAt: {{ .Values.compatibilityPolicy.bootstrap.expiresAt | quote }}
       csiImage:
-        repository: {{ .Values.image.repository | quote }}
-        tag: {{ .Values.image.tag | quote }}
+        repository: {{ .Values.compatibilityPolicy.bootstrap.csiImage.repository | quote }}
+        tag: {{ .Values.compatibilityPolicy.bootstrap.csiImage.tag | quote }}
+        digest: {{ .Values.compatibilityPolicy.bootstrap.csiImage.digest | quote }}

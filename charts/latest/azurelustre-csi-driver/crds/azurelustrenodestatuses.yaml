@@ -117,6 +117,13 @@ spec:
                 desired:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
+                  properties:
+                    flavor:
+                      type: string
+                    driverImageDigest:
+                      type: string
+                    loaderImageDigest:
+                      type: string
                 observed:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
