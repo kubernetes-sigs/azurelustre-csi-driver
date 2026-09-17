@@ -108,6 +108,9 @@ spec:
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
               readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
+              readOnly: true
           resources:
             {{- toYaml .Values.node.jammy.resources | nindent 12 }}
       containers:
@@ -212,6 +215,16 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
           securityContext:
             privileged: true
           volumeMounts:
@@ -230,6 +243,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             {{- toYaml .Values.node.jammy.resources | nindent 12 }}
@@ -262,4 +278,8 @@ spec:
           configMap:
             name: csi-azurelustre-entrypoint
             defaultMode: 0755
+            optional: true
+        - name: compatibility-policy
+          configMap:
+            name: {{ include "azurelustre.fullname" . }}-compatibility-policy
             optional: true

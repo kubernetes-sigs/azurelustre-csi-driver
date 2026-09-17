@@ -156,6 +156,13 @@ node:
       version: 2.17.0
       shaSuffix: 24-gf517bc4
 
+compatibilityPolicy:
+  schemaVersion: v1alpha1
+  clientSetRevision: 1
+  cacheTTLSeconds: 3600
+  bootstrap:
+    enabled: true
+
 rbac:
   create: true
 

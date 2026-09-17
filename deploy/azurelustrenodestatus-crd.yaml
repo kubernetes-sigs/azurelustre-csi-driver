@@ -1,0 +1,157 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: azurelustrenodestatuses.azurelustre.csi.azure.com
+spec:
+  group: azurelustre.csi.azure.com
+  names:
+    kind: AzureLustreNodeStatus
+    listKind: AzureLustreNodeStatusList
+    plural: azurelustrenodestatuses
+    shortNames:
+      - alns
+    singular: azurelustrenodestatus
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Node
+          type: string
+          jsonPath: .spec.nodeName
+        - name: Client
+          type: string
+          jsonPath: .status.clientCompatibility
+        - name: CSI
+          type: string
+          jsonPath: .status.csiDelivery
+        - name: Security
+          type: string
+          jsonPath: .status.securityCompliance
+        - name: Admission
+          type: string
+          jsonPath: .status.mountAdmission
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - nodeName
+                - nodeUID
+              properties:
+                nodeName:
+                  type: string
+                  minLength: 1
+                nodeUID:
+                  type: string
+                  minLength: 1
+            status:
+              type: object
+              properties:
+                observedAt:
+                  type: string
+                  format: date-time
+                schedulingCoverage:
+                  type: string
+                  enum:
+                    - Scheduled
+                    - NoEligibleNodePod
+                    - ReporterStale
+                reporterFreshness:
+                  type: string
+                  enum:
+                    - Current
+                    - Stale
+                    - Missing
+                csiDelivery:
+                  type: string
+                  enum:
+                    - Current
+                    - NonCurrent
+                    - Unknown
+                clientCompatibility:
+                  type: string
+                  enum:
+                    - Exact
+                    - CompatibleNonCurrent
+                    - LegacyBootstrapCompatible
+                    - UnsafeResidentMismatch
+                    - ClientUnavailable
+                    - ClientUnknown
+                kernelCoverage:
+                  type: string
+                  enum:
+                    - Supported
+                    - Unsupported
+                    - Unknown
+                securityCompliance:
+                  type: string
+                  enum:
+                    - Approved
+                    - NonCurrentApproved
+                    - Withdrawn
+                    - Unknown
+                mountAdmission:
+                  type: string
+                  enum:
+                    - Allowed
+                    - Denied
+                reason:
+                  type: string
+                message:
+                  type: string
+                desired:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                observed:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                activation:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      reason:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        type: string
+      subresources:
+        status: {}

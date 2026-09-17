@@ -74,6 +74,23 @@ rules:
       - list
       - watch
   - apiGroups:
+      - ""
+    resources:
+      - pods
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases
@@ -82,6 +99,26 @@ rules:
       - list
       - watch
       - create
+      - update
+      - patch
+  - apiGroups:
+      - azurelustre.csi.azure.com
+    resources:
+      - azurelustrenodestatuses
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - azurelustre.csi.azure.com
+    resources:
+      - azurelustrenodestatuses/status
+    verbs:
+      - get
       - update
       - patch
 ---

@@ -163,6 +163,8 @@ kubectl delete clusterrolebinding csi-azurelustre-controller-secret-binding --ig
 kubectl delete clusterrole csi-azurelustre-node-secret-role --ignore-not-found
 kubectl delete clusterrolebinding csi-azurelustre-node-secret-binding --ignore-not-found
 
+kubectl apply -f "${repo}/azurelustrenodestatus-crd.yaml"
+kubectl apply -f "${repo}/azurelustre-compatibility-policy.yaml"
 kubectl apply -f "${repo}/rbac-csi-azurelustre-controller.yaml"
 kubectl apply -f "${repo}/rbac-csi-azurelustre-node.yaml"
 kubectl apply -f "${repo}/csi-azurelustre-driver.yaml"

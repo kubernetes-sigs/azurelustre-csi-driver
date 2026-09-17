@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-compatibility-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: compatibility-policy
+    {{- include "azurelustre.labels" . | nindent 4 }}
+data:
+  policy.yaml: |
+    apiVersion: azurelustre.csi.azure.com/{{ .Values.compatibilityPolicy.schemaVersion }}
+    kind: AzureLustreCompatibilityPolicy
+    clientSetRevision: {{ .Values.compatibilityPolicy.clientSetRevision }}
+    cacheTTLSeconds: {{ .Values.compatibilityPolicy.cacheTTLSeconds }}
+    clients:
+      jammy:
+        desired:
+          version: {{ .Values.node.jammy.lustreClient.version | quote }}
+          shaSuffix: {{ .Values.node.jammy.lustreClient.shaSuffix | quote }}
+        compatible:
+          - version: {{ .Values.node.jammy.lustreClient.version | quote }}
+            shaSuffix: {{ .Values.node.jammy.lustreClient.shaSuffix | quote }}
+      noble:
+        desired:
+          version: {{ .Values.node.noble.lustreClient.version | quote }}
+          shaSuffix: {{ .Values.node.noble.lustreClient.shaSuffix | quote }}
+        compatible:
+          - version: {{ .Values.node.noble.lustreClient.version | quote }}
+            shaSuffix: {{ .Values.node.noble.lustreClient.shaSuffix | quote }}
+      azurelinux3:
+        desired:
+          version: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
+          shaSuffix: {{ .Values.node.azurelinux3.lustreClient.shaSuffix | quote }}
+        compatible:
+          - version: {{ .Values.node.azurelinux3.lustreClient.version | quote }}
+            shaSuffix: {{ .Values.node.azurelinux3.lustreClient.shaSuffix | quote }}
+    bootstrap:
+      enabled: {{ .Values.compatibilityPolicy.bootstrap.enabled }}
+      csiImage:
+        repository: {{ .Values.image.repository | quote }}
+        tag: {{ .Values.image.tag | quote }}

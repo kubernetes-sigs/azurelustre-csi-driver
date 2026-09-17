@@ -68,10 +68,12 @@ fi
 # are derived from the Makefile's canonical flavor list (`make print-all-flavors`)
 # so adding a new flavor in the Makefile automatically extends this check.
 declare -A CHARTS_FOR_DEPLOY_FILE=(
+["deploy/azurelustre-compatibility-policy.yaml"]="templates/compatibility-policy-configmap.yaml"
+["deploy/azurelustrenodestatus-crd.yaml"]="crds/azurelustrenodestatuses.yaml"
 ["deploy/csi-azurelustre-controller.yaml"]="templates/controller-deployment.yaml"
 ["deploy/csi-azurelustre-driver.yaml"]="templates/csidriver.yaml"
 ["deploy/rbac-csi-azurelustre-controller.yaml"]="templates/controller-serviceaccount.yaml templates/controller-clusterrole.yaml templates/controller-clusterrolebinding.yaml"
-["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml"
+["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml templates/node-status-role.yaml templates/node-status-rolebinding.yaml"
 ["deploy/pdb-csi-azurelustre-controller.yaml"]="templates/controller-pdb.yaml"
 )
 
@@ -117,7 +119,8 @@ check_unlisted_files() {
   referenced_deploy_files=$(printf "%s\n" "${!CHARTS_FOR_DEPLOY_FILE[@]}" | sort)
   referenced_charts_files=$(printf "%s\n" "${CHARTS_FOR_DEPLOY_FILE[@]}" | sort)
   all_deploy_files=$(ls deploy/*.yaml)
-  all_charts_files=$(ls charts/"${version}"/azurelustre-csi-driver/templates/*.yaml)
+  all_charts_files=$(find "charts/${version}/azurelustre-csi-driver/templates" \
+    "charts/${version}/azurelustre-csi-driver/crds" -maxdepth 1 -type f -name '*.yaml' | sort)
 
   for file in ${all_deploy_files}; do
     # Check for all actual deploy files in charts references
@@ -128,7 +131,8 @@ check_unlisted_files() {
   done
   for file in ${all_charts_files}; do
     # Check for all actual chart files in deploy references
-    if ! grep -q -R -F "templates/$(basename "${file}")" - <<<"${referenced_charts_files}"; then
+    local relative_file=${file#charts/"${version}"/azurelustre-csi-driver/}
+    if ! grep -q -R -F "${relative_file}" - <<<"${referenced_charts_files}"; then
       echo "File ${file} missing from list of deploy files!"
       file_not_found=true
     fi
@@ -155,6 +159,7 @@ helm_template() {
     show_only+=("--show-only" "${value}")
   done
   helm template \
+    --include-crds \
     --set "fullnameOverride=csi-azurelustre" \
     --set "image.repository=${repository}" \
     --set "image.tag=${version_override}" \
