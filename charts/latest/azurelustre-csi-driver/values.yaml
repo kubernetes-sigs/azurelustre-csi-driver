@@ -162,6 +162,41 @@ csidriver:
   attachRequired: false
   podInfoOnMount: true
 
+# Pre-delete guard.
+#
+# Blocks `helm uninstall` and normal `az k8s-extension delete` operations while
+# PersistentVolumes provisioned by this driver still exist. Removing the driver
+# first strands the backing AMLFS filesystem (dynamic provisioning deletes it
+# via the controller's DeleteVolume, which no longer runs once the driver is
+# gone) and leaves PVs stuck in Terminating with stale node mounts.
+#
+# Set enabled=false to allow uninstall without the guard. The guard is
+# fail-closed: if the check cannot run (for example the API call fails),
+# uninstall is blocked. Direct Helm users can explicitly bypass it with
+# `helm uninstall --no-hooks`. Do not use `az k8s-extension delete --force` as
+# a bypass: it can delete the Azure extension resource while leaving the Helm
+# release and driver workloads behind.
+preDeleteGuard:
+  enabled: true
+  # Approved MCR mirror, pinned to the multi-architecture manifest digest for
+  # kubectl v1.35.1.
+  image:
+    repository: mcr.microsoft.com/oss/v2/kubernetes/kubectl
+    digest: sha256:b671d7d77526020161474fb7528fb72a5712489a82b81e248f54586579cd1654
+  imagePullPolicy: IfNotPresent
+  # Schedules the guard Job promptly, including on busy clusters.
+  priorityClassName: system-cluster-critical
+  # Upper bound on how long `helm uninstall` may block on the guard Job. Sized to
+  # tolerate node scale-from-zero (e.g. AKS Automatic) before the check runs.
+  activeDeadlineSeconds: 300
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+
 # Microsoft Entra Workload Identity.
 #
 # For direct Helm installs, set IsWorkloadIdentityEnabled to "Enabled" and

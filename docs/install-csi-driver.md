@@ -44,6 +44,21 @@ To uninstall:
 helm uninstall azurelustre -n kube-system
 ```
 
+Before uninstalling, delete all PersistentVolumeClaims and PersistentVolumes
+that use `azurelustre.csi.azure.com`. The chart's pre-delete guard blocks the
+uninstall while any remain, ensuring the running controller can delete
+dynamically provisioned AMLFS resources and the node plugin can finish volume
+teardown.
+
+The same guard is honored by a normal `az k8s-extension delete`: the extension
+operation fails and leaves the Helm release and driver workloads running until
+the volumes are removed and deletion is retried. Do not bypass the guard with
+`az k8s-extension delete --force`; force-delete removes the Azure extension
+resource without completing Helm cleanup and can leave an unmanaged driver
+installation behind. Direct Helm users can explicitly bypass the guard with
+`--no-hooks`, or disable it with `--set preDeleteGuard.enabled=false`, only after
+accepting the orphaned-resource risk.
+
 > [!IMPORTANT]
 > **Migrating from a `kubectl` install to Helm.** Helm only adopts resources it
 > created. If the driver was previously installed with `kubectl` /

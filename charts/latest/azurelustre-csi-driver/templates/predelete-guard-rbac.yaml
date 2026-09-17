@@ -1,0 +1,61 @@
+{{- if .Values.preDeleteGuard.enabled }}
+# RBAC for the pre-delete guard hook (see predelete-guard-job.yaml). These are
+# Helm pre-delete hooks with a lower hook-weight than the Job so they exist when
+# the Job runs, and are cleaned up on success (or on the next uninstall attempt).
+#
+# The ServiceAccount follows the chart convention of always being created; the
+# ClusterRole/ClusterRoleBinding are gated on rbac.create. If rbac.create=false,
+# grant the guard ServiceAccount get/list on persistentvolumes out of band, or
+# disable the guard (preDeleteGuard.enabled=false).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+{{- include "azurelustre.imagePullSecrets" . }}
+{{- if .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "azurelustre.fullname" . }}-predelete-guard
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

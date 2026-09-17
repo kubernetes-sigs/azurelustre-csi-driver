@@ -69,6 +69,12 @@ workloads and restart the node pods to complete the upgrade.
 
     helm uninstall azurelustre -n kube-system
 
+Delete all PersistentVolumeClaims and PersistentVolumes that use
+`azurelustre.csi.azure.com` first. The chart's pre-delete guard blocks both Helm
+uninstall and normal AKS extension deletion while any remain. Do not use
+`az k8s-extension delete --force` as a bypass: it can remove the Azure extension
+resource while leaving the Helm release and driver workloads behind.
+
 ## Tips
 
 - Dry run rendering: `helm template test ./charts/latest/azurelustre-csi-driver -n kube-system | less`

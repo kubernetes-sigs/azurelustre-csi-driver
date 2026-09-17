@@ -1,0 +1,121 @@
+{{- if .Values.preDeleteGuard.enabled }}
+# Pre-delete guard.
+#
+# CSI teardown is a two-party handshake: the external-provisioner sidecar (in the
+# controller) observes PVC deletion and calls the driver controller's
+# DeleteVolume, which for dynamically provisioned volumes deletes the backing
+# AMLFS filesystem. `helm uninstall` removes both the controller and the node
+# plugin, so if it runs while driver-owned PersistentVolumes still exist there is
+# nothing left to service teardown: the AMLFS filesystem is orphaned (still
+# billing) and PV objects are left stuck in Terminating with stale node mounts.
+#
+# This pre-delete hook Job lists PersistentVolumes and fails (blocking uninstall)
+# if any still reference this driver, forcing the operator to delete the volumes
+# first. It uses the MCR-mirrored kubectl image pinned by digest so the guard
+# does not depend on a mutable tag. Disable with preDeleteGuard.enabled=false.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-predelete-guard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.preDeleteGuard.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: predelete-guard
+        {{- include "azurelustre.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "azurelustre.fullname" . }}-predelete-guard
+      priorityClassName: {{ .Values.preDeleteGuard.priorityClassName }}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "azurelustre.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: predelete-guard
+          image: {{ .Values.preDeleteGuard.image.repository }}@{{ .Values.preDeleteGuard.image.digest }}
+          imagePullPolicy: {{ .Values.preDeleteGuard.imagePullPolicy }}
+          env:
+            - name: HOME
+              value: /tmp
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              driver="{{ .Values.csidriver.name }}"
+              sa=/var/run/secrets/kubernetes.io/serviceaccount
+              echo "Checking for PersistentVolumes provisioned by ${driver} before uninstall..."
+              # Let kubectl evaluate spec.csi.driver rather than scanning raw JSON.
+              # This selects both statically and dynamically provisioned PVs and
+              # avoids false matches in annotations or unrelated fields.
+              set +e
+              matches="$(kubectl \
+                --server=https://kubernetes.default.svc \
+                --certificate-authority="${sa}/ca.crt" \
+                --token="$(cat "${sa}/token")" \
+                get persistentvolumes --request-timeout=20s \
+                -o "jsonpath={range .items[?(@.spec.csi.driver==\"${driver}\")]}{.metadata.name}{\"\\n\"}{end}" 2>&1)"
+              rc=$?
+              set -e
+              if [ "${rc}" -ne 0 ]; then
+                echo "ERROR: could not list PersistentVolumes:" >&2
+                echo "${matches}" >&2
+                echo "Blocking uninstall to avoid orphaning driver-owned volumes." >&2
+                exit 1
+              fi
+              if [ -n "${matches}" ]; then
+                count="$(printf '%s\n' "${matches}" | wc -l | tr -d '[:space:]')"
+              else
+                count=0
+              fi
+              case "${count}" in
+                ''|*[!0-9]*)
+                  echo "ERROR: unexpected PersistentVolume scan result '${count}'." >&2
+                  echo "Blocking uninstall to avoid orphaning driver-owned volumes." >&2
+                  exit 1
+                  ;;
+              esac
+              if [ "${count}" -gt 0 ]; then
+                echo "ERROR: found ${count} PersistentVolume(s) still using the ${driver} CSI driver." >&2
+                echo "Delete the PVCs/PVs first so the driver can clean up their backing AMLFS" >&2
+                echo "filesystems (dynamic provisioning) and avoid stuck Terminating PVs, then" >&2
+                echo "uninstall. To bypass this guard, set preDeleteGuard.enabled=false or run" >&2
+                echo "'helm uninstall --no-hooks'. Do not use 'az k8s-extension delete --force'" >&2
+                echo "as a bypass: it can remove the Azure resource while leaving the Helm" >&2
+                echo "release and driver workloads behind." >&2
+                exit 1
+              fi
+              echo "No ${driver} PersistentVolumes found; allowing uninstall."
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.preDeleteGuard.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

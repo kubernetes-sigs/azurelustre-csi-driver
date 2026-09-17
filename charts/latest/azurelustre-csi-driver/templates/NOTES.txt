@@ -8,3 +8,25 @@ CSIDriver object:
 
 Uninstall:
   helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Before uninstalling, delete any PersistentVolumeClaims/PersistentVolumes backed
+by {{ .Values.csidriver.name }} so the driver can clean up their backing AMLFS
+filesystems while it is still running. Removing the driver first orphans the
+AMLFS resource (dynamic provisioning) and leaves PVs stuck in Terminating.
+{{- if .Values.preDeleteGuard.enabled }}
+A pre-delete guard blocks both Helm uninstall and normal AKS extension deletion
+while such volumes still exist. Direct Helm users can bypass it by setting
+preDeleteGuard.enabled=false or running `helm uninstall --no-hooks`.
+
+Do NOT use `az k8s-extension delete --force` as a bypass. Force-delete removes
+the Azure extension resource without completing the Helm uninstall and can leave
+the driver workloads behind as an unmanaged installation.
+{{- if not .Values.rbac.create }}
+
+WARNING: preDeleteGuard.enabled=true but rbac.create=false. The guard cannot list
+PersistentVolumes without a ClusterRole, so it will fail closed and block EVERY
+uninstall until you either grant the ServiceAccount
+'{{ include "azurelustre.fullname" . }}-predelete-guard' get/list on
+persistentvolumes out of band, or set preDeleteGuard.enabled=false.
+{{- end }}
+{{- end }}
