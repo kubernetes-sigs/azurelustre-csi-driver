@@ -16,6 +16,41 @@
 set -euo pipefail
 
 CONFIGMAP_NAME="csi-azurelustre-entrypoint"
+NODE_DAEMONSETS=(
+  csi-azurelustre-node-jammy
+  csi-azurelustre-node-noble
+  csi-azurelustre-node-azurelinux3
+)
+
+wait_for_node_daemonsets_ready() {
+  local timeout_seconds=${1}
+  local deadline=$((SECONDS + timeout_seconds))
+
+  for daemonset in "${NODE_DAEMONSETS[@]}"; do
+    while (( SECONDS < deadline )); do
+      local status
+      status=$(kubectl get daemonset "${daemonset}" -n kube-system \
+        -o go-template='{{or .status.observedGeneration 0}} {{or .metadata.generation 1}} {{or .status.desiredNumberScheduled 0}} {{or .status.numberReady 0}}' 2>/dev/null || true)
+
+      local observed generation desired ready
+      read -r observed generation desired ready <<<"${status}"
+      observed=${observed:-0}
+      generation=${generation:-1}
+      desired=${desired:-0}
+      ready=${ready:-0}
+
+      if (( observed >= generation && ready == desired )); then
+        break
+      fi
+      sleep 5
+    done
+
+    if (( SECONDS >= deadline )); then
+      echo "Timed out waiting for ${daemonset} pods to be ready." >&2
+      return 1
+    fi
+  done
+}
 
 function usage {
     echo "Usage: $0 [--custom-entrypoint <file>] [branch|local|url]"
@@ -137,18 +172,11 @@ kubectl apply -f "${repo}/csi-azurelustre-node-jammy.yaml"
 kubectl apply -f "${repo}/csi-azurelustre-node-noble.yaml"
 kubectl apply -f "${repo}/csi-azurelustre-node-azurelinux3.yaml"
 
-# Restart node DaemonSet pods only if the ConfigMap state changed.
-# The custom entrypoint ConfigMap is only mounted into node DaemonSets,
-# not the controller, so only node pods need restarting.
 if [[ "${configmap_changed}" == "true" ]]; then
-  echo "Custom entrypoint configuration changed, restarting node pods..."
-  kubectl rollout restart daemonset csi-azurelustre-node-jammy -n kube-system
-  kubectl rollout restart daemonset csi-azurelustre-node-noble -n kube-system
-  kubectl rollout restart daemonset csi-azurelustre-node-azurelinux3 -n kube-system
+  echo "Custom entrypoint configuration staged. Existing OnDelete node pods will"
+  echo "continue using their current entrypoint until they are safely replaced."
 fi
 
 kubectl rollout status deployment csi-azurelustre-controller -nkube-system --timeout=300s
-kubectl rollout status daemonset csi-azurelustre-node-jammy -nkube-system --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-noble -nkube-system --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-azurelinux3 -nkube-system --timeout=1800s
-echo 'Azure Lustre CSI driver installed successfully.'
+wait_for_node_daemonsets_ready 1800
+echo 'Azure Lustre CSI driver desired state applied successfully.'
