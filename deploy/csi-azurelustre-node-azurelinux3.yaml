@@ -13,9 +13,7 @@ metadata:
     flavor: azurelinux3
 spec:
   updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 10%
-    type: RollingUpdate
+    type: OnDelete
   selector:
     matchLabels:
       app.kubernetes.io/component: node
@@ -28,7 +26,6 @@ spec:
         app.kubernetes.io/component: node
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: v0.6.0
         flavor: azurelinux3
     spec:
       hostNetwork: true

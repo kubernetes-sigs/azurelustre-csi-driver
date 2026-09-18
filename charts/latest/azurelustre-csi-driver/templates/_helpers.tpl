@@ -32,6 +32,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
 {{/*
+Stable labels for node pod templates. Chart and app versions remain on object
+metadata, but must not create a new DaemonSet revision by changing pod labels.
+*/}}
+{{- define "azurelustre.nodePodLabels" -}}
+{{- include "azurelustre.selectorLabels" . }}
+app.kubernetes.io/part-of: {{ template "azurelustre.name" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{/*
 Full entity names.
 */}}
 {{- define "azurelustre.fullname" -}}
