@@ -7,7 +7,7 @@ on:
   push:
     branches: [main, development, 'release/**']
   pull_request:
-    branches: [main, development]
+    branches: [main, development, 'personal/jebearer/39726547-*']
 
 permissions:
   contents: read
