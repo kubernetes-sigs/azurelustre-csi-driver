@@ -71,7 +71,7 @@ declare -A CHARTS_FOR_DEPLOY_FILE=(
 ["deploy/csi-azurelustre-controller.yaml"]="templates/controller-deployment.yaml"
 ["deploy/csi-azurelustre-driver.yaml"]="templates/csidriver.yaml"
 ["deploy/rbac-csi-azurelustre-controller.yaml"]="templates/controller-serviceaccount.yaml templates/controller-clusterrole.yaml templates/controller-clusterrolebinding.yaml"
-["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml"
+["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml templates/node-status-role.yaml templates/node-status-rolebinding.yaml"
 ["deploy/pdb-csi-azurelustre-controller.yaml"]="templates/controller-pdb.yaml"
 )
 
