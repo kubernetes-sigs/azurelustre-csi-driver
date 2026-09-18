@@ -75,6 +75,9 @@ controller:
   priorityClassName: system-cluster-critical
   extraArgs: ["-v=5"]
 
+statusController:
+  extraArgs: ["-v=5"]
+
 node:
   # The node plugin is deliberately kept off AKS-managed *reserved* system node
   # pools by NOT tolerating the CriticalAddonsOnly taint (the AKS-recommended way
@@ -101,7 +104,10 @@ node:
       operator: "Exists"
       effect: "NoSchedule"
   updateStrategy:
-    maxUnavailable: 10%
+    type: OnDelete
+    # Only used when type is RollingUpdate; OnDelete has no rollout budget.
+    rollingUpdate:
+      maxUnavailable: 10%
   priorityClassName: system-node-critical
   extraArgs: ["-v=5"]
   jammy:
@@ -121,6 +127,8 @@ node:
     lustreClient:
       version: 2.15.8
       shaSuffix: 39-g2d32b59
+      # Additional resident clients allowed during forward rollout or rollback.
+      compatible: []
   noble:
     affinityOsSkus:
       - Ubuntu2404
@@ -136,6 +144,7 @@ node:
     lustreClient:
       version: 2.17.0
       shaSuffix: 24-gf517bc4
+      compatible: []
   azurelinux3:
     affinityOsSkus:
       - AzureLinux3
@@ -152,6 +161,57 @@ node:
     lustreClient:
       version: 2.17.0
       shaSuffix: 24-gf517bc4
+      compatible: []
+
+compatibilityPolicy:
+  schemaVersion: v1alpha1
+  clientSetRevision: 1
+  # Enforcement is staged through the node DaemonSet template. With OnDelete,
+  # existing node pods retain their current behavior while replacement/new
+  # nodes consume this setting. Enabling it requires desired digests to appear
+  # in both role-specific approvedDigests lists for each configured flavor.
+  cacheTTLSeconds: 3600
+  mountAdmission:
+    # This capability flag is captured in the OnDelete node pod template.
+    # Enable and activate it on nodes before turning on dynamic enforcement.
+    capabilityEnabled: false
+    enforce: false
+  # Digests use the canonical "sha256:<64 hex characters>" form. Keep approved
+  # non-current digests during a compatibility window or rollback period.
+  # Driver AND loader images are flavor-specific. Empty pairs deliberately
+  # deny that flavor when enforcement is enabled; do not borrow another OS's
+  # digest to populate an unused flavor. Configure at least one complete pair.
+  images:
+    driver:
+      jammy:
+        desiredDigest: ""
+        approvedDigests: []
+      noble:
+        desiredDigest: ""
+        approvedDigests: []
+      azurelinux3:
+        desiredDigest: ""
+        approvedDigests: []
+    loader:
+      jammy:
+        desiredDigest: ""
+        approvedDigests: []
+      noble:
+        desiredDigest: ""
+        approvedDigests: []
+      azurelinux3:
+        desiredDigest: ""
+        approvedDigests: []
+  bootstrap:
+    # A legacy image exception is only for migrating pre-reporter node pods.
+    # When enabled, expiresAt must be RFC3339 and csiImage must identify the
+    # previous image exactly. Never leave the exception open-ended.
+    enabled: false
+    expiresAt: ""
+    csiImage:
+      repository: ""
+      tag: ""
+      digest: ""
 
 rbac:
   create: true

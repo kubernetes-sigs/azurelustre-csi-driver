@@ -13,9 +13,7 @@ metadata:
     flavor: noble
 spec:
   updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 10%
-    type: RollingUpdate
+    type: OnDelete
   selector:
     matchLabels:
       app: csi-azurelustre-node
@@ -27,7 +25,6 @@ spec:
         app.kubernetes.io/component: node
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: v0.6.0
         app: csi-azurelustre-node
         flavor: noble
     spec:
@@ -128,6 +125,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             limits:
@@ -259,6 +259,18 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: MOUNT_ADMISSION_POLICY_ENABLED
+              value: "false"
           securityContext:
             privileged: true
           volumeMounts:
@@ -277,6 +289,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             limits:
@@ -314,4 +329,8 @@ spec:
           configMap:
             name: csi-azurelustre-entrypoint
             defaultMode: 0755
+            optional: true
+        - name: compatibility-policy
+          configMap:
+            name: csi-azurelustre-compatibility-policy
             optional: true

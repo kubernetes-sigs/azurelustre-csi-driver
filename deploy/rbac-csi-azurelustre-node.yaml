@@ -42,3 +42,53 @@ roleRef:
   kind: ClusterRole
   name: csi-azurelustre-node-role
   apiGroup: rbac.authorization.k8s.io
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-azurelustre-node-status-role
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+      - patch
+  - apiGroups:
+      - azurelustre.csi.azure.com
+    resources:
+      - azurelustrenodestatuses
+    verbs:
+      - get
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-azurelustre-node-status-binding
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+subjects:
+  - kind: ServiceAccount
+    name: csi-azurelustre-node-sa
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: csi-azurelustre-node-status-role
+  apiGroup: rbac.authorization.k8s.io

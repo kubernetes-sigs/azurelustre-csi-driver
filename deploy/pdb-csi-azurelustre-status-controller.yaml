@@ -1,0 +1,17 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: csi-azurelustre-status-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: csi-azurelustre-status-controller
+      app.kubernetes.io/component: status-controller

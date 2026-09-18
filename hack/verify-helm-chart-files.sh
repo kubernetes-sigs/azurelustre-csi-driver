@@ -34,8 +34,9 @@ MCR_REPOSITORY="mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi"
 REPOSITORY=${REPOSITORY:-${MCR_REPOSITORY}}
 COLOR=${COLOR:-always}
 
-# Temp directory for intermediate files during diff comparisons
-DIFF_TEMP_DIR=$(mktemp -d)
+# Keep verifier intermediates in the checkout, not a shared system directory.
+DIFF_TEMP_DIR="$(pwd)/_output/helm-chart-files-$$"
+mkdir -p "${DIFF_TEMP_DIR}"
 trap 'rm -rf "${DIFF_TEMP_DIR}"' EXIT
 
 if [[ -z "$(command -v helm)" ]]; then
@@ -68,11 +69,17 @@ fi
 # are derived from the Makefile's canonical flavor list (`make print-all-flavors`)
 # so adding a new flavor in the Makefile automatically extends this check.
 declare -A CHARTS_FOR_DEPLOY_FILE=(
+["deploy/azurelustre-compatibility-policy.yaml"]="templates/compatibility-policy-configmap.yaml"
+["deploy/azurelustrenodestatus-crd.yaml"]="crds/azurelustrenodestatuses.yaml"
 ["deploy/csi-azurelustre-controller.yaml"]="templates/controller-deployment.yaml"
+["deploy/csi-azurelustre-status-controller.yaml"]="templates/status-controller-deployment.yaml"
+["deploy/namespace-csi-azurelustre-status-controller.yaml"]="templates/status-controller-namespace.yaml"
 ["deploy/csi-azurelustre-driver.yaml"]="templates/csidriver.yaml"
 ["deploy/rbac-csi-azurelustre-controller.yaml"]="templates/controller-serviceaccount.yaml templates/controller-clusterrole.yaml templates/controller-clusterrolebinding.yaml"
-["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml"
+["deploy/rbac-csi-azurelustre-node.yaml"]="templates/node-serviceaccount.yaml templates/node-clusterrole.yaml templates/node-clusterrolebinding.yaml templates/node-status-role.yaml templates/node-status-rolebinding.yaml"
+["deploy/rbac-csi-azurelustre-status-controller.yaml"]="templates/status-controller-rbac.yaml"
 ["deploy/pdb-csi-azurelustre-controller.yaml"]="templates/controller-pdb.yaml"
+["deploy/pdb-csi-azurelustre-status-controller.yaml"]="templates/status-controller-pdb.yaml"
 )
 
 # Populate per-flavor node DaemonSet entries from the Makefile flavor list.
@@ -117,7 +124,8 @@ check_unlisted_files() {
   referenced_deploy_files=$(printf "%s\n" "${!CHARTS_FOR_DEPLOY_FILE[@]}" | sort)
   referenced_charts_files=$(printf "%s\n" "${CHARTS_FOR_DEPLOY_FILE[@]}" | sort)
   all_deploy_files=$(ls deploy/*.yaml)
-  all_charts_files=$(ls charts/"${version}"/azurelustre-csi-driver/templates/*.yaml)
+  all_charts_files=$(find "charts/${version}/azurelustre-csi-driver/templates" \
+    "charts/${version}/azurelustre-csi-driver/crds" -maxdepth 1 -type f -name '*.yaml' | sort)
 
   for file in ${all_deploy_files}; do
     # Check for all actual deploy files in charts references
@@ -128,7 +136,8 @@ check_unlisted_files() {
   done
   for file in ${all_charts_files}; do
     # Check for all actual chart files in deploy references
-    if ! grep -q -R -F "templates/$(basename "${file}")" - <<<"${referenced_charts_files}"; then
+    local relative_file=${file#charts/"${version}"/azurelustre-csi-driver/}
+    if ! grep -q -R -F "${relative_file}" - <<<"${referenced_charts_files}"; then
       echo "File ${file} missing from list of deploy files!"
       file_not_found=true
     fi
@@ -155,11 +164,12 @@ helm_template() {
     show_only+=("--show-only" "${value}")
   done
   helm template \
+    --include-crds \
     --set "fullnameOverride=csi-azurelustre" \
     --set "image.repository=${repository}" \
     --set "image.tag=${version_override}" \
     --namespace kube-system \
-    chart-test \
+    azurelustre \
     "${show_only[@]}" \
     ./charts/"${version}"/azurelustre-csi-driver/
 }
@@ -331,6 +341,97 @@ check_node_template_consistency() {
     return 1
   fi
   echo "Node DaemonSet templates are structurally consistent across flavors: ${ALL_FLAVORS}"
+  echo
+  return 0
+}
+
+check_node_rollout_safety() {
+  local version=${1}
+  local chart_dir="./charts/${version}/azurelustre-csi-driver"
+  local rendered
+  local rollout_issues=false
+
+  echo "== Checking node DaemonSet rollout safety for version: ${version} =="
+
+  if ! rendered=$(helm template \
+    --set "fullnameOverride=csi-azurelustre" \
+    --namespace kube-system \
+    chart-test \
+    "${chart_dir}" 2>&1); then
+    echo "ERROR: helm template failed while checking node rollout safety:"
+    echo "${rendered}"
+    echo
+    return 1
+  fi
+
+  local node_count expected_count
+  node_count=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node") | .metadata.name' - |
+    sed '/^---$/d' | wc -l)
+  expected_count=$(wc -w <<<"${ALL_FLAVORS}")
+  if [[ "${node_count}" -ne "${expected_count}" ]]; then
+    echo "ERROR: expected ${expected_count} node DaemonSets, found ${node_count}"
+    rollout_issues=true
+  fi
+
+  local unsafe_strategy
+  unsafe_strategy=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(.spec.updateStrategy.type != "OnDelete" or .spec.updateStrategy.rollingUpdate != null)
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${unsafe_strategy}" ]]; then
+    echo "ERROR: node DaemonSets must default to OnDelete without rollingUpdate settings:"
+    echo "${unsafe_strategy}"
+    rollout_issues=true
+  fi
+
+  local unstable_labels
+  unstable_labels=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(
+          .spec.template.metadata.labels."app.kubernetes.io/version" != null or
+          .spec.template.metadata.labels."helm.sh/chart" != null
+        )
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${unstable_labels}" ]]; then
+    echo "ERROR: chart/app version labels must not create node pod-template revisions:"
+    echo "${unstable_labels}"
+    rollout_issues=true
+  fi
+
+  local rolling_rendered rolling_issues
+  if ! rolling_rendered=$(helm template \
+    --set "fullnameOverride=csi-azurelustre" \
+    --set "node.updateStrategy.type=RollingUpdate" \
+    --set "node.updateStrategy.rollingUpdate.maxUnavailable=1" \
+    --namespace kube-system \
+    chart-test \
+    "${chart_dir}" 2>&1); then
+    echo "ERROR: helm template failed for the standalone RollingUpdate override:"
+    echo "${rolling_rendered}"
+    echo
+    return 1
+  fi
+
+  rolling_issues=$(printf '%s\n' "${rolling_rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(
+          .spec.updateStrategy.type != "RollingUpdate" or
+          .spec.updateStrategy.rollingUpdate.maxUnavailable != 1
+        )
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${rolling_issues}" ]]; then
+    echo "ERROR: standalone RollingUpdate override did not render as requested:"
+    echo "${rolling_issues}"
+    rollout_issues=true
+  fi
+
+  if [[ "${rollout_issues}" == true ]]; then
+    echo
+    return 1
+  fi
+
+  echo "Node DaemonSets default to OnDelete with stable pod-template labels"
   echo
   return 0
 }
@@ -520,8 +621,8 @@ check_workload_identity() {
   fi
   # The webhook injects AZURE_CLIENT_ID only for the SA the pod actually runs as,
   # so read the name off the Deployment rather than assuming the default.
-  sa_name=$(printf '%s\n' "${rendered}" | yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' -)
-  pod_label=$(printf '%s\n' "${rendered}" | yq eval 'select(.kind == "Deployment") | .spec.template.metadata.labels."azure.workload.identity/use"' -)
+  sa_name=$(printf '%s\n' "${rendered}" | yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "azurelustre")) | .spec.template.spec.serviceAccountName' -)
+  pod_label=$(printf '%s\n' "${rendered}" | yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "azurelustre")) | .spec.template.metadata.labels."azure.workload.identity/use"' -)
   client_id=$(printf '%s\n' "${rendered}" | yq eval "select(.kind == \"ServiceAccount\" and .metadata.name == \"${sa_name}\") | .metadata.annotations.\"azure.workload.identity/client-id\"" -)
   tenant_id=$(printf '%s\n' "${rendered}" | yq eval "select(.kind == \"ServiceAccount\" and .metadata.name == \"${sa_name}\") | .metadata.annotations.\"azure.workload.identity/tenant-id\"" -)
   if [[ "${pod_label}" != "true" || "${client_id}" != "test-client-id" || "${tenant_id}" != "test-tenant-id" ]]; then
@@ -595,15 +696,18 @@ check_service_account_names() {
   # from the older "{{ fullname }}-*-sa" form.
   local version=${1}
   local chart_dir="./charts/${version}/azurelustre-csi-driver"
-  local rendered ctrl node
+  local rendered ctrl status_ctrl node
 
   echo "== Checking ServiceAccount names for version: ${version} =="
 
   rendered=$(helm template --namespace kube-system chart-test "${chart_dir}")
-  ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
+  ctrl=$(yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "azurelustre")) | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
+  status_ctrl=$(yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "status-controller")) | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
   node=$(yq ea '[select(.kind == "DaemonSet") | .spec.template.spec.serviceAccountName] | unique | .[]' - <<<"${rendered}")
-  if [[ "${ctrl}" != "csi-azurelustre-controller-sa" || "${node}" != "csi-azurelustre-node-sa" ]]; then
-    echo "ERROR: default SA names wrong: controller='${ctrl}', node='${node}'"
+  if [[ "${ctrl}" != "csi-azurelustre-controller-sa" ||
+    "${status_ctrl}" != "csi-azurelustre-status-controller-sa" ||
+    "${node}" != "csi-azurelustre-node-sa" ]]; then
+    echo "ERROR: default SA names wrong: controller='${ctrl}', status-controller='${status_ctrl}', node='${node}'"
     return 1
   fi
 
@@ -611,14 +715,41 @@ check_service_account_names() {
   rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
     --set "serviceAccount.controller.name=custom-controller-sa" \
     --set "serviceAccount.node.name=custom-node-sa")
-  ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
+  ctrl=$(yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "azurelustre")) | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
+  status_ctrl=$(yq eval 'select(.kind == "Deployment" and (.spec.template.spec.containers[] | .name == "status-controller")) | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
   node=$(yq ea '[select(.kind == "DaemonSet") | .spec.template.spec.serviceAccountName] | unique | .[]' - <<<"${rendered}")
-  if [[ "${ctrl}" != "csi-azurelustre-controller-sa" || "${node}" != "csi-azurelustre-node-sa" ]]; then
-    echo "ERROR: SA names must not be overridable: controller='${ctrl}', node='${node}'"
+  if [[ "${ctrl}" != "csi-azurelustre-controller-sa" ||
+    "${status_ctrl}" != "csi-azurelustre-status-controller-sa" ||
+    "${node}" != "csi-azurelustre-node-sa" ]]; then
+    echo "ERROR: SA names must not be overridable: controller='${ctrl}', status-controller='${status_ctrl}', node='${node}'"
     return 1
   fi
 
   echo "ServiceAccount names render correctly (fixed, not overridable)"
+}
+
+check_mount_admission_controls() {
+  local version=${1}
+  local chart_dir="./charts/${version}/azurelustre-csi-driver"
+  local rendered node_capability policy
+
+  echo "== Checking mount admission controls for version: ${version} =="
+
+  rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
+    --set "compatibilityPolicy.mountAdmission.capabilityEnabled=true" \
+    --set "compatibilityPolicy.mountAdmission.enforce=false")
+  node_capability=$(yq ea '[select(.kind == "DaemonSet") |
+    .spec.template.spec.containers[] | select(.name == "azurelustre") |
+    .env[] | select(.name == "MOUNT_ADMISSION_POLICY_ENABLED") | .value] |
+    unique | .[]' - <<<"${rendered}")
+  policy=$(yq eval 'select(.kind == "ConfigMap") | .data."policy.yaml"' - <<<"${rendered}")
+
+  if [[ "${node_capability}" != "true" ]] || ! grep -q '^  enforce: false$' <<<"${policy}"; then
+    echo "ERROR: node capability and dynamic enforcement are not independently configurable"
+    return 1
+  fi
+
+  echo "Mount admission capability stages independently from dynamic enforcement"
 }
 
 check_chart_source_layout() {
@@ -661,10 +792,89 @@ check_chart_source_layout() {
   echo
 }
 
+check_flavor_image_policy() {
+  local version=${1}
+  local chart_dir="./charts/${version}/azurelustre-csi-driver"
+  local jammy noble prior rendered policy role flavor digest actual
+  jammy="sha256:$(printf '%064d' 0 | tr '0' 'a')"
+  noble="sha256:$(printf '%064d' 0 | tr '0' 'b')"
+  prior="sha256:$(printf '%064d' 0 | tr '0' 'c')"
+  local image_args=(--set compatibilityPolicy.mountAdmission.enforce=true)
+  for role in driver loader; do
+    for flavor in jammy noble; do
+      digest=${jammy}
+      [[ "${flavor}" != noble ]] || digest=${noble}
+      image_args+=(--set-string "compatibilityPolicy.images.${role}.${flavor}.desiredDigest=${digest}"
+        --set-string "compatibilityPolicy.images.${role}.${flavor}.approvedDigests[0]=${digest}")
+    done
+    image_args+=(--set-string "compatibilityPolicy.images.${role}.jammy.approvedDigests[1]=${prior}")
+  done
+  if ! rendered=$(helm template chart-test "${chart_dir}" --namespace kube-system "${image_args[@]}" 2>&1); then
+    echo "ERROR: per-flavor image policy failed to render: ${rendered}"
+    return 1
+  fi
+  policy=$(yq 'select(.kind == "ConfigMap") | .data."policy.yaml"' - <<<"${rendered}")
+  for role in driver loader; do
+    for flavor in jammy noble; do
+      digest=${jammy}
+      [[ "${flavor}" != noble ]] || digest=${noble}
+      actual=$(yq ".images.${role}.${flavor}.desiredDigest" - <<<"${policy}")
+      if [[ "${actual}" != "${digest}" ]]; then
+        echo "ERROR: ${role}/${flavor} desired digest changed or leaked from another flavor"
+        return 1
+      fi
+    done
+    actual=$(yq ".images.${role}.jammy.approvedDigests[1]" - <<<"${policy}")
+    [[ "${actual}" == "${prior}" ]] || { echo "ERROR: prior ${role}/jammy digest lost"; return 1; }
+    actual=$(yq ".images.${role}.noble.approvedDigests | length" - <<<"${policy}")
+    [[ "${actual}" == 1 ]] || { echo "ERROR: jammy approvals leaked into noble"; return 1; }
+    actual=$(yq ".images.${role}.azurelinux3.desiredDigest" - <<<"${policy}")
+    [[ -z "${actual}" ]] || { echo "ERROR: unused OS borrowed a desired digest"; return 1; }
+  done
+  # Old global keys must fail, not be silently ignored after Helm merges values.
+  for invalid in \
+    "compatibilityPolicy.images.driver.desiredDigest=${jammy}" \
+    "compatibilityPolicy.images.driver.jamyy.desiredDigest=${jammy}" \
+    "compatibilityPolicy.images.driver.noble.desiredDigest=not-a-digest"; do
+    if rendered=$(helm template chart-test "${chart_dir}" --set-string "${invalid}" 2>&1); then
+      echo "ERROR: invalid image policy values accepted: ${invalid}"
+      return 1
+    fi
+    if [[ "${rendered}" != *"schema"* ]]; then
+      echo "ERROR: invalid image policy failed for a reason other than schema validation: ${rendered}"
+      return 1
+    fi
+  done
+  local invalid_args
+  for invalid in empty incomplete unapproved; do
+    invalid_args=(--set compatibilityPolicy.mountAdmission.enforce=true)
+    if [[ "${invalid}" == incomplete ]]; then
+      invalid_args+=(--set-string "compatibilityPolicy.images.driver.jammy.desiredDigest=${jammy}"
+        --set-string "compatibilityPolicy.images.driver.jammy.approvedDigests[0]=${jammy}")
+    elif [[ "${invalid}" == unapproved ]]; then
+      invalid_args=("${image_args[@]}" --set-string "compatibilityPolicy.images.driver.noble.desiredDigest=${prior}")
+    fi
+    if rendered=$(helm template chart-test "${chart_dir}" "${invalid_args[@]}" 2>&1); then
+      echo "ERROR: ${invalid} enforced image policy accepted by Helm"
+      return 1
+    fi
+    if [[ "${rendered}" != *"image policy"* ]]; then
+      echo "ERROR: unexpected image policy validation error: ${rendered}"
+      return 1
+    fi
+  done
+  echo "Per-flavor image policy rendering and values schema verified"
+}
+
 echo "Verifying helm chart files against deploy yamls ..."
 
 issues_found=false
 failures=()
+
+if ! hack/verify-status-controller.sh; then
+  issues_found=true
+  failures+=("Status controller health and election isolation")
+fi
 
 if ! check_chart_source_layout; then
   issues_found=true
@@ -708,6 +918,11 @@ else
     failures+=("Node template consistency check (version: ${version})")
   fi
 
+  if ! check_node_rollout_safety "${version}"; then
+    issues_found=true
+    failures+=("Node rollout safety check (version: ${version})")
+  fi
+
   if ! check_source_version_metadata "${version}"; then
     issues_found=true
     failures+=("Source version metadata check (version: ${version})")
@@ -716,6 +931,16 @@ else
   if ! check_service_account_names "${version}"; then
     issues_found=true
     failures+=("ServiceAccount name check (version: ${version})")
+  fi
+
+  if ! check_mount_admission_controls "${version}"; then
+    issues_found=true
+    failures+=("Mount admission control check (version: ${version})")
+  fi
+
+  if ! check_flavor_image_policy "${version}"; then
+    issues_found=true
+    failures+=("Per-flavor image policy check (version: ${version})")
   fi
 
   if ! check_conditional_blocks "${version}"; then

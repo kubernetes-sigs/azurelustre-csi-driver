@@ -477,6 +477,14 @@ func TestNodePublishVolume(t *testing.T) {
 		},
 		{
 			desc: "Success already mounted",
+			setup: func(d *Driver) {
+				d.mountAdmissionPolicyEnabled = true
+				d.mountAdmissionReadFile = func(string) ([]byte, error) {
+					return []byte(testEnforcedCompatibilityPolicy), nil
+				}
+				d.NodeID = "node-0"
+				d.podNamespace = "kube-system"
+			},
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
 				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
@@ -485,6 +493,30 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:         true,
 			},
 			expectedErr:          nil,
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
+			desc: "New mount denied when admission status is unavailable",
+			setup: func(d *Driver) {
+				d.mountAdmissionPolicyEnabled = true
+				d.mountAdmissionPolicyPath = "test-policy"
+				d.mountAdmissionReadFile = func(string) ([]byte, error) {
+					return []byte(testEnforcedCompatibilityPolicy), nil
+				}
+				d.NodeID = "node-0"
+				d.podNamespace = "kube-system"
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+			},
+			expectedErr: status.Error(
+				codes.FailedPrecondition,
+				"new Azure Lustre mounts are denied on node \"node-0\": StatusUnavailable: the node status client or node identity is unavailable; inspect AzureLustreNodeStatus \"node-0\" in the driver namespace",
+			),
 			expectedMountpoints:  nil,
 			expectedMountActions: []mount.FakeAction{},
 		},

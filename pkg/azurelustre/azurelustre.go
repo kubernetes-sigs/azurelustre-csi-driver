@@ -22,8 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -34,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -77,8 +80,9 @@ const (
 	pvcNamespaceMetadata       = "${pvc.metadata.namespace}"
 	pvNameMetadata             = "${pv.metadata.name}"
 
-	controllerPod podRole = "controller"
-	nodePod       podRole = "node"
+	controllerPod       podRole = "controller"
+	nodePod             podRole = "node"
+	statusControllerPod podRole = "status-controller"
 )
 
 var (
@@ -121,6 +125,7 @@ type DriverOptions struct {
 	EnableAzureLustreMockDynProv bool
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
+	StatusControllerOnly         bool
 }
 
 // LustreSkuValue describes the increment and maximum size of a given Lustre sku
@@ -172,8 +177,24 @@ type Driver struct {
 	dynamicProvisioner DynamicProvisionerInterface
 	pingChecker        clusterPingChecker
 
-	removeNotReadyTaint bool
-	kubeClient          kubernetes.Interface
+	removeNotReadyTaint               bool
+	kubeClient                        kubernetes.Interface
+	dynamicClient                     dynamic.Interface
+	podName                           string
+	podNamespace                      string
+	nodeFactInterval                  time.Duration
+	nodeFactReadFile                  func(string) ([]byte, error)
+	nodeFactDesiredClient             string
+	statusControllerInterval          time.Duration
+	statusControllerElectionNamespace string
+	statusControllerCursor            string
+	compatibilityPolicyConfigMap      string
+	mountAdmissionPolicyEnabled       bool
+	mountAdmissionPolicyPath          string
+	mountAdmissionReadFile            func(string) ([]byte, error)
+	compatibilityPolicyMu             sync.RWMutex
+	cachedCompatibilityPolicy         *compatibilityPolicy
+	cachedCompatibilityPolicyAt       time.Time
 	// taintRemovalInitialDelay is the initial delay for node taint removal
 	taintRemovalInitialDelay time.Duration
 	// taintRemovalBackoff is the exponential backoff configuration for node taint removal
@@ -184,12 +205,23 @@ type Driver struct {
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(options *DriverOptions) (*Driver, error) {
 	d := Driver{
-		volLockMap:                   util.NewLockMap(),
-		volumeLocks:                  newVolumeLocks(),
-		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
-		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
-		workingMountDir:              options.WorkingMountDir,
-		removeNotReadyTaint:          options.RemoveNotReadyTaint,
+		volLockMap:                        util.NewLockMap(),
+		volumeLocks:                       newVolumeLocks(),
+		enableAzureLustreMockMount:        options.EnableAzureLustreMockMount,
+		enableAzureLustreMockDynProv:      options.EnableAzureLustreMockDynProv,
+		workingMountDir:                   options.WorkingMountDir,
+		removeNotReadyTaint:               options.RemoveNotReadyTaint,
+		podName:                           os.Getenv("POD_NAME"),
+		podNamespace:                      os.Getenv("POD_NAMESPACE"),
+		nodeFactInterval:                  defaultNodeFactInterval,
+		nodeFactReadFile:                  os.ReadFile,
+		nodeFactDesiredClient:             desiredClientIdentity(os.Getenv("LUSTRE_VERSION"), os.Getenv("CLIENT_SHA_SUFFIX")),
+		statusControllerInterval:          defaultStatusControllerInterval,
+		statusControllerElectionNamespace: os.Getenv("STATUS_CONTROLLER_ELECTION_NAMESPACE"),
+		compatibilityPolicyConfigMap:      os.Getenv("COMPATIBILITY_POLICY_CONFIGMAP"),
+		mountAdmissionPolicyEnabled:       strings.EqualFold(os.Getenv("MOUNT_ADMISSION_POLICY_ENABLED"), "true"),
+		mountAdmissionPolicyPath:          "/etc/azurelustre/compatibility/policy.yaml",
+		mountAdmissionReadFile:            os.ReadFile,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -198,6 +230,29 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 	d.podRole = controllerPod
 	if d.NodeID != "" {
 		d.podRole = nodePod
+	}
+	if options.StatusControllerOnly {
+		d.podRole = statusControllerPod
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("get status-controller in-cluster config: %w", err)
+		}
+		// A fleet sweep writes one status per node. The default 5 QPS budget
+		// cannot sustain the heartbeat even for a modest multi-pool cluster.
+		config.QPS = 100
+		config.Burst = 200
+		config.Timeout = 15 * time.Second
+		kubeClient, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("create status-controller Kubernetes client: %w", err)
+		}
+		d.kubeClient = kubeClient
+		dynamicClient, err := dynamic.NewForConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("create status-controller resource client: %w", err)
+		}
+		d.dynamicClient = dynamicClient
+		return &d, nil
 	}
 
 	ctx := context.Background()
@@ -244,8 +299,15 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		kubeClient, err := getKubeClient()
 		if err != nil {
 			klog.Warningf("failed to get kubernetes client: %v", err)
+		} else {
+			d.kubeClient = kubeClient
 		}
-		d.kubeClient = kubeClient
+		dynamicClient, dynamicErr := getDynamicClient()
+		if dynamicErr != nil {
+			klog.Warningf("failed to get dynamic kubernetes client: %v", dynamicErr)
+		} else {
+			d.dynamicClient = dynamicClient
+		}
 		d.taintRemovalInitialDelay = 1 * time.Second
 		d.taintRemovalBackoff = wait.Backoff{
 			Duration: 500 * time.Millisecond,
@@ -369,6 +431,15 @@ func (d *Driver) Run(endpoint string, testBool bool) error {
 	}
 	klog.Infof("\nDRIVER INFORMATION:\n-------------------\n%s\n\nStreaming logs below:", versionMeta)
 
+	if d.podRole == statusControllerPod {
+		if testBool {
+			return nil
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		return d.startNodeStatusController(ctx)
+	}
+
 	// Only node pods mount filesystems. Constructing the host mounter runs a
 	// one-time umount capability probe that requires mount privileges.
 	if d.podRole == nodePod {
@@ -389,6 +460,9 @@ func (d *Driver) Run(endpoint string, testBool bool) error {
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
 	d.removeNotReadyTaintIfNeeded()
+	if !testBool {
+		d.startNodeFactReporter()
+	}
 
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, d, d, d, testBool)
@@ -478,7 +552,23 @@ func getKubeClient() (kubernetes.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
 	}
-	return kubernetes.NewForConfig(config)
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func getDynamicClient() (dynamic.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+	}
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 // JSONPatch represents a JSON patch operation
