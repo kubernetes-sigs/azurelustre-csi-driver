@@ -4,7 +4,7 @@ name: Static Checks
 # Controls when the workflow will run
 on:
   pull_request:
-    branches: [main, development]
+    branches: [main, development, 'personal/jebearer/39726547-*']
   push:
     branches: [main, development, 'release/**']
   # Allows you to run this workflow manually from the Actions tab
@@ -34,4 +34,4 @@ jobs:
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20  # v9.2.0
         with:
           # Keep in sync with hack/verify-golangci-lint.sh
-          version: v2.7.2
+          version: v2.11.4
