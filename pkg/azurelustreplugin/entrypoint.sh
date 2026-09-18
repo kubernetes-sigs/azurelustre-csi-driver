@@ -600,6 +600,10 @@ function run_controller() {
   exec_csi_driver "$@"
 }
 
+function run_status_controller() {
+  exec_csi_driver "$@"
+}
+
 # main configures process-level behavior and dispatches the selected container
 # role. Keeping dispatch behind a source guard allows focused shell tests to
 # exercise the safety functions without performing host setup.
@@ -617,7 +621,7 @@ function main() {
   RECONCILE_INTERVAL_SECONDS="${AZURELUSTRE_CSI_LNET_RECONCILE_INTERVAL:-30}"
 
   # Role is REQUIRED; an unset or unknown value is a deployment error, not a
-  # silent no-op. See run_loader / run_driver / run_controller.
+  # silent no-op. See the per-role functions above.
   role="${AZURELUSTRE_CSI_ROLE:-}"
   echo "role: ${role:-<unset>}"
   echo "$(date -u) Command line arguments: $*"
@@ -625,8 +629,9 @@ function main() {
     loader)     run_loader ;;
     driver)     run_driver "$@" ;;
     controller) run_controller "$@" ;;
+    status-controller) run_status_controller "$@" ;;
     *)
-      echo "$(date -u) Error: AZURELUSTRE_CSI_ROLE must be one of loader, driver, controller (got '${role}')."
+      echo "$(date -u) Error: AZURELUSTRE_CSI_ROLE must be one of loader, driver, controller, status-controller (got '${role}')."
       exit 1
       ;;
   esac

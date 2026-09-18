@@ -1,0 +1,116 @@
+{{- if .Values.rbac.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "azurelustre.serviceAccountNameStatusController" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["controllerrevisions", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["azurelustre.csi.azure.com"]
+    resources: ["azurelustrenodestatuses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["azurelustre.csi.azure.com"]
+    resources: ["azurelustrenodestatuses/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "azurelustre.serviceAccountNameStatusController" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "azurelustre.serviceAccountNameStatusController" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: status-controller-election
+  namespace: {{ include "azurelustre.statusControllerElectionNamespace" . }}
+  labels:
+    app.kubernetes.io/component: status-controller-election
+    {{- include "azurelustre.labels" . | nindent 4 }}
+rules:
+  # Kubernetes cannot restrict create by resourceName. This dedicated namespace
+  # contains only the election lock and is inaccessible to node-fact writers.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["azurelustre-node-status-controller"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: status-controller-election
+  namespace: {{ include "azurelustre.statusControllerElectionNamespace" . }}
+  labels:
+    app.kubernetes.io/component: status-controller-election
+    {{- include "azurelustre.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "azurelustre.serviceAccountNameStatusController" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: status-controller-election
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
