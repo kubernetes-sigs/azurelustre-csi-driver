@@ -4,7 +4,7 @@ name: Linux Tests
 # Controls when the workflow will run
 on:
   pull_request:
-    branches: [main, development]
+    branches: [main, development, 'personal/jebearer/39726547-*']
   push:
     branches: [main, development, 'release/**']
   # Allows you to run this workflow manually from the Actions tab
