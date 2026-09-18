@@ -17,12 +17,37 @@ limitations under the License.
 package main
 
 import (
+	"errors"
 	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDriverRunError(t *testing.T) {
+	failure := errors.New("controller lifecycle failure")
+	for _, test := range []struct {
+		name               string
+		runErr             error
+		isStatusController bool
+		want               error
+	}{
+		{"graceful status-controller shutdown", nil, true, nil},
+		{"status-controller failure", failure, true, failure},
+		{"unexpected CSI server exit", nil, false, errDriverRunReturnedEarly},
+		{"CSI server failure", failure, false, failure},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := driverRunError(test.runErr, test.isStatusController)
+			if test.want == nil {
+				require.NoError(t, got)
+			} else {
+				require.ErrorIs(t, got, test.want)
+			}
+		})
+	}
+}
 
 func TestInitKlogFlags(t *testing.T) {
 	// Arrange

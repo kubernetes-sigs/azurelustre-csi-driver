@@ -537,6 +537,9 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 **Debugging Steps:**
 
 ```sh
+# Show the controller-derived view of every AMLFS-capable node
+kubectl get azurelustrenodestatuses -n kube-system -o wide
+
 # Compare desired and current pod state
 kubectl get ds -n kube-system -l app=csi-azurelustre-node -o wide
 
@@ -547,7 +550,17 @@ kubectl rollout history ds/csi-azurelustre-node-azurelinux3 -n kube-system
 
 # Check pod ages to identify old pods
 kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[0].image
+
+# Map nodes to AKS pools before deciding which nodes need lifecycle activation
+kubectl get nodes -L kubernetes.azure.com/agentpool
 ```
+
+`Exact` means the resident client matches current desired state.
+`CompatibleNonCurrent` means the resident client is intentionally allowed but
+is not current; this can occur during either forward rollout or rollback.
+Within each `kubernetes.azure.com/agentpool`, compare the Node, Client, and CSI
+columns. A pool is mixed when its nodes do not report the same Client/CSI
+combination.
 
 **Resolution:**
 
@@ -565,10 +578,17 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
    zero-downtime procedure. Do not switch an `OnDelete` DaemonSet back to
    `RollingUpdate` to converge it: that can replace drivers on mounted nodes.
    Pause conflicting deployment/upgrade automation during the operation.
-   Coordinate stopping all mount creators separately; cordon and drain alone
-   do not prevent DaemonSets or host-managed consumers from creating mounts.
 
-   Set the actual driver namespace and select the CSI pod on this exact node.
+   With enforcement enabled, API access failures or stale controller/node
+   evidence block new mounts and post-reboot remounts. Policy edits can also
+   briefly deny new mounts until projection and status fingerprints converge.
+   Deleting the compatibility-policy ConfigMap does not disable enforcement:
+   capable pods fail closed until a valid policy returns. Review the
+   [admission rollout and recovery guidance](../charts/README.md#chart-configuration)
+   before changing policy during maintenance.
+
+   Set the actual driver namespace (the examples elsewhere use `kube-system`)
+   and select the CSI pod on this exact node, not just one matching the pool name.
    Check its controller owner and record its UID/revision before proceeding.
 
    ```bash
@@ -579,6 +599,28 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
      --field-selector "spec.nodeName=${NODE}" -o wide
    CSI_POD='<current-node-csi-pod>'
    kubectl get pod -n "${CSI_NAMESPACE}" "${CSI_POD}" -o yaml
+   # Record any pre-existing admission annotation; do not clear another owner's denial.
+   kubectl get node "${NODE}" -o yaml
+
+   # When admission enforcement is enabled, block new mounts first.
+   kubectl annotate node "${NODE}" \
+     azurelustre.csi.azure.com/mount-admission=denied --overwrite
+   kubectl get azurelustrenodestatuses -n "${CSI_NAMESPACE}" "${NODE}" -o yaml
+   ```
+
+   When using admission quiescence, wait for a fresh status reporting
+   `mountAdmission: Denied` with `reason: AdministrativeQuiescence` before
+   relying on it. The annotation is not an enforcement barrier on an older
+   driver or when admission enforcement is disabled. In those cases,
+   coordinate stopping all mount creators separately.
+
+   Admission does not tear down an existing mount. However, **remounting after
+   a reboot is a new mount and can be denied**, even for a pre-existing pod or
+   PVC. Pod replacement, rescheduling, or loss of the prior mount also requires
+   new admission. Do not assume existing workloads will recover while admission
+   is denied. Preserve shutdown/unmount access while blocking new work.
+
+   ```bash
    kubectl cordon "${NODE}"
    kubectl drain "${NODE}" --ignore-daemonsets
 
@@ -655,22 +697,74 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
    operation for the pool (for example, a NodeImage upgrade) when it is
    available, and use direct pod deletion only for an already drained node.
 
-3. **Verify each activated node before restoring scheduling:**
+3. **Verify each activated node before releasing quiescence or scheduling:**
+
+   ```bash
+   kubectl get node "${NODE}" -o yaml
+   kubectl get pod -n "${CSI_NAMESPACE}" "${REPLACEMENT_POD}" -o yaml
+   kubectl get azurelustrenodestatuses -n "${CSI_NAMESPACE}" "${NODE}" -o yaml
+   ```
 
    Keep the node cordoned. Verify exactly one non-terminating Ready CSI pod
-   on this node, a new pod UID, and the intended image and pod revision.
-   Inspect loader logs and the resident kernel/client identity; pod readiness
-   alone does not prove client compatibility or application recovery.
-   Stop on missing evidence, an unexpected revision, or installation failures.
+   on this node, a new pod UID, the intended image and pod revision, and
+   current reporter evidence tied to that pod/Node UID. Confirm a recent
+   `observedAt`, `reporterFreshness: Current`, and acceptable
+   `clientCompatibility`, `csiDelivery`, and `securityCompliance`.
+   Compare `desired.flavor`, `desired.driverImageDigest`, and
+   `desired.loaderImageDigest` with this pod's flavor and observed image IDs.
+   Driver and loader approval lists are both per-flavor: approving a Noble
+   digest does not authorize it on Jammy. `NonCurrentApproved` means an image
+   is approved for this flavor but is not its desired digest; this is separate
+   from `csiDelivery`, which compares DaemonSet revisions. See
+   [per-flavor image approval](../charts/README.md#per-flavor-image-approval).
+   Also inspect `observed.factRenewTime`: a recent controller write alone
+   is not a fresh node heartbeat. New-mount admission requires a heartbeat
+   no older than 90 seconds, matching node/pod/container identity and local
+   boot/kernel/loaded-client facts. `desired.policyFingerprint` binds the
+   decision to the exact projected policy; a policy change denies new mounts
+   until a matching decision is available. ConfigMap projection is eventually
+   consistent, so policy changes are not instantaneous across nodes.
+   While quiesced, admission should still be `Denied` for
+   `AdministrativeQuiescence`; that reason alone is not health evidence.
+   Missing/stale/unknown evidence, an unexpected revision, or any other denial
+   is a **stop condition**. Keep quiescence and cordon in place and investigate
+   the status `reason`/`message` and reporter/loader logs.
 
-   Only after reviewing the replacement evidence and obtaining workload-owner
-   approval, uncordon:
+   If many nodes show aging controller status, inspect the dedicated
+   status-controller Deployment, its `/healthz` and `/readyz` probes on port
+   `29654`, and the election Lease in the namespace named by its
+   `STATUS_CONTROLLER_ELECTION_NAMESPACE` environment variable. Both replicas
+   should be Ready even though only one reconciles. Ready does not guarantee
+   fresh per-node status. Renew failures terminate the leader; a stuck
+   reconciliation fails its probes after the progress watchdog expires.
+   Check logs for API throttling, status-write conflicts, and sixty-second
+   sweep timeouts before considering capacity changes. See
+   [controller availability and permissions](../charts/README.md#status-controller-availability-and-permissions)
+   for the lock-isolation migration and ownership rules.
+
+   After reviewing the replacement evidence, remove **only an annotation
+   introduced by this maintenance operation** (do not erase a pre-existing
+   administrative denial), then re-read status while still cordoned:
+
+   ```bash
+   kubectl annotate node "${NODE}" azurelustre.csi.azure.com/mount-admission-
+   kubectl get azurelustrenodestatuses -n "${CSI_NAMESPACE}" "${NODE}" -o yaml
+   ```
+
+   Wait for a new observation reflecting annotation removal and confirming
+   `mountAdmission: Allowed`, with current reporter/compatibility/security
+   evidence. If denial or stale evidence persists, restore the maintenance
+   denial, leave the node cordoned, and investigate. Do not turn enforcement
+   off or broaden an allowlist just to complete maintenance.
+
+   Only after this admission check, and workload-owner approval, uncordon:
 
    ```bash
    kubectl uncordon "${NODE}"
    ```
 
-   Validate new mount and application I/O recovery before activating another node.
+   Validate new mount and application I/O recovery before activating another
+   node. Readiness alone does not prove mount admission or workload recovery.
 
 4. **Align image versions:**
 
@@ -1328,8 +1422,8 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
 
    For node pods, follow the complete
    [one-node activation procedure](#inconsistent-driver-versions-across-nodes),
-   including drain, host mount/reference inspection, and replacement evidence
-   **before** uncordoning. A controller restart
+   including drain, host mount/reference inspection, replacement evidence,
+   and admission verification **before** uncordoning. A controller restart
    does not activate a staged node client. Do not restart all node pods or
    bypass these gates to troubleshoot a mount failure.
 

@@ -36,7 +36,7 @@ import (
 
 // NodePublishVolume mount the volume from staging to target path
 func (d *Driver) NodePublishVolume(
-	_ context.Context,
+	ctx context.Context,
 	req *csi.NodePublishVolumeRequest,
 ) (*csi.NodePublishVolumeResponse, error) {
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
@@ -108,6 +108,9 @@ func (d *Driver) NodePublishVolume(
 		)
 		isOperationSucceeded = true
 		return &csi.NodePublishVolumeResponse{}, nil
+	}
+	if err := d.checkNodeMountAdmission(ctx); err != nil {
+		return nil, err
 	}
 
 	if !d.enableAzureLustreMockMount {

@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: csi-azurelustre-status-controller
+      app.kubernetes.io/component: status-controller
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app: csi-azurelustre-status-controller
+        app.kubernetes.io/component: status-controller
+        {{- include "azurelustre.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "azurelustre.serviceAccountNameStatusController" . }}
+      nodeSelector:
+        {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      tolerations:
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: NotIn
+                    values:
+                      - virtual-kubelet
+                  - key: kubernetes.azure.com/cluster
+                    operator: Exists
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.azure.com/mode
+                    operator: NotIn
+                    values:
+                      - system
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-status-controller
+                topologyKey: topology.kubernetes.io/zone
+              weight: 10
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - csi-azurelustre-status-controller
+                topologyKey: kubernetes.io/hostname
+              weight: 5
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: status-controller
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --status-controller-only=true
+            {{- with .Values.statusController.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: AZURELUSTRE_CSI_ROLE
+              value: status-controller
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: COMPATIBILITY_POLICY_CONFIGMAP
+              value: {{ include "azurelustre.fullname" . }}-compatibility-policy
+            - name: STATUS_CONTROLLER_ELECTION_NAMESPACE
+              value: {{ include "azurelustre.statusControllerElectionNamespace" . }}
+          ports:
+            - name: health
+              containerPort: 29654
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
