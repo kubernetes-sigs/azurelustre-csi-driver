@@ -101,7 +101,10 @@ node:
       operator: "Exists"
       effect: "NoSchedule"
   updateStrategy:
-    maxUnavailable: 10%
+    type: OnDelete
+    # Only used when type is RollingUpdate; OnDelete has no rollout budget.
+    rollingUpdate:
+      maxUnavailable: 10%
   priorityClassName: system-node-critical
   extraArgs: ["-v=5"]
   jammy:

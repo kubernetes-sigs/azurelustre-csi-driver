@@ -51,6 +51,74 @@ fast_exit () {
     exit 1
 }
 
+# OnDelete intentionally permits old revisions. RollingUpdate must finish its
+# rollout as well as report Ready; Ready old pods alone are not a rollout barrier.
+daemonset_readiness () {
+    jq -r '
+        (.status.desiredNumberScheduled // 0) as $desired
+        | (.status.observedGeneration // 0) >= .metadata.generation
+          and (.status.currentNumberScheduled // 0) == $desired
+          and (.status.numberReady // 0) == $desired
+          and (.status.numberAvailable // 0) == $desired
+          and (.status.numberUnavailable // 0) == 0
+          and (.status.numberMisscheduled // 0) == 0
+          and (.spec.updateStrategy.type == "OnDelete"
+               or (.spec.updateStrategy.type == "RollingUpdate"
+                   and (.status.updatedNumberScheduled // 0) == $desired))
+    ' <<<"$1"
+}
+
+# DaemonSetStatus has no updateRevision. Only a controller-owned history whose
+# saved template matches the desired template identifies the desired pod hash.
+# Empty output means the controller has not yet materialized an unambiguous match.
+daemonset_desired_revision () {
+    local daemonset_json=$1
+    local histories
+    histories=$(kubectl get controllerrevisions -n kube-system -o json) || return 1
+    jq -r --argjson ds "${daemonset_json}" '
+        [
+            .items[]
+            | select(any(.metadata.ownerReferences[]?;
+                .kind == "DaemonSet" and .controller == true and .uid == $ds.metadata.uid))
+            | select((.data.spec.template | del(."$patch")) == $ds.spec.template)
+        ]
+        | if length == 1 then .[0].metadata.labels["controller-revision-hash"] // ""
+          else "" end
+    ' <<<"${histories}"
+}
+
+wait_for_csi_driver_ready () {
+    local timeout_seconds=${1:-600}
+    local deadline=$((SECONDS + timeout_seconds))
+    local daemonsets=(
+        csi-azurelustre-node-jammy
+        csi-azurelustre-node-noble
+        csi-azurelustre-node-azurelinux3
+    )
+
+    kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout="${timeout_seconds}s" || return 1
+
+    local daemonset
+    for daemonset in "${daemonsets[@]}"; do
+        local ready=false
+        while (( SECONDS < deadline )); do
+            local status
+            status=$(kubectl get daemonset "${daemonset}" -n kube-system \
+                -o json) || return 1
+            ready=$(daemonset_readiness "${status}") || return 1
+            if [[ "${ready}" == "true" ]]; then
+                break
+            fi
+            sleep 5
+        done
+
+        if [[ "${ready}" != "true" ]]; then
+            print_logs_error "timed out waiting for ${daemonset} pods to be ready"
+            return 1
+        fi
+    done
+}
+
 reset_csi_driver () {
     echo "Reset CSI driver"
 
@@ -80,11 +148,7 @@ reset_csi_driver () {
     kubectl apply -f "${REPO_ROOT_PATH}"/deploy/csi-azurelustre-node-noble.yaml
     kubectl apply -f "${REPO_ROOT_PATH}"/deploy/csi-azurelustre-node-azurelinux3.yaml
 
-    # Wait for new generation of pods to roll out (avoids racing on stale pod snapshots)
-    kubectl rollout status -n kube-system deployment/csi-azurelustre-controller --timeout=600s
-    kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-jammy --timeout=600s
-    kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-noble --timeout=600s
-    kubectl rollout status -n kube-system daemonset/csi-azurelustre-node-azurelinux3 --timeout=600s
+    wait_for_csi_driver_ready 600
 }
 
 get_worker_node_num () {
