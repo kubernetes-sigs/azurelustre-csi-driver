@@ -108,6 +108,9 @@ spec:
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
               readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
+              readOnly: true
           resources:
             {{- toYaml .Values.node.jammy.resources | nindent 12 }}
       containers:
@@ -222,6 +225,8 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            - name: MOUNT_ADMISSION_POLICY_ENABLED
+              value: {{ .Values.compatibilityPolicy.mountAdmission.capabilityEnabled | quote }}
           securityContext:
             privileged: true
           volumeMounts:
@@ -240,6 +245,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             {{- toYaml .Values.node.jammy.resources | nindent 12 }}
@@ -272,4 +280,8 @@ spec:
           configMap:
             name: csi-azurelustre-entrypoint
             defaultMode: 0755
+            optional: true
+        - name: compatibility-policy
+          configMap:
+            name: {{ include "azurelustre.fullname" . }}-compatibility-policy
             optional: true

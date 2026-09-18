@@ -1,0 +1,161 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-azurelustre-status-controller-sa
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: csi-azurelustre-status-controller
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: csi-azurelustre-status-controller
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+subjects:
+  - kind: ServiceAccount
+    name: csi-azurelustre-status-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-azurelustre-status-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csi-azurelustre-status-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - controllerrevisions
+      - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - azurelustre.csi.azure.com
+    resources:
+      - azurelustrenodestatuses
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - azurelustre.csi.azure.com
+    resources:
+      - azurelustrenodestatuses/status
+    verbs:
+      - get
+      - update
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: status-controller-election
+  namespace: azurelustre-control-f78b1d92acb5c8bd47911576df92b345
+  labels:
+    app.kubernetes.io/component: status-controller-election
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["azurelustre-node-status-controller"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: csi-azurelustre-status-controller
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: status-controller
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: v0.6.0
+subjects:
+  - kind: ServiceAccount
+    name: csi-azurelustre-status-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: csi-azurelustre-status-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: status-controller-election
+  namespace: azurelustre-control-f78b1d92acb5c8bd47911576df92b345
+  labels:
+    app.kubernetes.io/component: status-controller-election
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+subjects:
+  - kind: ServiceAccount
+    name: csi-azurelustre-status-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: status-controller-election
+  apiGroup: rbac.authorization.k8s.io
