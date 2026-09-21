@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 spec:
   minAvailable: 1
   selector:

@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 rules:
   - apiGroups:
       - ""
@@ -37,7 +37,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 subjects:
   - kind: ServiceAccount
     name: csi-azurelustre-status-controller-sa
@@ -56,7 +56,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 rules:
   - apiGroups:
       - ""
@@ -132,7 +132,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 subjects:
   - kind: ServiceAccount
     name: csi-azurelustre-status-controller-sa

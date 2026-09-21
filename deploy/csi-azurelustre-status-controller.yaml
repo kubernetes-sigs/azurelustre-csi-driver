@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: status-controller
     app.kubernetes.io/name: azurelustre-csi-driver
     app.kubernetes.io/part-of: azurelustre-csi-driver
-    app.kubernetes.io/version: v0.6.0
+    app.kubernetes.io/version: latest
 spec:
   replicas: 2
   selector:
@@ -24,7 +24,7 @@ spec:
         app.kubernetes.io/component: status-controller
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: v0.6.0
+        app.kubernetes.io/version: latest
     spec:
       serviceAccountName: csi-azurelustre-status-controller-sa
       nodeSelector:
@@ -88,7 +88,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: status-controller
-          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble
+          image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
           imagePullPolicy: Always
           args:
             - --status-controller-only=true
