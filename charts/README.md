@@ -40,14 +40,10 @@ The chart uses the unreleased `latest` image by default.
 ## Upgrade
 
 > [!IMPORTANT]
-> **Stop every workload using Lustre on the affected nodes before upgrading.** An
-> upgrade restarts the node pods. If the release changes the Lustre client
-> version, the new kernel modules can only load once the old ones are unloaded,
-> and the kernel refuses to unload them while any Lustre filesystem is mounted.
-> Drain or scale down every pod holding a Lustre volume first, and **wait until
-> the volumes are actually unmounted before upgrading** -- deleting a pod returns
-> before the kubelet has finished unmounting its volumes, and an upgrade started
-> in that window hits a mount that is still going away.
+> Node DaemonSets default to `OnDelete`. A Helm upgrade stages the new pod
+> template but does not replace existing node pods solely because the template
+> changed. Existing nodes continue using their current CSI node pod and loaded
+> Lustre client until the pod or node is replaced through a safe lifecycle.
 
     CHART_VERSION=A.B.C
     helm upgrade azurelustre \
@@ -59,11 +55,14 @@ Or from local chart:
 
     helm upgrade azurelustre ./charts/latest/azurelustre-csi-driver --namespace kube-system
 
-If Lustre volumes are still mounted when the new node pods start and the release
-changes the client version, the upgrade does not take effect on those nodes: the
-old client stays resident, mounts keep using the old version, and the
-`lustre-loader` container logs a `WARNING` naming both versions. Stop the
-workloads and restart the node pods to complete the upgrade.
+Newly created eligible node pods use the current template. Before manually
+deleting an existing node pod, cordon and drain the node and verify that no
+Lustre mounts remain. Do not use `kubectl rollout restart` to activate a new
+client on mounted nodes.
+
+Standalone Helm users can opt into Kubernetes-managed rolling replacement with
+`--set node.updateStrategy.type=RollingUpdate`. Before doing so, drain every
+affected node and verify that its Lustre filesystems are fully unmounted.
 
 ## Uninstall
 
@@ -108,7 +107,8 @@ driver image family when it packages a chart:
 | `controller.extraArgs` | Extra args passed to controller driver | `["-v=5"]` |
 | `node.priorityClassName` | Node pod priority class | `system-node-critical` |
 | `node.tolerations` | Node DaemonSet tolerations. Tolerates common AKS user-pool taints (spot, GPU) but **not** `CriticalAddonsOnly`, so the plugin stays off reserved/tainted system pools. Overriding **replaces** this set — for custom-tainted Lustre pools, include the spot/GPU entries you still need. | spot + `sku=gpu` + `nvidia.com/gpu` |
-| `node.updateStrategy.maxUnavailable` | Max node pods unavailable during a rolling update | `10%` |
+| `node.updateStrategy.type` | Node DaemonSet update strategy. `OnDelete` stages changes without replacing existing node pods. | `OnDelete` |
+| `node.updateStrategy.rollingUpdate.maxUnavailable` | Maximum unavailable node pods when explicitly using `RollingUpdate` | `10%` |
 | `node.jammy.lustreClient.version` | Lustre client version for jammy flavor | `2.15.8` |
 | `node.jammy.lustreClient.shaSuffix` | Lustre client SHA suffix for jammy flavor | `39-g2d32b59` |
 | `node.noble.lustreClient.version` | Lustre client version for noble flavor | `2.17.0` |

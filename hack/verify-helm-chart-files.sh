@@ -335,6 +335,97 @@ check_node_template_consistency() {
   return 0
 }
 
+check_node_rollout_safety() {
+  local version=${1}
+  local chart_dir="./charts/${version}/azurelustre-csi-driver"
+  local rendered
+  local rollout_issues=false
+
+  echo "== Checking node DaemonSet rollout safety for version: ${version} =="
+
+  if ! rendered=$(helm template \
+    --set "fullnameOverride=csi-azurelustre" \
+    --namespace kube-system \
+    chart-test \
+    "${chart_dir}" 2>&1); then
+    echo "ERROR: helm template failed while checking node rollout safety:"
+    echo "${rendered}"
+    echo
+    return 1
+  fi
+
+  local node_count expected_count
+  node_count=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node") | .metadata.name' - |
+    sed '/^---$/d' | wc -l)
+  expected_count=$(wc -w <<<"${ALL_FLAVORS}")
+  if [[ "${node_count}" -ne "${expected_count}" ]]; then
+    echo "ERROR: expected ${expected_count} node DaemonSets, found ${node_count}"
+    rollout_issues=true
+  fi
+
+  local unsafe_strategy
+  unsafe_strategy=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(.spec.updateStrategy.type != "OnDelete" or .spec.updateStrategy.rollingUpdate != null)
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${unsafe_strategy}" ]]; then
+    echo "ERROR: node DaemonSets must default to OnDelete without rollingUpdate settings:"
+    echo "${unsafe_strategy}"
+    rollout_issues=true
+  fi
+
+  local unstable_labels
+  unstable_labels=$(printf '%s\n' "${rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(
+          .spec.template.metadata.labels."app.kubernetes.io/version" != null or
+          .spec.template.metadata.labels."helm.sh/chart" != null
+        )
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${unstable_labels}" ]]; then
+    echo "ERROR: chart/app version labels must not create node pod-template revisions:"
+    echo "${unstable_labels}"
+    rollout_issues=true
+  fi
+
+  local rolling_rendered rolling_issues
+  if ! rolling_rendered=$(helm template \
+    --set "fullnameOverride=csi-azurelustre" \
+    --set "node.updateStrategy.type=RollingUpdate" \
+    --set "node.updateStrategy.rollingUpdate.maxUnavailable=1" \
+    --namespace kube-system \
+    chart-test \
+    "${chart_dir}" 2>&1); then
+    echo "ERROR: helm template failed for the standalone RollingUpdate override:"
+    echo "${rolling_rendered}"
+    echo
+    return 1
+  fi
+
+  rolling_issues=$(printf '%s\n' "${rolling_rendered}" | yq eval \
+    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+      | select(
+          .spec.updateStrategy.type != "RollingUpdate" or
+          .spec.updateStrategy.rollingUpdate.maxUnavailable != 1
+        )
+      | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${rolling_issues}" ]]; then
+    echo "ERROR: standalone RollingUpdate override did not render as requested:"
+    echo "${rolling_issues}"
+    rollout_issues=true
+  fi
+
+  if [[ "${rollout_issues}" == true ]]; then
+    echo
+    return 1
+  fi
+
+  echo "Node DaemonSets default to OnDelete with stable pod-template labels"
+  echo
+  return 0
+}
+
 check_source_version_metadata() {
   # Ev2 injects release metadata into a temporary copy before packaging.
   # Keep the canonical source chart version-neutral.
@@ -706,6 +797,11 @@ else
   if ! check_node_template_consistency "${version}"; then
     issues_found=true
     failures+=("Node template consistency check (version: ${version})")
+  fi
+
+  if ! check_node_rollout_safety "${version}"; then
+    issues_found=true
+    failures+=("Node rollout safety check (version: ${version})")
   fi
 
   if ! check_source_version_metadata "${version}"; then

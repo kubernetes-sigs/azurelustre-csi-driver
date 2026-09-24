@@ -326,11 +326,14 @@ Pass `--custom-entrypoint <file>` to the install script:
 ./deploy/install-driver.sh --custom-entrypoint ./my-entrypoint.sh local
 ```
 
-This creates a ConfigMap from the provided file and restarts the node DaemonSet pods to use it.
+This creates or updates the ConfigMap. Existing `OnDelete` node pods continue
+using their current entrypoint until they are safely replaced.
 
 #### Helm
 
-The Helm chart always mounts the custom entrypoint ConfigMap as optional, so no chart upgrade is needed. Create the ConfigMap and restart the node pods:
+The Helm chart always mounts the custom entrypoint ConfigMap as optional, so no
+chart upgrade is needed. Create the ConfigMap, then replace node pods only after
+cordoning and draining their nodes and verifying that no Lustre mounts remain:
 
 ```shell
 # Create the ConfigMap from your custom entrypoint script
@@ -338,8 +341,11 @@ kubectl create configmap csi-azurelustre-entrypoint \
   --from-file=entrypoint.sh=./my-entrypoint.sh \
   -n kube-system
 
-# Restart node DaemonSet pods to pick up the custom entrypoint
-kubectl rollout restart daemonset -l app=csi-azurelustre-node -n kube-system
+# After safely draining one node, delete only that node's CSI pod.
+kubectl delete pod -n kube-system <drained-node-csi-pod>
+kubectl wait -n kube-system --for=condition=Ready \
+  pod/<replacement-node-csi-pod> --timeout=10m
+kubectl uncordon <node-name>
 ```
 
 ### Reverting to the Built-in Entrypoint
@@ -352,15 +358,21 @@ Run the install script without the `--custom-entrypoint` flag:
 ./deploy/install-driver.sh local
 ```
 
-This deletes the ConfigMap and restarts the node pods to use the built-in entrypoint. **The custom entrypoint is not sticky** — each install must explicitly request it.
+This deletes the ConfigMap. Existing `OnDelete` node pods continue using the
+custom entrypoint until they are safely replaced. **The custom entrypoint is not
+sticky** -- each install must explicitly request it.
 
 #### Revert with Helm
 
-Delete the ConfigMap and restart the node pods:
+Delete the ConfigMap, then replace each node pod only after safely draining its
+node and verifying that no Lustre mounts remain:
 
 ```shell
 kubectl delete configmap csi-azurelustre-entrypoint -n kube-system --ignore-not-found
-kubectl rollout restart daemonset -l app=csi-azurelustre-node -n kube-system
+kubectl delete pod -n kube-system <drained-node-csi-pod>
+kubectl wait -n kube-system --for=condition=Ready \
+  pod/<replacement-node-csi-pod> --timeout=10m
+kubectl uncordon <node-name>
 ```
 
 ### Important Notes
@@ -370,5 +382,7 @@ kubectl rollout restart daemonset -l app=csi-azurelustre-node -n kube-system
 - The `lustre-loader` sidecar's readiness is gated by `/app/readinessProbe.sh` (an LNet health check) that the kubelet runs **directly** — it is **not** overridable by the custom entrypoint. A `loader` custom script that does not bring LNet up the way the probe expects will fail the sidecar's `startupProbe`, which keeps the `azurelustre` and `node-driver-registrar` containers from starting and the node pod from ever reaching `Ready`.
 - **Migration note:** earlier driver versions selected behavior with `AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT` (`yes`/`no`); this has been replaced by `AZURELUSTRE_CSI_ROLE` (`loader`/`driver`/`controller`). A custom entrypoint carried over from before the sidecar split must be updated to read `AZURELUSTRE_CSI_ROLE` and implement the `loader` and `driver` roles separately.
 - **Security note:** the custom entrypoint is stored in the `csi-azurelustre-entrypoint` ConfigMap in `kube-system` and is executed by a privileged container. Treat this as a code-injection path: tightly restrict RBAC for creating or updating this ConfigMap, and only use custom entrypoints in trusted/admin scenarios.
-- If you edit the ConfigMap directly (e.g., `kubectl edit configmap csi-azurelustre-entrypoint -n kube-system`), you must manually restart the node DaemonSets for changes to take effect: `kubectl rollout restart daemonset csi-azurelustre-node-jammy csi-azurelustre-node-noble csi-azurelustre-node-azurelinux3 -n kube-system`
+- If you edit the ConfigMap directly, existing node pods do not pick up the
+  change. Replace each pod only after safely draining its node and verifying
+  that no Lustre mounts remain.
 - The uninstall script automatically cleans up the ConfigMap if it exists.
