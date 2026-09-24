@@ -100,7 +100,7 @@ func (r *DefaultCommandRunner) RunWithTimeout(ctx context.Context, timeout time.
 	cmdTimeout, cmdCancel := context.WithTimeout(ctx, timeout)
 	defer cmdCancel()
 
-	command := exec.CommandContext(cmdTimeout, cmd, args...)
+	command := exec.CommandContext(cmdTimeout, cmd, args...) // #nosec G204 -- Callers select the executable; arguments are passed directly without a shell.
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), err
