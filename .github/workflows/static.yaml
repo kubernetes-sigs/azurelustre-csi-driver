@@ -4,7 +4,7 @@ name: Static Checks
 # Controls when the workflow will run
 on:
   pull_request:
-    branches: [main, development, 'personal/jebearer/39726547-*']
+    branches: [main, development]
   push:
     branches: [main, development, 'release/**']
   # Allows you to run this workflow manually from the Actions tab
