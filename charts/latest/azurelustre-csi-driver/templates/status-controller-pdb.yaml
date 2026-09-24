@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "azurelustre.fullname" . }}-status-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: status-controller
+    {{- include "azurelustre.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: csi-azurelustre-status-controller
+      app.kubernetes.io/component: status-controller

@@ -18,19 +18,33 @@ set -euo pipefail
 
 repo="$(git rev-parse --show-toplevel)/deploy"
 
+# Refuse to delete or modify a shared/Helm-owned election namespace.
+namespace_owner=$(kubectl get -f "${repo}/namespace-csi-azurelustre-status-controller.yaml" --ignore-not-found \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}{"|"}{.metadata.labels.app\.kubernetes\.io/component}{"|"}{.metadata.annotations.meta\.helm\.sh/release-name}')
+if [[ -n "${namespace_owner}" && "${namespace_owner}" != "azurelustre-static|status-controller-election|" ]]; then
+  echo "Refusing uninstall with a non-exclusive or Helm-owned election namespace." >&2
+  exit 1
+fi
+
 for i in $(kubectl get daemonsets.apps -n kube-system -l app=csi-azurelustre-node -o name); do
   kubectl delete -n kube-system "${i}"
 done
 
 echo "Uninstalling Azure Lustre CSI driver, repo: ${repo} ..."
 kubectl delete -f "${repo}"/csi-azurelustre-controller.yaml --ignore-not-found
+kubectl delete -f "${repo}"/csi-azurelustre-status-controller.yaml --ignore-not-found \
+  --cascade=foreground --wait=true --timeout=90s
 kubectl delete -f "${repo}"/pdb-csi-azurelustre-controller.yaml --ignore-not-found
+kubectl delete -f "${repo}"/pdb-csi-azurelustre-status-controller.yaml --ignore-not-found
 kubectl delete -f "${repo}"/csi-azurelustre-node-jammy.yaml --ignore-not-found
 kubectl delete -f "${repo}"/csi-azurelustre-node-noble.yaml --ignore-not-found
 kubectl delete -f "${repo}"/csi-azurelustre-node-azurelinux3.yaml --ignore-not-found
 kubectl delete -f "${repo}"/csi-azurelustre-driver.yaml --ignore-not-found
+kubectl delete -f "${repo}"/azurelustre-compatibility-policy.yaml --ignore-not-found
 kubectl delete -f "${repo}"/rbac-csi-azurelustre-controller.yaml --ignore-not-found
 kubectl delete -f "${repo}"/rbac-csi-azurelustre-node.yaml --ignore-not-found
+kubectl delete -f "${repo}"/rbac-csi-azurelustre-status-controller.yaml --ignore-not-found
+kubectl delete -f "${repo}"/namespace-csi-azurelustre-status-controller.yaml --ignore-not-found
 kubectl delete configmap csi-azurelustre-entrypoint -n kube-system --ignore-not-found
 
 # Clean up legacy RBAC resources from older installs.
