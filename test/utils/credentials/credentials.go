@@ -137,8 +137,8 @@ func DeleteAzureCredentialFile() error {
 // getCredentialsFromAzureCredentials parses the azure credentials toml (AZURE_CREDENTIALS)
 // in Prow and returns the credential information usable to Azure Lustre CSI driver
 func getCredentialsFromAzureCredentials(azureCredentialsPath string) (*FromProw, error) {
-	content, err := os.ReadFile(azureCredentialsPath) // #nosec G304 // Using env var for test, not production concern
-	log.Printf("Reading credentials file %v", azureCredentialsPath)
+	content, err := os.ReadFile(azureCredentialsPath)               // #nosec G304 G703 -- The test operator selects the credential file through AZURE_CREDENTIALS.
+	log.Printf("Reading credentials file %q", azureCredentialsPath) // #nosec G706 -- %q escapes control characters in the operator-supplied path.
 	if err != nil {
 		return nil, fmt.Errorf("error reading credentials file %v %w", azureCredentialsPath, err)
 	}
