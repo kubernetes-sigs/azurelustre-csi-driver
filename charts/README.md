@@ -4,6 +4,7 @@
 
 | Chart version | Driver image family |
 | --- | --- |
+| 0.6.0 | v0.6.0 |
 
 Install only versions listed above. To see every chart tag currently published to the
 registry — including pre-release and customer-hidden preview tags that are **not**
@@ -14,13 +15,13 @@ supported for general install — list them directly:
 ## Install a released chart
 
 Released charts are OCI artifacts in MCR. Set `CHART_VERSION` to the exact Helm
-chart version (`A.B.C`) listed under [Released chart versions](#released-chart-versions).
+chart version (for example: `0.6.0`) listed under [Released chart versions](#released-chart-versions).
 The chart version is also its immutable OCI tag. The table maps it to the
 independent driver image family selected by `image.tag`; `appVersion` reports
 that driver release as informational metadata.
 
-    CHART_VERSION=A.B.C
-    helm install azurelustre \
+    CHART_VERSION=0.6.0
+    helm install azurelustre --wait \
       oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
       --namespace kube-system --create-namespace \
       --version "${CHART_VERSION}"
@@ -49,8 +50,8 @@ The chart uses the unreleased `latest` image by default.
 > before the kubelet has finished unmounting its volumes, and an upgrade started
 > in that window hits a mount that is still going away.
 
-    CHART_VERSION=A.B.C
-    helm upgrade azurelustre \
+    CHART_VERSION=0.6.0
+    helm upgrade azurelustre --wait \
       oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
       --namespace kube-system \
       --version "${CHART_VERSION}"

@@ -47,7 +47,7 @@ The `latest` image tag identifies unreleased builds from `development`.
 | Branch | Code and image state | Documentation state |
 | --- | --- | --- |
 | `development` | Ongoing integration and source of product and chart fixes. `IMAGE_VERSION` and deploy images/labels use `latest`; the source chart remains version-neutral. | Product PRs update the `development branch` compatibility row and `Chart configuration` defaults. Step 8 adds published release rows and the recommended chart version. |
-| `release/vX.Y.Z` | Selected development history plus one release-only commit that sets `vX.Y.Z` in the Makefile and deploy manifests. RC and stable driver tags point to validated snapshots. | Inherits the tables and examples from the selected development cut. The branch is frozen after the stable tag. |
+| `release/vX.Y.Z` | Selected development history plus one release-only commit that sets `vX.Y.Z` in the Makefile and deploy manifests. RC and stable driver tags point to validated snapshots. | Updates driver image and DALEC version examples. Published release tables and the recommended chart version remain inherited from the selected development cut. The branch is frozen after the stable tag. |
 | `main` | Validated product history and deploy manifests. `IMAGE_VERSION` remains `latest`; the source chart remains version-neutral. | Step 7 updates the published driver rows, chart-to-driver table, recommended chart version, and current development row. |
 
 Configure the repository accordingly:
@@ -67,8 +67,8 @@ tag's commit SHA and builds with `make azurelustre-dalec`. DALEC supplies the
 tag-derived version as `IMAGE_VERSION`, overriding the Makefile's conditional
 default.
 
-DALEC accepts lightweight and annotated Git tags. Azure Lustre uses annotated
-release tags by repository convention; annotation is not a DALEC requirement.
+DALEC accepts lightweight and annotated Git tags. Azure Lustre uses lightweight
+release tags by repository convention.
 The DALEC bot discovers upstream tags by polling `git ls-remote --tags` at
 09:00 UTC Monday through Friday, or when its workflow is dispatched manually.
 Pushing a CSI tag does not invoke DALEC synchronously, so wait for the next poll
@@ -128,9 +128,16 @@ Make all release-only changes in one commit at the branch tip:
 - **Deploy manifests**: in every `deploy/*.yaml` containing the driver image,
   change `...:latest-<flavor>` to `...:vX.Y.Z-<flavor>`. Change every
   `app.kubernetes.io/version` label from `latest` to `vX.Y.Z`.
+- **Version examples**: update driver image tags and DALEC version examples in
+  `deploy/README-distribution-specific.md`, `docs/csi-debug.md`,
+  `docs/csi-dev.md`, and `test/integration_dalec/README.md` for `vX.Y.Z`.
+  Keep the documented Git/image tag and package/spec version formats, including
+  the hyphen and tilde forms in prerelease examples.
 
-The snapshot commit changes only the Makefile and deploy manifests. The chart
-source and documentation remain as inherited from `development`.
+The snapshot commit changes only the Makefile, deploy manifests, and version
+examples listed above. The source chart, published release tables, and
+recommended chart version remain as inherited from `development`; publication
+records are added in Step 7.
 
 ### Audit the release surface
 
@@ -143,7 +150,8 @@ for `latest`. Review each result rather than expecting no matches
 (`<PREVIOUS>` should match the most recent released version):
 
 ```console
-git grep -n -E 'v<PREVIOUS>|latest' -- Makefile deploy charts README.md docs
+git grep -n -E 'v<PREVIOUS>|latest' -- Makefile deploy charts README.md docs \
+  test/integration_dalec/README.md
 ```
 
 Confirm that:
@@ -312,7 +320,7 @@ available in MCR. In `Avere-laaso-clients`, open a reviewed PR that updates
 - Set the `driverImageVersion` default to `vX.Y.Z`.
 - Review the pinned chart source and every enabled image flavor.
 
-Resolve the commit SHA for the annotated tag with:
+Resolve the tag's commit SHA with:
 
 ```console
 git rev-parse 'vX.Y.Z^{}'
@@ -393,41 +401,51 @@ This merge includes the selected product history, including any source-chart
 changes that preceded the driver tag, but excludes the release-only snapshot
 commit.
 
+### Prepare the deploy manifests
+
+Restore the deploy manifests from the stable tag. Commit them before applying
+any post-tag fixes so the cherry-picks start from a clean working tree:
+
+```console
+git restore --source vX.Y.Z -- deploy
+git add deploy
+git commit -m "Prepare vX.Y.Z deploy manifests"
+```
+
 ### Pull in any post-tag chart fixes if necessary
 
 If the final `chartGitRef` includes focused chart fixes reviewed after
-the stable driver tag, include those exact commits now:
+the stable driver tag, include those exact commits and their matching deploy
+changes now:
 
 ```console
 git cherry-pick -x <post-tag-chart-fix-commit> ...
 ```
 
+Resolve any conflicts by preserving the fixes and the `vX.Y.Z` image tags and
+version labels. After applying the fixes, ensure all driver images and
+`app.kubernetes.io/version` labels still use `vX.Y.Z` as in Step 1.
 Do not merge an unbounded newer `development` head.
-
-Prepare the deploy manifests that correspond to the final chart source:
-
-- Since `chartGitRef` is the stable tag commit, restore the manifests from that
-  tag:
-
-```console
-git restore --source vX.Y.Z -- deploy
-```
-
-- Keep the matching deploy changes from those commits and ensure their driver
-  images and `app.kubernetes.io/version` labels are `vX.Y.Z` as in Step 1.
 
 ### Record the published release
 
 Update the existing release documentation:
 
-- In `README.md`, update the surrounding flavor text, the `main branch` row,
-  and the new `vX.Y.Z` row from the stable tag. Copy the current `development
-  branch` row from `origin/development`. Keep the existing historical rows.
+- In `README.md`, derive the `main branch` row and new `vX.Y.Z` row from the
+  stable tag's deploy manifests and chart configuration, and update the
+  surrounding flavor text accordingly. The release rows need not already exist
+  in the tagged README. Copy the current `development branch` row from
+  `origin/development`. Keep the existing historical rows.
 - In `charts/README.md`, record the actual promoted chart version `A.B.C` and
   its driver image family `vX.Y.Z`. Set the recommended install and upgrade
   examples to `A.B.C`.
 - In `docs/install-csi-driver.md`, set the recommended Helm install and upgrade
   examples to the same promoted `A.B.C`.
+- Copy the driver image and DALEC version examples prepared in Step 1 from the
+  stable tag into
+  `deploy/README-distribution-specific.md`, `docs/csi-debug.md`,
+  `docs/csi-dev.md`, and `test/integration_dalec/README.md`. Preserve any reviewed
+  post-tag corrections.
 - Keep `IMAGE_VERSION ?= latest`.
 - Keep the source chart at `version: 0.0.0`, `appVersion: latest`, and
   `image.tag: latest`.
@@ -441,7 +459,8 @@ diff from `main`:
 ```console
 git diff --stat main...HEAD
 git diff main...HEAD
-git grep -n -E 'vPREVIOUS|latest' -- Makefile deploy charts README.md docs
+git grep -n -E 'vPREVIOUS|latest' -- Makefile deploy charts README.md docs \
+  test/integration_dalec/README.md
 ```
 
 Open one reviewed PR from the temporary branch to `main`. Confirm that it
@@ -453,12 +472,16 @@ unrelated `development` work is absent.
 
 After the `main` PR merges, cut the
 [GitHub Release](https://github.com/kubernetes-sigs/azurelustre-csi-driver/releases)
-on the driver tag. The release notes should state that Helm chart `A.B.C`
-deploys driver image family `vX.Y.Z`, but `charts/README.md` is the authoritative
-chart-to-driver mapping because chart-only releases do not create driver tags.
+on the driver tag. The release notes should identify the promoted chart version
+and the driver version it deploys. The example below prepends that mapping to
+the generated notes; use the actual versions and adapt the wording as needed.
+`charts/README.md` remains the authoritative chart-to-driver mapping because
+chart-only releases do not create driver tags.
 
 ```console
-gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --generate-notes
+gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" \
+  --notes "Helm chart A.B.C deploys driver image family vX.Y.Z." \
+  --generate-notes
 ```
 
 ## Step 8 - Update development's published records
@@ -481,9 +504,14 @@ Update the existing tables and examples:
   defaults from `development`.
 - Copy the recommended `CHART_VERSION=A.B.C` examples in
   `docs/install-csi-driver.md` from `main`.
+- Copy updated driver image and DALEC version examples from
+  `deploy/README-distribution-specific.md`, `docs/csi-debug.md`,
+  `docs/csi-dev.md`, and `test/integration_dalec/README.md` on `main`.
 
-The resulting PR changes only these three documentation files. Review it and
-run the canonical validation. Open the normal reviewed PR to `development`.
+The resulting PR is documentation-only. Do not copy release-pinned deploy
+manifests or overwrite the development image version, source chart, or newer
+product changes. Review the full diff and run the canonical validation. Open
+the normal reviewed PR to `development`.
 
 ## Chart-only releases
 
