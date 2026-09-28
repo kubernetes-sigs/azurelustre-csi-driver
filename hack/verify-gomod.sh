@@ -17,8 +17,14 @@
 set -euo pipefail
 
 echo "Verifying gomod"
-echo "go mod tidy"
-go mod tidy
+echo "go mod tidy -diff"
+if ! go mod tidy -diff; then
+  echo
+  echo "Go module verification failed; see the diff or error above."
+  echo "Run 'go mod tidy && go mod vendor' and commit the resulting changes."
+  exit 1
+fi
+
 echo "go mod vendor"
 go mod vendor
 diff=$(git diff vendor)
