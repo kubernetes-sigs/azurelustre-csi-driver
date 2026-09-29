@@ -17,9 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"time"
 
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
@@ -30,11 +32,14 @@ var (
 	nodeID                       = flag.String("nodeid", "", "node id")
 	version                      = flag.Bool("version", false, "Print the version and exit.")
 	driverName                   = flag.String("drivername", azurelustre.DefaultDriverName, "name of the driver")
+	preDeleteCheck               = flag.Bool("pre-delete-check", false, "Check for driver-owned PersistentVolumes and exit")
+	preDeleteCheckTimeout        = flag.Duration("pre-delete-check-timeout", 30*time.Second, "Timeout for the pre-delete PersistentVolume check")
 	enableAzureLustreMockMount   = flag.Bool("enable-azurelustre-mock-mount", false, "Whether enable mock mount(only for testing)")
 	enableAzureLustreMockDynProv = flag.Bool("enable-azurelustre-mock-dyn-prov", false, "Whether enable mock dynamic provisioning(only for testing)")
 	allowUnadvertisedZones       = flag.Bool("allow-unadvertised-zones", false, "Allow an explicitly specified zone when SKU metadata advertises none")
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
+	preDeleteCheckFunc           = azurelustre.CheckPersistentVolumesBeforeUninstall
 
 	errDriverInitFailed       = errors.New("failed to initialize Azure Lustre CSI driver")
 	errDriverRunReturnedEarly = errors.New("driver.Run returned unexpectedly")
@@ -51,6 +56,9 @@ func run() error {
 		return fmt.Errorf("failed to initialize klog flags: %w", err)
 	}
 	flag.Parse()
+	if *preDeleteCheck {
+		return runPreDeleteCheck(*preDeleteCheckTimeout, *driverName, preDeleteCheckFunc)
+	}
 	if *version {
 		info, err := azurelustre.GetVersionYAML(*driverName)
 		if err != nil {
@@ -65,6 +73,25 @@ func run() error {
 	}
 
 	return handle()
+}
+
+func runPreDeleteCheck(
+	timeout time.Duration,
+	driverName string,
+	check func(context.Context, string) error,
+) error {
+	if timeout <= 0 {
+		return errors.New("pre-delete check timeout must be greater than zero")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := check(ctx, driverName); err != nil {
+		return fmt.Errorf("pre-delete check failed: %w", err)
+	}
+
+	klog.Infof("No PersistentVolumes use CSI driver %q; allowing uninstall", driverName)
+	return nil
 }
 
 func handle() error {

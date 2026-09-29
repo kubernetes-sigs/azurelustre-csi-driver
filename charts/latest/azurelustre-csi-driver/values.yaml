@@ -162,6 +162,46 @@ csidriver:
   attachRequired: false
   podInfoOnMount: true
 
+# Pre-delete guard.
+#
+# Blocks `helm uninstall` while PersistentVolumes provisioned by this driver
+# still exist. Removing the driver first strands the backing AMLFS filesystem
+# (dynamic provisioning deletes it via the controller's DeleteVolume, which no
+# longer runs once the driver is gone) and leaves PVs stuck in Terminating with
+# stale node mounts. The check runs as a Helm pre-delete hook Job that reuses the
+# driver image in a standalone mode, so no extra image is introduced.
+# It only observes existing PV objects; stop provisioning before uninstall so a
+# CreateVolume operation cannot pass the check before its PV appears. Azure
+# extension resource deletion also occurs outside this Helm hook's control.
+#
+# Set enabled=false to allow uninstall without the guard. The guard is
+# fail-closed: if the check cannot run (for example the API call fails),
+# uninstall is blocked. Direct Helm users can explicitly bypass it with
+# `helm uninstall --no-hooks`. Do not use `az k8s-extension delete --force` as
+# a bypass: it can delete the Azure extension resource while leaving the Helm
+# release and driver workloads behind.
+preDeleteGuard:
+  enabled: true
+  # Inherit the driver image's pull policy unless explicitly overridden.
+  # IfNotPresent favors a cached copy, but requires an immutable image tag.
+  imagePullPolicy: ""
+  # Upper bound for Kubernetes API calls made by the guard process.
+  checkTimeout: 30s
+  # Schedules the guard Job promptly, including on busy clusters.
+  priorityClassName: system-cluster-critical
+  # Upper bound on how long `helm uninstall` may block on the guard Job. Sized to
+  # tolerate node scale-from-zero (e.g. AKS Automatic) before the check runs.
+  activeDeadlineSeconds: 300
+  # Retain a failed Job briefly for diagnostics, then remove it automatically.
+  ttlSecondsAfterFinished: 300
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 10m
+      memory: 20Mi
+
 # Microsoft Entra Workload Identity.
 #
 # For direct Helm installs, set IsWorkloadIdentityEnabled to "Enabled" and
