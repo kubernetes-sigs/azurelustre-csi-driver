@@ -18,7 +18,11 @@ set -euo pipefail
 
 echo "Verifying gofmt"
 
-diff=$(find . -name "*.go" -not -path "*/vendor/*" -print0 | xargs -0 -r gofmt -s -d 2>&1 || true)
+if ! diff=$(find . -name "*.go" -not -path "*/vendor/*" -print0 | xargs -0 -r gofmt -s -d 2>&1); then
+  printf '%s\n' "${diff}" >&2
+  echo "Go formatting verification could not complete." >&2
+  exit 1
+fi
 if [[ -n "${diff}" ]]; then
   echo "${diff}"
   echo

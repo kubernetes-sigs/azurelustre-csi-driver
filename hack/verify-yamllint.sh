@@ -21,7 +21,13 @@ if [[ -z "$(command -v yamllint)" ]]; then
   apt update && apt install yamllint -y
 fi
 
-for path in $(find docs deploy test .github/workflows -name '*.yaml' -o -name '*.yml') .golangci.yaml .yamllint.yaml
+paths_output=$(find docs deploy test .github/workflows -name '*.yaml' -o -name '*.yml')
+paths=()
+if [[ -n "${paths_output}" ]]; then
+  mapfile -t paths <<<"${paths_output}"
+fi
+paths+=(.golangci.yaml .yamllint.yaml)
+for path in "${paths[@]}"
 do
     echo "checking yamllint under path: ${path} ..."
     if ! output=$(yamllint --strict -f parsable "${path}" 2>&1); then

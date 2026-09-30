@@ -61,7 +61,7 @@ fi
 # behavior. `-x` follows `# shellcheck source=...` directives so that
 # `source` lines don't trigger SC1091 and so sourced files are linted
 # inline.
-mapfile -t scripts < <(
+scripts_output=$(
     find "${PKG_ROOT}" \
         \( -path "${PKG_ROOT}/_output" -o \
            -path "${PKG_ROOT}/vendor" -o \
@@ -70,6 +70,10 @@ mapfile -t scripts < <(
         -type f \( -name '*.sh' -o -name '*.bash' \) -print \
     | sort
 )
+scripts=()
+if [[ -n "${scripts_output}" ]]; then
+    mapfile -t scripts <<<"${scripts_output}"
+fi
 
 if [[ "${#scripts[@]}" -eq 0 ]]; then
     echo "Found no shell scripts to lint. Exiting as error."
@@ -83,9 +87,18 @@ echo "Verifying ${#scripts[@]} shell scripts with shellcheck v${SHELLCHECK_VERSI
 # this, so we enforce it with grep: the regex matches a disable directive
 # whose remainder (after `=`) contains no `#`, i.e. no justification comment.
 # `grep -H` prefixes each match with the file path, giving us a ready-to-print
-# `file:line:directive` line.  `|| true` keeps us from tripping `set -e` when
-# nothing matches (grep exits 1).
-mapfile -t bare_disables < <(grep -HnE '# shellcheck disable=[^#]*$' "${scripts[@]}" || true)
+# `file:line:directive` line. A grep status of 1 means no matches; other
+# nonzero statuses are errors.
+grep_status=0
+bare_disables_output=$(grep -HnE '# shellcheck disable=[^#]*$' "${scripts[@]}") || grep_status=$?
+if [[ "${grep_status}" -gt 1 ]]; then
+    echo "Could not inspect ShellCheck suppression directives." >&2
+    exit "${grep_status}"
+fi
+bare_disables=()
+if [[ -n "${bare_disables_output}" ]]; then
+    mapfile -t bare_disables <<<"${bare_disables_output}"
+fi
 
 if [[ "${#bare_disables[@]}" -gt 0 ]]; then
     echo "ERROR: Found shellcheck disable directive(s) without an explanation." >&2
