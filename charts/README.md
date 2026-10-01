@@ -6,6 +6,10 @@
 | --- | --- |
 | 0.6.0 | v0.6.0 |
 
+The uninstall guard described below is **unreleased development functionality**;
+it is not included in chart `0.6.0` or driver `v0.6.0`. Follow the safe teardown
+procedure even when the installed version has no guard.
+
 Install only versions listed above. To see every chart tag currently published to the
 registry — including pre-release and customer-hidden preview tags that are **not**
 supported for general install — list them directly:
@@ -40,6 +44,12 @@ The chart uses the unreleased `latest` image by default.
 
 ## Upgrade
 
+An in-place upgrade preserves existing PVCs and PVs and does not run the
+pre-delete hook. Do not remove volume objects merely to upgrade the driver.
+For manifest installations, follow the [upgrade-in-place
+instructions](../docs/install-csi-driver.md#install-with-kubectl) instead of
+uninstall/reinstall.
+
 > [!IMPORTANT]
 > **Stop every workload using Lustre on the affected nodes before upgrading.** An
 > upgrade restarts the node pods. If the release changes the Lustre client
@@ -68,25 +78,193 @@ workloads and restart the node pods to complete the upgrade.
 
 ## Uninstall
 
-Stop new volume provisioning and delete every PersistentVolumeClaim and
-PersistentVolume backed by `azurelustre.csi.azure.com` before uninstalling. The
-default pre-delete guard lists existing PersistentVolumes and blocks removal of
-the Helm release while any still reference the driver. It also blocks removal
-when the Kubernetes API cannot be queried.
+### Scope and prerequisites
 
-    helm uninstall azurelustre -n kube-system
+The development chart enables `preDeleteGuard.enabled` by default. Its Helm
+pre-delete Job blocks uninstall if **any** PersistentVolume (PV) has
+`spec.csi.driver` equal to the configured `csidriver.name`. This is a
+cluster-wide check, not a check of only the release namespace or mounted volumes.
+Static, dynamic, `Retain`, unbound, released, and terminating PVs all count.
+The guard also blocks uninstall if it cannot complete the check (fail-closed).
+It does not delete PVs, PVCs, data, or Azure resources for you.
 
-The guard only observes PersistentVolumes that already exist. It cannot detect
-a `CreateVolume` operation that has started creating an AMLFS filesystem but has
-not produced a PersistentVolume. Keep provisioning stopped throughout uninstall.
+Use a **matching chart and driver build** that implements
+`/app/azurelustreplugin --pre-delete-check`; the released `v0.6.0` binary does
+not. Pairing the development chart with that older binary blocks uninstall even
+with no PVs. The hook uses the selected driver image's `-noble` flavor on every
+node OS, inherits `image.pullPolicy` (default `Always`), and needs registry access
+at uninstall time. An explicit `preDeleteGuard.imagePullPolicy=IfNotPresent`
+override is appropriate only with an immutable image tag; it is not a fix for
+an incompatible or stale image.
 
-To bypass the check, disable `preDeleteGuard.enabled` in the release values
-before uninstalling, or skip all Helm hooks:
+The examples below use Bash, `kubectl`, and Helm 3.7 or later. Confirm your Kubernetes
+context, then set these to the installed release's values:
 
-    helm uninstall azurelustre -n kube-system --no-hooks
+    kubectl config current-context
+    RELEASE=azurelustre
+    NAMESPACE=kube-system
+    DRIVER=azurelustre.csi.azure.com
+    kubectl get csidriver "${DRIVER}"
 
-Bypassing can orphan a dynamically provisioned AMLFS filesystem or leave volume
-cleanup incomplete.
+Verify that `DRIVER` identifies the intended installation. A query using the
+wrong name can return an empty PV list even while the real driver has volumes.
+
+### Safe teardown procedure
+
+This procedure removes the driver and its volume objects. For a repair or
+in-place upgrade that must preserve PVCs/PVs, use [Upgrade](#upgrade) instead.
+
+1. **Stop provisioning and consumers, not the driver.** Pause automation that can
+   recreate workloads or PVCs, stop pods using Lustre, and wait for their mounts
+   to be released. Keep the controller and node plugins running to finish
+   `DeleteVolume` and unmount operations. An empty PV list is not enough if a
+   `CreateVolume` is still creating an AMLFS filesystem but has not produced its
+   PV. Wait for in-flight provisioning to finish and keep provisioning stopped
+   throughout teardown.
+
+2. **Inventory every matching PV and decide what data to keep.** This read-only
+   query prints PV name, claim namespace/name, reclaim policy, and phase. Change
+   `DRIVER` above if the installation overrides `csidriver.name`.
+
+       kubectl get pv -o "jsonpath={range .items[?(@.spec.csi.driver==\"${DRIVER}\")]}{.metadata.name}{\"\t\"}{.spec.claimRef.namespace}{\"/\"}{.spec.claimRef.name}{\"\t\"}{.spec.persistentVolumeReclaimPolicy}{\"\t\"}{.status.phase}{\"\n\"}{end}"
+
+   A query error is **not** proof that no PVs exist. Resolve API access errors
+   before proceeding. Record the PV specifications and backing filesystem
+   identifiers needed for recovery or reattachment.
+
+   | Volume / intended outcome | Required handling before uninstall |
+   | --- | --- |
+   | Dynamically created AMLFS, delete data | With `Delete` on the PV, deleting its PVC requests deletion of the **backing AMLFS filesystem and its data**. Confirm that deletion is intended and backups are adequate first. |
+   | Dynamically created AMLFS, preserve data | Set the **existing PV's** reclaim policy to `Retain` and verify it **before** deleting the claim. Changing only the StorageClass does not update existing PVs. |
+   | Static PV using an existing filesystem | Keep the customer-owned filesystem. Use `Retain` when removing its Kubernetes objects and preserve the mapping needed to reattach it. Do not delete the Azure filesystem merely to clear the guard. |
+
+   For a specific PV whose data must be retained, first save its definition:
+
+       PV=replace-with-pv-name
+       kubectl get pv "${PV}" -o yaml > "${PV}.yaml"
+
+   Stop if the export fails; verify the saved file contains the intended PV and
+   filesystem settings. It is a **reference**, not a manifest to reapply as-is:
+   it includes server-managed metadata, status, and a claim reference with the
+   old PVC's identity. Then change and verify the reclaim policy before deletion:
+
+       kubectl patch pv "${PV}" --type=merge \
+         -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+       kubectl get pv "${PV}" -o custom-columns=NAME:.metadata.name,RECLAIM:.spec.persistentVolumeReclaimPolicy
+
+   `Retain` is not a backup and does not undo a deletion already in progress.
+   See [dynamic volume deletion](../docs/dynamic-provisioning.md#delete-the-volume)
+   and [Kubernetes reclaim policies](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming).
+
+3. **Remove only the claims and PV objects covered by that plan.** Delete each
+   selected PVC in its own namespace after its consumers stop. For `Delete`,
+   let the still-running driver finish backend deletion and wait for the PV to
+   disappear; AMLFS deletion can take ten minutes or more. For `Retain`, the
+   PV normally remains `Released`: after confirming no consumers or claims
+   remain and preserving its mapping, delete that selected PV object. The
+   retained filesystem remains, continues to incur charges, and is your
+   responsibility to reattach or eventually delete. To reattach after installing
+   the driver, use fresh PV/PVC manifests from the [static provisioning
+   guide](../docs/static-provisioning.md#option-2-use-pv), the saved filesystem
+   settings, and a `Retain` policy; do not replay the old object's metadata or
+   claim binding.
+
+   Do not bulk-delete PVs or strip PV/PVC finalizers to get past the guard.
+   A stuck `Terminating` object needs its consumers, events, controller logs,
+   and backend operation investigated while the driver is still installed.
+   Re-run the inventory query; it must succeed with no matching PVs.
+
+4. **Uninstall through the installation's owner.** For a direct Helm installation:
+
+       helm uninstall "${RELEASE}" -n "${NAMESPACE}" --wait --timeout 6m
+
+   Six minutes allows the default five-minute hook Job deadline to finish.
+   Adjust the Helm timeout if you intentionally change the Job deadline.
+   For a manifest installation, run `./deploy/uninstall-driver.sh` from the
+   matching checkout instead. The current script targets the default
+   `azurelustre.csi.azure.com` driver and the manifest installation in `kube-system`;
+   the Helm variables above do not configure that script.
+   For an Azure-managed extension, use the
+   [extension deletion path](#azure-managed-extensions), not direct Helm removal.
+
+5. **Verify removal rather than relying on cluster deletion.** For direct Helm:
+
+       helm list -n "${NAMESPACE}" --all --filter "^${RELEASE}$"
+       kubectl get deployments,daemonsets,pods -n "${NAMESPACE}" \
+         -l "app.kubernetes.io/instance=${RELEASE}"
+       kubectl get csidriver "${DRIVER}" --ignore-not-found
+
+   The release and driver resources should be absent. API/authentication errors
+   are not absence. Separately confirm the intended backend outcome: deleted
+   AMLFS resources for `Delete`, or preserved filesystems for `Retain`.
+
+### Troubleshoot a blocked uninstall
+
+Helm may report a failed pre-delete hook and leave the release in `uninstalling`.
+That does not by itself mean the driver was removed. Inspect it before retrying:
+
+    GUARD_SELECTOR="app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=predelete-guard"
+    helm status "${RELEASE}" -n "${NAMESPACE}"
+    kubectl get deployments,daemonsets,pods -n "${NAMESPACE}" \
+      -l "app.kubernetes.io/instance=${RELEASE}"
+    kubectl get jobs,pods -n "${NAMESPACE}" -l "${GUARD_SELECTOR}" -o wide
+    kubectl describe jobs -n "${NAMESPACE}" -l "${GUARD_SELECTOR}"
+    kubectl describe pods -n "${NAMESPACE}" -l "${GUARD_SELECTOR}"
+    kubectl logs -n "${NAMESPACE}" -l "${GUARD_SELECTOR}" \
+      -c predelete-guard --tail=-1
+
+**Save the output before retrying.** The failed Job is eligible for deletion
+after `preDeleteGuard.ttlSecondsAfterFinished` (default 300 seconds) following
+completion. This is not a guaranteed pod-log retention window: for example, the
+Job controller can delete active pods when the Job deadline expires. Capture Job
+events even if no pod or logs remain. A new uninstall attempt also replaces the
+previous hook resources; successful hook Jobs are deleted. A missing old Job
+is not evidence that the guard never ran.
+
+| Observation | Action |
+| --- | --- |
+| `found ... PersistentVolume(s) still using CSI driver ...` | Expected safety rejection. Inspect the named PVs and follow the data-retention procedure above. Unmounting alone does not clear the check. |
+| `Forbidden` or `list PersistentVolumes` errors | Restore Kubernetes API connectivity/authorization. The hook ServiceAccount needs cluster-wide `list` on `persistentvolumes`; if `rbac.create=false`, supply that RBAC yourself. Azure `Contributor` does not grant this Kubernetes permission. |
+| `ImagePullBackOff`, no pod logs, or a pending pod | Inspect pod events, registry credentials/egress, available nodes, taints and resource capacity. These are operational failures, not proof of matching PVs. |
+| Job exists but no pods were created | Inspect `kubectl describe jobs` events for admission, ServiceAccount, quota, or priority-class restrictions in the release namespace. There may be no pod logs to retrieve. |
+| Unknown `--pre-delete-check` flag | The selected image is incompatible. A deployed release needs a matching chart/image pair. If it is already `uninstalling`, see the recovery limitation below. An empty PV list alone does not establish safe teardown. |
+| API timeout or Job deadline exceeded | Inspect connectivity and scheduling first. `checkTimeout` (default `30s`) bounds the check; `activeDeadlineSeconds` (default `300`) bounds the Job. These are separate from Helm's timeout. |
+
+After fixing the cause and confirming the PV inventory is empty, retry the
+**ordinary** `helm uninstall` command from step 4. Do not delete Helm release
+secrets or driver resources manually to clear an `uninstalling` status.
+
+**Incompatible-image recovery:** Helm may refuse an upgrade once the release is
+`uninstalling`, so changing chart values at that point is not a reliable repair.
+Restore registry access if that is the problem. If the stored hook cannot run
+a compatible image, involve the installation owner. For a direct Helm release,
+an explicitly approved `--no-hooks` completion is possible only after manually
+completing the teardown checks: no matching PVs, no consumers/mounts or in-flight
+provisioning, and the intended backend cleanup finished. Review
+`helm get hooks "${RELEASE}" -n "${NAMESPACE}"` first because this skips every
+hook, not just the PV check. See [emergency bypasses](#emergency-bypasses).
+
+A timeout from `--wait` can also occur **after** Helm has started deleting
+resources. Use step 5 to determine what remains; do not assume every timeout
+means the pre-delete guard rejected removal.
+
+### Emergency bypasses
+
+Bypasses are an explicit acceptance of incomplete cleanup, not routine recovery.
+They can strand mounts, leave PVs/PVCs terminating, and orphan billable AMLFS
+filesystems. The operator must arrange any remaining unmount/backend cleanup.
+
+- **Direct Helm:** `helm uninstall "${RELEASE}" -n "${NAMESPACE}" --no-hooks`
+  skips **all** hooks. Alternatively, configure `preDeleteGuard.enabled=false`
+  in the installed release before uninstalling. Editing a local `values.yaml`
+  alone does not change the stored release. An upgrade to change release values
+  can restart driver pods; follow the [upgrade precautions](#upgrade).
+- **Manifest installation:** `./deploy/uninstall-driver.sh --force` bypasses
+  that script's PV query only. Older script versions may not implement the check.
+- **Azure extension:** `az k8s-extension delete --force` is **not** the equivalent
+  of either bypass above; see the warning below.
+
+### Azure-managed extensions
 
 > [!CAUTION]
 > The guard is not an Azure extension deletion guard. Azure deletes an AKS
@@ -99,17 +277,8 @@ cleanup incomplete.
 
 Do not use `az k8s-extension delete --force` as a hook bypass: it can leave
 the Helm release and driver workloads behind as an unmanaged installation.
-
-The hook runs `/app/azurelustreplugin --pre-delete-check` from the chart's
-selected driver image family (`image.repository:image.tag-noble`). Package and
-validate the chart with a driver build that implements this command; the
-released `v0.6.0` binary does not. An older image fails the hook and blocks
-uninstall even when no matching PersistentVolumes remain. The guard inherits
-`image.pullPolicy` (default `Always`) unless `preDeleteGuard.imagePullPolicy` is
-explicitly set, avoiding stale cached binaries with mutable development tags.
-`Always` requires registry access at uninstall time. Use an explicit
-`IfNotPresent` override only with an immutable image tag when cached-image
-availability is preferred.
+Successful direct-Helm validation does not qualify deletion through the Azure
+extension agent; validate that path with the matching published extension build.
 
 ## Tips
 
@@ -166,7 +335,7 @@ driver image family when it packages a chart:
 | `preDeleteGuard.checkTimeout` | Kubernetes API timeout for the guard process | `30s` |
 | `preDeleteGuard.priorityClassName` | Priority class for the hook Job | `system-cluster-critical` |
 | `preDeleteGuard.activeDeadlineSeconds` | Overall hook Job deadline | `300` |
-| `preDeleteGuard.ttlSecondsAfterFinished` | Retention period for a completed hook Job | `300` |
+| `preDeleteGuard.ttlSecondsAfterFinished` | TTL for a finished (completed or failed) hook Job; successful hooks are also deleted by Helm | `300` |
 | `IsWorkloadIdentityEnabled` | Enable controller workload identity | `Disabled` |
 | `IdentityClientId` | Workload identity client ID (required when enabled) | `""` |
 | `IdentityTenantId` | Optional cross-tenant workload identity tenant ID | `""` |

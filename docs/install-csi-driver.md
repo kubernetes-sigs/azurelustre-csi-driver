@@ -38,20 +38,21 @@ helm upgrade azurelustre --wait \
   --version "${CHART_VERSION}"
 ```
 
-To uninstall:
+Before uninstalling, follow the [safe teardown
+procedure](../charts/README.md#safe-teardown-procedure): stop consumers and
+provisioning, decide which data must survive, and complete volume cleanup while
+the driver is still running. Deleting a dynamically provisioned PVC with a
+`Delete` reclaim policy can delete its backing AMLFS filesystem and data.
 
 ```shell
 helm uninstall azurelustre -n kube-system
 ```
 
-Stop new volume provisioning and delete every PersistentVolumeClaim and
-PersistentVolume backed by `azurelustre.csi.azure.com` first. The Helm
-pre-delete guard blocks uninstall while matching PersistentVolumes exist and
-fails closed if it cannot list them. It cannot detect a `CreateVolume` operation
-that has not produced a PersistentVolume, so keep provisioning stopped until
-uninstall completes. See the [Helm uninstall
-details](../charts/README.md#uninstall) for matching driver image requirements,
-bypass options, and Azure extension behavior.
+The pre-delete guard is **unreleased development functionality**, not a
+feature of chart `0.6.0` / driver `v0.6.0` shown above. It requires a matching
+chart and driver build. Do not rely on older releases to enforce teardown order.
+See [uninstall scope and prerequisites](../charts/README.md#scope-and-prerequisites)
+and [blocked-uninstall recovery](../charts/README.md#troubleshoot-a-blocked-uninstall).
 
 > [!IMPORTANT]
 > **Migrating from a `kubectl` install to Helm.** Helm only adopts resources it
@@ -60,7 +61,9 @@ bypass options, and Azure extension behavior.
 > `azurelustre.csi.azure.com` CSIDriver and the `csi-azurelustre-*` ClusterRoles)
 > have no Helm ownership metadata, so `helm install` aborts with an
 > `invalid ownership metadata ... missing key "app.kubernetes.io/managed-by"`
-> error. Remove the existing `kubectl` install first, then install with Helm:
+> error. Complete the [safe teardown procedure](../charts/README.md#safe-teardown-procedure),
+> then remove the existing `kubectl` install before installing with Helm.
+> Unmounting alone does not satisfy the new guard while PVs remain.
 >
 > ```shell
 > ./deploy/uninstall-driver.sh
@@ -114,18 +117,21 @@ For the full list of configurable values, version history, and advanced Helm usa
 
   - Uninstall:
 
-    Stop new volume provisioning and delete every PersistentVolumeClaim and
-    PersistentVolume backed by `azurelustre.csi.azure.com`, then run:
+    First follow the [safe teardown procedure](../charts/README.md#safe-teardown-procedure),
+    including data-retention decisions and completion of unmount/backend cleanup.
+    Then run the uninstall script from the matching driver checkout:
 
     ```shell
     ./deploy/uninstall-driver.sh
     ```
 
-    The script checks existing PersistentVolumes before deleting any driver
-    resource and fails closed if the Kubernetes API query fails. It cannot
+    The development script checks existing PersistentVolumes before deleting any
+    driver resource and fails closed if the Kubernetes API query fails; this
+    check is not present in the released `v0.6.0` script. It cannot
     detect a `CreateVolume` operation that has not produced a PersistentVolume.
-    `./deploy/uninstall-driver.sh --force` bypasses the check and can leave
-    volume or dynamically provisioned AMLFS filesystem cleanup incomplete.
+    See [emergency bypasses](../charts/README.md#emergency-bypasses) for the
+    distinct meanings and risks of the script's `--force`, Helm's `--no-hooks`,
+    and Azure extension deletion.
 
 - check pods status:
 
