@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/ipgroupclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/loadbalancerclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/managedclusterclient"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/natgatewayclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatednszonegroupclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/privateendpointclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/privatelinkserviceclient"
@@ -45,6 +46,7 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/routetableclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/secretclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/securitygroupclient"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/servicegatewayclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/snapshotclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/sshpublickeyresourceclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/subnetclient"
@@ -77,6 +79,7 @@ type ClientFactory interface {
 	GetIPGroupClient() ipgroupclient.Interface
 	GetLoadBalancerClient() loadbalancerclient.Interface
 	GetManagedClusterClient() managedclusterclient.Interface
+	GetNatGatewayClient() natgatewayclient.Interface
 	GetPrivateDNSZoneGroupClient() privatednszonegroupclient.Interface
 	GetPrivateEndpointClient() privateendpointclient.Interface
 	GetPrivateLinkServiceClient() privatelinkserviceclient.Interface
@@ -90,6 +93,7 @@ type ClientFactory interface {
 	GetRouteTableClient() routetableclient.Interface
 	GetSecretClient() secretclient.Interface
 	GetSecurityGroupClient() securitygroupclient.Interface
+	GetServiceGatewayClient() servicegatewayclient.Interface
 	GetSnapshotClient() snapshotclient.Interface
 	GetSnapshotClientForSub(subscriptionID string) (snapshotclient.Interface, error)
 	GetSSHPublicKeyResourceClient() sshpublickeyresourceclient.Interface

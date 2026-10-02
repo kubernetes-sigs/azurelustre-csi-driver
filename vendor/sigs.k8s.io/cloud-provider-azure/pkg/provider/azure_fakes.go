@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider/privatelinkservice"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider/routetable"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider/securitygroup"
+	"sigs.k8s.io/cloud-provider-azure/pkg/provider/servicegateway"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider/subnet"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider/zone"
 	utilsets "sigs.k8s.io/cloud-provider-azure/pkg/util/sets"
@@ -158,7 +159,7 @@ func GetTestCloud(ctrl *gomock.Controller) (az *Cloud) {
 	az.VMSet, _ = newAvailabilitySet(az)
 	az.vmCache, _ = az.newVMCache()
 	az.lbCache, _ = az.newLBCache()
-	az.nsgRepo, _ = securitygroup.NewSecurityGroupRepo(az.SecurityGroupResourceGroup, az.SecurityGroupName, az.NsgCacheTTLInSeconds, az.Config.DisableAPICallCache, securtyGrouptrack2Client)
+	az.nsgRepo, _ = securitygroup.NewSecurityGroupRepo(az.SecurityGroupResourceGroup, az.SecurityGroupName, az.NsgCacheTTLInSeconds, az.DisableAPICallCache, securtyGrouptrack2Client)
 	az.subnetRepo = subnet.NewMockRepository(ctrl)
 	az.pipCache, _ = az.newPIPCache()
 	az.LoadBalancerBackendPool = NewMockBackendPool(ctrl)
@@ -170,6 +171,7 @@ func GetTestCloud(ctrl *gomock.Controller) (az *Cloud) {
 
 	{
 		kubeClient := fake.NewSimpleClientset() // FIXME: inject kubeClient
+		az.KubeClient = kubeClient
 		informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 		az.serviceLister = informerFactory.Core().V1().Services().Lister()
 		az.nodeLister = informerFactory.Core().V1().Nodes().Lister()
@@ -182,7 +184,17 @@ func GetTestCloud(ctrl *gomock.Controller) (az *Cloud) {
 // GetTestCloudWithExtendedLocation returns a fake azure cloud for unit tests in Azure related CSI drivers with extended location.
 func GetTestCloudWithExtendedLocation(ctrl *gomock.Controller) (az *Cloud) {
 	az = GetTestCloud(ctrl)
-	az.Config.ExtendedLocationName = "microsoftlosangeles1"
-	az.Config.ExtendedLocationType = "EdgeZone"
+	az.ExtendedLocationName = "microsoftlosangeles1"
+	az.ExtendedLocationType = "EdgeZone"
+	return az
+}
+
+// GetTestCloudWithServiceLoadBalancer returns a fake azure cloud for unit tests in Azure supporting service load balancer.
+func GetTestCloudWithServiceLoadBalancer(ctrl *gomock.Controller) (az *Cloud) {
+	az = GetTestCloud(ctrl)
+	az.LoadBalancerBackendPoolConfigurationType = consts.LoadBalancerBackendPoolConfigurationTypePodIP
+	az.LoadBalancerSKU = consts.LoadBalancerSKUService
+	az.ServiceGatewayEnabled = true
+	az.serviceGatewayRuntime = servicegateway.NewRuntime(az.Config, az.NetworkClientFactory, az.KubeClient)
 	return az
 }
