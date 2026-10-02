@@ -6,19 +6,32 @@ To verify:
 CSIDriver object:
   kubectl get csidriver {{ .Values.csidriver.name }} -o yaml
 
-Uninstall:
-  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+Before uninstalling, stop consumers and new provisioning, wait for unmounts and
+in-flight volume operations, and keep the driver running during volume cleanup.
+Choose what data to retain BEFORE deleting claims: Delete on a dynamically
+provisioned PV can delete the backing AMLFS filesystem and its data. Retain
+preserves the filesystem; retire its PV metadata only after saving the mapping.
+Follow the safe teardown and recovery procedure (development documentation):
+  https://github.com/kubernetes-sigs/azurelustre-csi-driver/blob/development/charts/README.md#uninstall
 
-Before uninstalling, delete any PersistentVolumeClaims/PersistentVolumes backed
-by {{ .Values.csidriver.name }} so the driver can clean up their backing AMLFS
-filesystems while it is still running. Removing the driver first orphans the
-AMLFS resource (dynamic provisioning) and leaves PVs stuck in Terminating.
-Stop new provisioning first: this check only sees PersistentVolumes that already
-exist and cannot detect a CreateVolume operation before its PV appears.
+After completing that procedure, for a direct Helm installation:
+  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }} --wait --timeout {{ add .Values.preDeleteGuard.activeDeadlineSeconds 60 }}s
 {{- if .Values.preDeleteGuard.enabled }}
-A pre-delete guard blocks uninstall while such volumes still exist. To bypass it,
-disable preDeleteGuard.enabled in the release values before uninstalling, or run
-`helm uninstall --no-hooks`.
+
+The guard checks ALL PVs using {{ .Values.csidriver.name }} across the cluster,
+including static, retained, released and unbound PVs, not only mounted volumes.
+It fails closed if the check cannot run, and cannot detect CreateVolume before
+its PV appears.
+
+If uninstall is blocked, inspect the hook before retrying:
+  kubectl -n {{ .Release.Namespace }} get jobs,pods -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard
+  kubectl -n {{ .Release.Namespace }} describe jobs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard -c predelete-guard --tail=-1
+Failed Job TTL is {{ .Values.preDeleteGuard.ttlSecondsAfterFinished }} seconds after completion;
+pods/logs can disappear sooner. Retrying also replaces the previous hook.
+Save diagnostics first, including Job events if no pod remains.
+After fixing the cause, retry ordinary uninstall. --no-hooks skips ALL hooks
+and can leave mounts or billable filesystems behind; it is an emergency bypass.
 {{- if not .Values.rbac.create }}
 
 WARNING: preDeleteGuard.enabled=true but rbac.create=false. The guard cannot list
@@ -27,6 +40,10 @@ uninstall until you either grant the ServiceAccount
 '{{ include "azurelustre.preDeleteGuardName" . }}' list on
 persistentvolumes out of band, or set preDeleteGuard.enabled=false.
 {{- end }}
+{{- else }}
+
+WARNING: preDeleteGuard.enabled=false. No hook enforces the PV check for this
+release. Complete the safe teardown procedure before uninstalling.
 {{- end }}
 
 For an Azure-managed AKS extension, this hook cannot block deletion of the Azure

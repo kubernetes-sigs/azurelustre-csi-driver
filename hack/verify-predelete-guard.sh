@@ -95,6 +95,63 @@ run_uninstall_case() {
   fi
 }
 
+echo "== Testing rendered uninstall guidance =="
+# helm template omits NOTES.txt. Render the unchanged source through tpl in a
+# temporary ConfigMap to exercise Helm's engine without a Kubernetes connection.
+NOTES_CHART="${WORK_DIR}/notes-chart"
+cp -a "${CHART_DIR}" "${NOTES_CHART}"
+cp "${CHART_DIR}/templates/NOTES.txt" "${NOTES_CHART}/notes-source.txt"
+cat >"${NOTES_CHART}/templates/notes-probe.yaml" <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notes-probe
+data:
+  notes: {{ tpl (.Files.Get "notes-source.txt") . | toYaml | nindent 4 }}
+EOF
+
+expected_diagnostics="  kubectl -n docs-namespace get jobs,pods -l app.kubernetes.io/instance=docs-test,app.kubernetes.io/component=predelete-guard
+  kubectl -n docs-namespace describe jobs -l app.kubernetes.io/instance=docs-test,app.kubernetes.io/component=predelete-guard
+  kubectl -n docs-namespace logs -l app.kubernetes.io/instance=docs-test,app.kubernetes.io/component=predelete-guard -c predelete-guard --tail=-1"
+for deadline in 300 721; do
+  for guard_enabled in true false; do
+    for rbac_create in true false; do
+      rendered=$(helm template docs-test "${NOTES_CHART}" --namespace docs-namespace \
+        -s templates/notes-probe.yaml --set-string csidriver.name=docs.csi.example.com \
+        --set "preDeleteGuard.enabled=${guard_enabled},rbac.create=${rbac_create},preDeleteGuard.ttlSecondsAfterFinished=61,preDeleteGuard.activeDeadlineSeconds=${deadline}")
+      notes=$(yq eval '.data.notes' - <<<"${rendered}")
+      guard_notes_valid=false
+      disabled_warning=false
+      rbac_warning=false
+      expected_rbac_warning=false
+      if [[ "${guard_enabled}" == true ]]; then
+        if [[ "${notes}" == *"The guard checks ALL PVs using docs.csi.example.com"* && \
+          "${notes}" == *"${expected_diagnostics}"* && \
+          "${notes}" == *"Failed Job TTL is 61 seconds after completion"* ]]; then
+          guard_notes_valid=true
+        fi
+      elif [[ "${notes}" != *"The guard checks"* && "${notes}" != *"Failed Job TTL"* && \
+        "${notes}" != *"app.kubernetes.io/component=predelete-guard"* ]]; then
+        guard_notes_valid=true
+      fi
+      [[ "${notes}" == *"WARNING: preDeleteGuard.enabled=false"* ]] && disabled_warning=true
+      [[ "${notes}" == *"WARNING: preDeleteGuard.enabled=true but rbac.create=false"* ]] && rbac_warning=true
+      [[ "${guard_enabled}" == true && "${rbac_create}" == false ]] && expected_rbac_warning=true
+      if [[ "${notes}" == *"Choose what data to retain BEFORE deleting claims"* && \
+        "${notes}" == *"helm uninstall docs-test -n docs-namespace --wait --timeout $((deadline + 60))s"* && \
+        "${notes}" == *"https://github.com/kubernetes-sigs/azurelustre-csi-driver/blob/development/charts/README.md#uninstall"* && \
+        "${guard_notes_valid}" == true && "${disabled_warning}" != "${guard_enabled}" && \
+        "${rbac_warning}" == "${expected_rbac_warning}" ]]; then
+        echo "PASS: uninstall notes (guard=${guard_enabled}, rbac=${rbac_create}, deadline=${deadline})"
+      else
+        echo "FAIL: uninstall notes (guard=${guard_enabled}, rbac=${rbac_create}, deadline=${deadline})"
+        printf '%s\n' "${notes}"
+        FAILURES=$((FAILURES + 1))
+      fi
+    done
+  done
+done
+
 echo "== Testing rendered Helm guard =="
 rendered=$(helm template chart-test "${CHART_DIR}" --namespace kube-system \
   --set "fullnameOverride=$(printf 'a%.0s' {1..63})")
