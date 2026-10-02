@@ -30,9 +30,29 @@ make azurelustre
 make verify
 ```
 
+Verification tools are pinned and installed under
+`_output/tools/<tool>/<version>` in the repository, not into system directories.
+Keep this directory between local runs to reuse the installations. Release
+downloads are checked against pinned SHA-256 checksums before installation.
+The Go toolchain declared in [go.mod](../go.mod), Python 3.8 or later available
+as `python3`, and Node.js 20 or later remain prerequisites.
+Installing uncached Python tools requires pip, and installing
+uncached markdownlint requires npm. Python-based verifiers use the shared
+[Python prerequisite check](../hack/ensure-python.sh) to report how to install
+or activate a missing prerequisite. Verification does not create or modify the system
+`python` command. The [Linux workflow](../.github/workflows/linux.yaml) selects
+Python 3.12 explicitly; fresh CI runners install the pinned verification tools.
+
+A newer host Go may exceed the pinned golangci-lint binary's supported version.
+In that case, set `GOTOOLCHAIN` to the `toolchain` value in `go.mod` when running
+verification; automatic toolchain selection does not downgrade a newer Go.
+
+For pin locations, release hashes, dependency-lock updates, and isolated
+validation commands, see [Maintaining verification tools](verification-tools.md).
+
 &nbsp;
 
-- Verify Helm chart source changes
+### Verify Helm chart source changes
 
 The repository stores one unpackaged chart source at
 `charts/latest/azurelustre-csi-driver`. Keep its `Chart.yaml` version at
@@ -50,7 +70,7 @@ such as `vX.Y.Z`. It writes `A.B.C` to the chart `version`, and writes `vX.Y.Z`
 to `appVersion` and `image.tag`. `appVersion` is informational; `image.tag`
 selects the actual flavored images. Never derive either input from the other.
 
-- Build container image locally for testing
+### Build container image locally for testing
 
 Set up a personal ACR if you don't have one (one-time):
 

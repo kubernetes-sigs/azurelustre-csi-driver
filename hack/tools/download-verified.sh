@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2018 The Kubernetes Authors.
+# Copyright 2026 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,20 +16,18 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-cd "${ROOT}"
-
-echo "Verifying gofmt"
-
-if ! diff=$(find . -name "*.go" -not -path "*/vendor/*" -print0 | xargs -0 -r gofmt -s -d 2>&1); then
-  printf '%s\n' "${diff}" >&2
-  echo "Go formatting verification could not complete." >&2
-  exit 1
+if [[ $# -ne 3 ]]; then
+  echo "Usage: $0 <url> <sha256> <destination>" >&2
+  exit 2
 fi
-if [[ -n "${diff}" ]]; then
-  echo "${diff}"
-  echo
-  echo "Please run hack/update-gofmt.sh to fix the issue(s)"
-  exit 1
-fi
-echo "No issue found"
+
+readonly URL=$1
+readonly SHA256=$2
+readonly DESTINATION=$3
+
+echo "Downloading $(basename "${DESTINATION}") ..." >&2
+curl --fail --location --silent --show-error \
+  --proto '=https' --tlsv1.2 \
+  "${URL}" \
+  --output "${DESTINATION}"
+printf '%s  %s\n' "${SHA256}" "${DESTINATION}" | sha256sum --check >&2
