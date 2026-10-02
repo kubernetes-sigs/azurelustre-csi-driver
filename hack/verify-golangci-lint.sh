@@ -18,9 +18,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${ROOT}"
-readonly GOLANGCI_LINT_VERSION="v2.9.0"
-readonly GOLANGCI_LINT_SHA256_AMD64="493aaaca2eba6c8bcef847d92716bbd91bbac4b22cdbb0ab5b6a581b32946091"
-readonly GOLANGCI_LINT_SHA256_ARM64="94e80cdb51c73c20a313bd3afa1fb23137728813c19fd730248a1e8678fcc46d"
+readonly GOLANGCI_LINT_VERSION="v2.12.2"
+readonly GOLANGCI_LINT_SHA256_AMD64="8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553"
+readonly GOLANGCI_LINT_SHA256_ARM64="44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a"
 
 if [[ "${1:-}" == "--tool-version" ]]; then
 	if [[ $# -ne 1 ]]; then
