@@ -22,13 +22,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v9"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -36,7 +37,15 @@ import (
 	azcache "sigs.k8s.io/cloud-provider-azure/pkg/cache"
 	"sigs.k8s.io/cloud-provider-azure/pkg/consts"
 	"sigs.k8s.io/cloud-provider-azure/pkg/log"
+	providererrors "sigs.k8s.io/cloud-provider-azure/pkg/provider/errors"
 	"sigs.k8s.io/cloud-provider-azure/pkg/util/deepcopy"
+)
+
+var (
+	azureReservedIPPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("168.63.129.16/32"),
+	}
 )
 
 // CreateOrUpdatePIP invokes az.NetworkClientFactory.GetPublicIPAddressClient().CreateOrUpdate with exponential backoff retry
@@ -119,7 +128,7 @@ func (az *Cloud) newPIPCache() (azcache.Resource, error) {
 	if az.PublicIPCacheTTLInSeconds == 0 {
 		az.PublicIPCacheTTLInSeconds = publicIPCacheTTLDefaultInSeconds
 	}
-	return azcache.NewTimedCache(time.Duration(az.PublicIPCacheTTLInSeconds)*time.Second, getter, az.Config.DisableAPICallCache)
+	return azcache.NewTimedCache(time.Duration(az.PublicIPCacheTTLInSeconds)*time.Second, getter, az.DisableAPICallCache)
 }
 
 func (az *Cloud) getPublicIPAddress(ctx context.Context, pipResourceGroup string, pipName string, crt azcache.AzureCacheReadType) (*armnetwork.PublicIPAddress, bool, error) {
@@ -168,9 +177,15 @@ func (az *Cloud) listPIP(ctx context.Context, pipResourceGroup string, crt azcac
 }
 
 func (az *Cloud) findMatchedPIP(ctx context.Context, loadBalancerIP, pipName, pipResourceGroup string) (pip *armnetwork.PublicIPAddress, err error) {
+	if loadBalancerIP != "" {
+		if err := validatePublicIPCandidate(loadBalancerIP); err != nil {
+			return nil, err
+		}
+	}
+
 	pips, err := az.listPIP(ctx, pipResourceGroup, azcache.CacheReadTypeDefault)
 	if err != nil {
-		return nil, fmt.Errorf("findMatchedPIPByLoadBalancerIP: failed to listPIP: %w", err)
+		return nil, fmt.Errorf("findMatchedPIP: failed to listPIP: %w", err)
 	}
 
 	if loadBalancerIP != "" {
@@ -220,11 +235,35 @@ func (az *Cloud) findMatchedPIPByLoadBalancerIP(ctx context.Context, pips []*arm
 
 		pip, err = getExpectedPIPFromListByIPAddress(pipList, loadBalancerIP)
 		if err != nil {
-			return nil, fmt.Errorf("findMatchedPIPByLoadBalancerIP: cannot find public IP with IP address %s in resource group %s", loadBalancerIP, pipResourceGroup)
+			return nil, fmt.Errorf("findMatchedPIPByLoadBalancerIP: cannot find public IP with IP address %s in resource group %s: %w", loadBalancerIP, pipResourceGroup, err)
 		}
 	}
 
 	return pip, nil
+}
+
+func validatePublicIPCandidate(ip string) error {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return providererrors.NewInvalidLoadBalancerIPError(ip)
+	}
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() || isAzureReservedIP(addr) {
+		return providererrors.NewNonPublicLoadBalancerIPError(ip)
+	}
+	return nil
+}
+
+// isAzureReservedIP reports whether addr belongs to an Azure reserved Virtual
+// Network address range not covered by netip.Addr.IsPrivate:
+// https://learn.microsoft.com/azure/virtual-network/virtual-networks-faq#what-address-ranges-can-i-use-in-my-virtual-networks
+func isAzureReservedIP(addr netip.Addr) bool {
+	for _, prefix := range azureReservedIPPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func getExpectedPIPFromListByIPAddress(pips []*armnetwork.PublicIPAddress, ip string) (*armnetwork.PublicIPAddress, error) {

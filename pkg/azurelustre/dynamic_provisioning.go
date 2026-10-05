@@ -27,7 +27,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
 	"google.golang.org/grpc/codes"
@@ -194,24 +193,24 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 
 	tags := make(map[string]*string, len(amlFilesystemProperties.Tags))
 	for key, value := range amlFilesystemProperties.Tags {
-		tags[key] = to.Ptr(value)
+		tags[key] = new(value)
 	}
 	properties := &armstoragecache.AmlFilesystemProperties{
-		FilesystemSubnet: to.Ptr(amlFilesystemProperties.SubnetInfo.SubnetID),
+		FilesystemSubnet: new(amlFilesystemProperties.SubnetInfo.SubnetID),
 		MaintenanceWindow: &armstoragecache.AmlFilesystemPropertiesMaintenanceWindow{
-			DayOfWeek:    to.Ptr(amlFilesystemProperties.MaintenanceDayOfWeek),
-			TimeOfDayUTC: to.Ptr(amlFilesystemProperties.TimeOfDayUTC),
+			DayOfWeek:    new(amlFilesystemProperties.MaintenanceDayOfWeek),
+			TimeOfDayUTC: new(amlFilesystemProperties.TimeOfDayUTC),
 		},
-		StorageCapacityTiB: to.Ptr(amlFilesystemProperties.StorageCapacityTiB),
+		StorageCapacityTiB: new(amlFilesystemProperties.StorageCapacityTiB),
 	}
 	amlFilesystem := armstoragecache.AmlFilesystem{
-		Location:   to.Ptr(amlFilesystemProperties.Location),
+		Location:   new(amlFilesystemProperties.Location),
 		Tags:       tags,
 		Properties: properties,
-		SKU:        &armstoragecache.SKUName{Name: to.Ptr(amlFilesystemProperties.SKUName)},
+		SKU:        &armstoragecache.SKUName{Name: new(amlFilesystemProperties.SKUName)},
 	}
 	if amlFilesystemProperties.Zone != "" {
-		amlFilesystem.Zones = []*string{to.Ptr(amlFilesystemProperties.Zone)}
+		amlFilesystem.Zones = []*string{new(amlFilesystemProperties.Zone)}
 	}
 	if amlFilesystemProperties.Identities != nil {
 		userAssignedIdentities := make(map[string]*armstoragecache.UserAssignedIdentitiesValue, len(amlFilesystemProperties.Identities))
@@ -219,7 +218,7 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 			userAssignedIdentities[identity] = &armstoragecache.UserAssignedIdentitiesValue{}
 		}
 		amlFilesystem.Identity = &armstoragecache.AmlFilesystemIdentity{
-			Type:                   to.Ptr(armstoragecache.AmlFilesystemIdentityTypeUserAssigned),
+			Type:                   new(armstoragecache.AmlFilesystemIdentityTypeUserAssigned),
 			UserAssignedIdentities: userAssignedIdentities,
 		}
 	}
@@ -440,9 +439,9 @@ func (d *DynamicProvisioner) getAmlfsSubnetSize(ctx context.Context, sku string,
 	reqSize, err := d.mgmtClient.GetRequiredAmlFSSubnetsSize(ctx, &armstoragecache.ManagementClientGetRequiredAmlFSSubnetsSizeOptions{
 		RequiredAMLFilesystemSubnetsSizeInfo: &armstoragecache.RequiredAmlFilesystemSubnetsSizeInfo{
 			SKU: &armstoragecache.SKUName{
-				Name: to.Ptr(sku),
+				Name: new(sku),
 			},
-			StorageCapacityTiB: to.Ptr(clusterSize),
+			StorageCapacityTiB: new(clusterSize),
 		},
 	})
 	if err != nil {

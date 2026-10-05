@@ -100,7 +100,7 @@ func (r *DefaultCommandRunner) RunWithTimeout(ctx context.Context, timeout time.
 	cmdTimeout, cmdCancel := context.WithTimeout(ctx, timeout)
 	defer cmdCancel()
 
-	command := exec.CommandContext(cmdTimeout, cmd, args...)
+	command := exec.CommandContext(cmdTimeout, cmd, args...) // #nosec G204 -- Production callers provide a fixed executable name, and os/exec does not invoke a shell.
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), err
