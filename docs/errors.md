@@ -1,9 +1,10 @@
 # Azure Lustre CSI Driver - Resolving Common Errors
 
-This document describes common errors that can occur during volume creation and mounting with the Azure Lustre CSI driver, along with debugging and troubleshooting steps.
+This document describes common errors that can occur during volume creation, mounting, and driver uninstall, along with debugging and troubleshooting steps.
 
 ## Table of Contents
 
+- [Driver Uninstall Errors](#driver-uninstall-errors)
 - [Volume Creation Errors](#volume-creation-errors)
   - [Dynamic Provisioning Errors](#dynamic-provisioning-errors)
     - [Authentication and Authorization Errors](#authentication-and-authorization-errors)
@@ -35,6 +36,19 @@ This document describes common errors that can occur during volume creation and 
     - [Controller Logs](#controller-logs)
     - [Node Logs](#node-logs)
     - [Comprehensive Log Collection](#comprehensive-log-collection)
+
+---
+
+## Driver Uninstall Errors
+
+For `failed pre-delete` hook errors, matching-PV rejections, or a Helm release
+left in `uninstalling`, use the [blocked-uninstall
+procedure](../charts/README.md#troubleshoot-a-blocked-uninstall). Capture diagnostics
+before retrying: failed Jobs expire 300 seconds after completion by default,
+and pod logs can disappear sooner.
+
+Follow the [safe teardown procedure](../charts/README.md#safe-teardown-procedure)
+before deleting claims; the `Delete` reclaim policy can destroy backing data.
 
 ---
 
