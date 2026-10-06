@@ -1,5 +1,12 @@
 # CSI Driver Troubleshooting Guide
 
+Examples use `kube-system` and static-manifest workload names. For Helm installs,
+substitute your release namespace and the workload names returned by:
+
+```sh
+kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre-csi-driver
+```
+
 ---
 
 ## Driver Readiness and Health Issues
@@ -13,12 +20,26 @@
 > | `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) that loads the Lustre kernel modules + brings up LNet, then runs an LNet reconcile loop for the life of the pod | `startupProbe` + `readinessProbe` = `/app/readinessProbe.sh` (LNet health); `livenessProbe` = `test -d /sys/module/lnet` | kernel modules, LNet/NIDs, metapackage install |
 > | `azurelustre` | CSI driver: installs userspace tools, then serves the gRPC socket | `startupProbe` + `livenessProbe` = `/healthz` (port 29763); `readinessProbe` = `test -S /csi/csi.sock` | userspace utils install, mounts, gRPC/CSI logs |
 > | `liveness-probe` | exposes the driver `/healthz` to the kubelet | — | — |
-> | `node-driver-registrar` | registers the driver socket with the kubelet | registration `livenessProbe` | kubelet registration |
+> | `node-driver-registrar` | registers the driver socket with the kubelet | `startupProbe` + `livenessProbe` = `/healthz` (port 29764; registration socket responds) | kubelet registration |
 >
 > A node pod is `Ready` (`4/4`) only when the `lustre-loader` sidecar reports
 > LNet healthy **and** the `azurelustre` driver socket is serving. LNet and
 > kernel-module troubleshooting targets `-c lustre-loader`; mount and CSI driver
 > troubleshooting targets `-c azurelustre`.
+
+### Controller provisioner health
+
+The controller's `csi-provisioner` exposes `/healthz/leader-election` on port
+29761, separate from the CSI driver's `/healthz` on port 29762. The provisioner
+starts its HTTP server only after connecting to and initializing with the CSI
+driver. Its startup probe allows about ten minutes for that initialization,
+holding off liveness checks until the endpoint responds successfully.
+
+After startup, the liveness probe can restart a provisioner whose leader-election
+health check fails. A successful response does not mean that this replica is the
+leader or that a volume operation succeeded; standby replicas can also be healthy.
+Check `-c csi-provisioner` logs for election and provisioning errors, and
+`-c azurelustre` logs for CSI driver errors.
 
 ### LNet readiness troubleshooting (loader sidecar)
 
@@ -51,7 +72,12 @@ During initial startup it is normal to see the loader's startup probe fail a few
 times while LNet comes up; once LNet is operational the probes succeed and the
 gated `azurelustre` and `node-driver-registrar` containers start. The driver's
 startup probe may likewise fail with `connection refused` until its CSI socket
-exists. Neither is a problem on a pod that goes on to reach Ready.
+exists, and the registrar's startup probe may fail until its registration socket
+responds. The registrar's startup probe holds off liveness checks with a budget of
+about one minute. It does not extend the registrar's 30-second CSI connection
+timeout: if that expires, the registrar exits and Kubernetes restarts it with
+backoff. Its HTTP health check does not confirm completed kubelet registration; check the
+registrar logs for `NotifyRegistrationStatus` when diagnosing registration failures.
 
 #### Run the LNet readiness probe directly (loader sidecar)
 
@@ -388,7 +414,7 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
    ```sh
    # Check actual OS on the node
-   kubectl debug node/<node-name> -it --image=ubuntu -- cat /etc/os-release
+   kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 -- cat /host/etc/os-release
    ```
 
 2. **Remove incorrect pods:**
@@ -472,8 +498,8 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 # Check image pull secrets
 kubectl get serviceaccount -n kube-system csi-azurelustre-node-sa -o yaml
 
-# Test image pull manually on a node
-kubectl debug node/<node-name> -it --image=ubuntu -- bash
+# Test image pull manually on a node (requires privileged debugging access)
+kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 --profile=sysadmin -- chroot /host /bin/sh
 # Then inside the debug pod:
 # crictl pull mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy
 ```
@@ -546,7 +572,7 @@ kubectl rollout history ds/csi-azurelustre-node-noble -n kube-system
 kubectl rollout history ds/csi-azurelustre-node-azurelinux3 -n kube-system
 
 # Check pod ages to identify old pods
-kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[0].image
+kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns='NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[?(@.name=="azurelustre")].image'
 ```
 
 **Resolution:**
