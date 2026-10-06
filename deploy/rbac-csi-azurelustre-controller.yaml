@@ -73,6 +73,17 @@ rules:
       - get
       - list
       - watch
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-azurelustre-external-provisioner-cfg
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
+rules:
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -83,7 +94,7 @@ rules:
       - watch
       - create
       - update
-      - patch
+      - delete
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -100,4 +111,22 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: csi-azurelustre-external-provisioner-role
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-azurelustre-csi-provisioner-role-cfg
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver
+    app.kubernetes.io/version: latest
+subjects:
+  - kind: ServiceAccount
+    name: csi-azurelustre-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: csi-azurelustre-external-provisioner-cfg
   apiGroup: rbac.authorization.k8s.io

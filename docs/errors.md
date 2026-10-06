@@ -2,11 +2,19 @@
 
 This document describes common errors that can occur during volume creation and mounting with the Azure Lustre CSI driver, along with debugging and troubleshooting steps.
 
+Examples use `kube-system` and static-manifest workload names. For Helm installs,
+substitute your release namespace and the workload names returned by:
+
+```bash
+kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre-csi-driver
+```
+
 ## Table of Contents
 
 - [Volume Creation Errors](#volume-creation-errors)
   - [Dynamic Provisioning Errors](#dynamic-provisioning-errors)
     - [Authentication and Authorization Errors](#authentication-and-authorization-errors)
+    - [Error: Lease access is forbidden](#error-lease-access-is-forbidden)
     - [Error: AMLFS cluster creation timed out](#error-amlfs-cluster-creation-timed-out)
     - [Error: Resource not found](#error-resource-not-found)
     - [Error: Cannot create AMLFS cluster, not enough IP addresses available](#error-cannot-create-amlfs-cluster-not-enough-ip-addresses-available)
@@ -70,6 +78,23 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 - Assign required RBAC roles to kubelet identity:
   - See [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity)
 - If using workload identity, confirm the federated credential subject matches the controller ServiceAccount. It must be `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`. The chart annotates that ServiceAccount automatically, so a missing `azure.workload.identity/client-id` annotation means the release was not installed with `IsWorkloadIdentityEnabled=Enabled`. See [Workload Identity](workload-identity.md).
+
+---
+
+#### Error: Lease access is forbidden
+
+If `csi-provisioner` logs report `leases.coordination.k8s.io` access is
+`forbidden`, leader election is blocked by Kubernetes RBAC, not Azure role
+assignments.
+
+```bash
+kubectl logs -n <driver-namespace> -l app=csi-azurelustre-controller -c csi-provisioner --tail=100 --prefix
+kubectl get role,rolebinding -n <driver-namespace> -l app.kubernetes.io/name=azurelustre-csi-driver -o yaml
+```
+
+Check that the Role permits Lease access and its RoleBinding names
+`csi-azurelustre-controller-sa` in the controller's namespace. Restore the
+chart's namespaced RBAC rather than granting cluster-wide Lease access.
 
 ---
 

@@ -100,6 +100,7 @@ spec:
           args:
             - -v=2
             - --leader-election
+            - --leader-election-namespace=$(NAMESPACE)
             - --http-endpoint=:{{ .Values.sidecars.provisioner.healthPort }}
             - --timeout=15m
             - --extra-create-metadata=true
@@ -108,6 +109,10 @@ spec:
           env:
             - name: ADDRESS
               value: /csi/csi.sock
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           ports:
             - containerPort: {{ .Values.sidecars.provisioner.healthPort }}
               name: provisioner

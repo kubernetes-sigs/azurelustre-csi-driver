@@ -136,6 +136,15 @@ pinning the chart to a numbered `-N` rebuild tag. With
 `sidecars.pullPolicy: Always`, each container start resolves the current rebuild.
 Running containers are not updated until they restart.
 
+Controller replicas coordinate through a leader-election Lease in the release
+namespace. The controller service account can manage Leases only in that
+namespace; its cluster-wide volume provisioning permissions are unchanged.
+The Lease namespace does not limit which namespaces the controller serves.
+
+Install only one Azure Lustre CSI driver per cluster. Installing another copy in
+a different namespace does not isolate it: each copy can elect its own leader
+while sharing the same cluster-wide driver identity and node socket paths.
+
 Key configurable parameters and defaults from the version-neutral source
 `values.yaml`. The release pipeline replaces `image.tag` with the selected
 driver image family when it packages a chart:

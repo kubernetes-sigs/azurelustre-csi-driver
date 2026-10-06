@@ -1,5 +1,12 @@
 # CSI Driver Troubleshooting Guide
 
+Examples use `kube-system` and static-manifest workload names. For Helm installs,
+substitute your release namespace and the workload names returned by:
+
+```sh
+kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre-csi-driver
+```
+
 ---
 
 ## Driver Readiness and Health Issues
