@@ -388,7 +388,7 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
    ```sh
    # Check actual OS on the node
-   kubectl debug node/<node-name> -it --image=ubuntu -- cat /etc/os-release
+   kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 -- cat /host/etc/os-release
    ```
 
 2. **Remove incorrect pods:**
@@ -472,8 +472,8 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 # Check image pull secrets
 kubectl get serviceaccount -n kube-system csi-azurelustre-node-sa -o yaml
 
-# Test image pull manually on a node
-kubectl debug node/<node-name> -it --image=ubuntu -- bash
+# Test image pull manually on a node (requires privileged debugging access)
+kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 --profile=sysadmin -- chroot /host /bin/sh
 # Then inside the debug pod:
 # crictl pull mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy
 ```
@@ -546,7 +546,7 @@ kubectl rollout history ds/csi-azurelustre-node-noble -n kube-system
 kubectl rollout history ds/csi-azurelustre-node-azurelinux3 -n kube-system
 
 # Check pod ages to identify old pods
-kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[0].image
+kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns='NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[?(@.name=="azurelustre")].image'
 ```
 
 **Resolution:**

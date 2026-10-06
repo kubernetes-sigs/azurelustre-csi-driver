@@ -111,6 +111,7 @@ spec:
       containers:
         - name: liveness-probe
           image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          imagePullPolicy: {{ .Values.sidecars.pullPolicy }}
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=120s
@@ -128,6 +129,7 @@ spec:
                 - ALL
         - name: node-driver-registrar
           image: {{ .Values.sidecars.nodeDriverRegistrar.repository }}:{{ .Values.sidecars.nodeDriverRegistrar.tag }}
+          imagePullPolicy: {{ .Values.sidecars.pullPolicy }}
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)

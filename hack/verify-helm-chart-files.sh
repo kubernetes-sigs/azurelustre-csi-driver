@@ -36,6 +36,7 @@ cd "${PKG_ROOT}"
 MCR_REPOSITORY="mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi"
 REPOSITORY=${REPOSITORY:-${MCR_REPOSITORY}}
 COLOR=${COLOR:-always}
+KUBE_VERSION="1.29.0"
 
 # Temp directory for intermediate files during diff comparisons
 DIFF_TEMP_DIR=$(mktemp -d)
@@ -152,6 +153,7 @@ helm_template() {
     show_only+=("--show-only" "${value}")
   done
   helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --set "image.repository=${repository}" \
     --set "image.tag=${version_override}" \
@@ -369,6 +371,7 @@ check_source_version_metadata() {
   # Check rendered app.kubernetes.io/version labels
   local rendered
   if ! rendered=$(helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --namespace kube-system \
     chart-test \
@@ -419,6 +422,7 @@ check_conditional_blocks() {
 
   local rendered
   if ! rendered=$(helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --set "podAnnotations.probe=present" \
     --set "podLabels.probe=present" \
@@ -465,7 +469,8 @@ check_workload_identity() {
   local rendered pod_label client_id tenant_id sa_name token_creds
 
   echo "== Checking workload identity configuration for version: ${version} =="
-  if ! rendered=$(helm template --set "fullnameOverride=csi-azurelustre" \
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "fullnameOverride=csi-azurelustre" \
     --set "IdentityClientId=test-client-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: helm template failed with workload identity disabled:"
@@ -482,7 +487,8 @@ check_workload_identity() {
     return 1
   fi
 
-  if rendered=$(helm template --set "IsWorkloadIdentityEnabled=Enabled" \
+  if rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "IsWorkloadIdentityEnabled=Enabled" \
     --namespace kube-system chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: workload identity rendered without IdentityClientId"
     return 1
@@ -495,7 +501,8 @@ check_workload_identity() {
 
   # A near-miss value must be rejected at render time: anything but an exact
   # "Enabled" would otherwise skip both the label and the IdentityClientId guard.
-  if rendered=$(helm template --set "IsWorkloadIdentityEnabled=enabled" \
+  if rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "IsWorkloadIdentityEnabled=enabled" \
     --set "IdentityClientId=test-client-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: invalid IsWorkloadIdentityEnabled value rendered successfully"
@@ -507,7 +514,8 @@ check_workload_identity() {
     return 1
   fi
 
-  if ! rendered=$(helm template --set "fullnameOverride=csi-azurelustre" \
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "fullnameOverride=csi-azurelustre" \
     --set "IsWorkloadIdentityEnabled=Enabled" --set "IdentityClientId=test-client-id" \
     --set "IdentityTenantId=test-tenant-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
@@ -544,7 +552,7 @@ check_helm_lint() {
   local chart_dir="./charts/${version}/azurelustre-csi-driver"
 
   echo "== Linting chart: ${version} =="
-  if ! helm lint "${chart_dir}"; then
+  if ! helm lint --kube-version "${KUBE_VERSION}" "${chart_dir}"; then
     echo
     return 1
   fi
@@ -596,7 +604,8 @@ check_service_account_names() {
 
   echo "== Checking ServiceAccount names for version: ${version} =="
 
-  rendered=$(helm template --namespace kube-system chart-test "${chart_dir}")
+  rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-test "${chart_dir}")
   ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
   node=$(yq ea '[select(.kind == "DaemonSet") | .spec.template.spec.serviceAccountName] | unique | .[]' - <<<"${rendered}")
   if [[ "${ctrl}" != "csi-azurelustre-controller-sa" || "${node}" != "csi-azurelustre-node-sa" ]]; then
@@ -605,7 +614,8 @@ check_service_account_names() {
   fi
 
   # The names are fixed by design, so an attempted override must be ignored.
-  rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
+  rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-test "${chart_dir}" \
     --set "serviceAccount.controller.name=custom-controller-sa" \
     --set "serviceAccount.node.name=custom-node-sa")
   ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")

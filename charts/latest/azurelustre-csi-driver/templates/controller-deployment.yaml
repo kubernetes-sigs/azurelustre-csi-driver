@@ -96,6 +96,7 @@ spec:
       containers:
         - name: csi-provisioner
           image: {{ .Values.sidecars.provisioner.repository }}:{{ .Values.sidecars.provisioner.tag }}
+          imagePullPolicy: {{ .Values.sidecars.pullPolicy }}
           args:
             - -v=2
             - --leader-election
@@ -118,6 +119,7 @@ spec:
                 - ALL
         - name: liveness-probe
           image: {{ .Values.sidecars.livenessProbe.repository }}:{{ .Values.sidecars.livenessProbe.tag }}
+          imagePullPolicy: {{ .Values.sidecars.pullPolicy }}
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=120s

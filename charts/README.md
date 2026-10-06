@@ -129,6 +129,13 @@ driver configuration. In particular, it preserves the complete PVC UID in
 dynamically provisioned volume names by setting
 `--volume-name-uuid-length=-1`.
 
+Sidecars use unnumbered release tags from the DALEC-backed
+`mcr.microsoft.com/oss/v2/` namespace. These tags track the latest packaged
+revision of the same upstream release, including base-image rebuilds, without
+pinning the chart to a numbered `-N` rebuild tag. With
+`sidecars.pullPolicy: Always`, each container start resolves the current rebuild.
+Running containers are not updated until they restart.
+
 Key configurable parameters and defaults from the version-neutral source
 `values.yaml`. The release pipeline replaces `image.tag` with the selected
 driver image family when it packages a chart:
@@ -138,12 +145,13 @@ driver image family when it packages a chart:
 | `image.repository` | Driver image repository | `mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi` |
 | `image.tag` | Driver image family base; OS-specific templates append a flavor suffix | `latest` |
 | `image.pullPolicy` | Driver image pull policy | `Always` |
-| `sidecars.provisioner.repository` | csi-provisioner sidecar image | `mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner` |
-| `sidecars.provisioner.tag` | csi-provisioner image tag | `v5.2.0` |
-| `sidecars.livenessProbe.repository` | liveness probe image | `mcr.microsoft.com/oss/kubernetes-csi/livenessprobe` |
-| `sidecars.livenessProbe.tag` | liveness probe image tag | `v2.15.0` |
-| `sidecars.nodeDriverRegistrar.repository` | node-driver-registrar image | `mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar` |
-| `sidecars.nodeDriverRegistrar.tag` | node-driver-registrar image tag | `v2.13.0` |
+| `sidecars.pullPolicy` | Pull policy for all sidecar images | `Always` |
+| `sidecars.provisioner.repository` | csi-provisioner sidecar image | `mcr.microsoft.com/oss/v2/kubernetes-csi/csi-provisioner` |
+| `sidecars.provisioner.tag` | csi-provisioner image tag | `v5.3.0` |
+| `sidecars.livenessProbe.repository` | liveness probe image | `mcr.microsoft.com/oss/v2/kubernetes-csi/livenessprobe` |
+| `sidecars.livenessProbe.tag` | liveness probe image tag | `v2.20.0` |
+| `sidecars.nodeDriverRegistrar.repository` | node-driver-registrar image | `mcr.microsoft.com/oss/v2/kubernetes-csi/csi-node-driver-registrar` |
+| `sidecars.nodeDriverRegistrar.tag` | node-driver-registrar image tag | `v2.18.0` |
 | `controller.replicas` | Controller replicas | `2` |
 | `controller.priorityClassName` | Controller pod priority class | `system-cluster-critical` |
 | `controller.tolerations` | Controller pod tolerations (control-plane taints only; does not tolerate `CriticalAddonsOnly`) | control-plane `master`/`controlplane`/`control-plane` |
