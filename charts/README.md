@@ -152,6 +152,7 @@ driver image family when it packages a chart:
 | `sidecars.livenessProbe.tag` | liveness probe image tag | `v2.20.0` |
 | `sidecars.nodeDriverRegistrar.repository` | node-driver-registrar image | `mcr.microsoft.com/oss/v2/kubernetes-csi/csi-node-driver-registrar` |
 | `sidecars.nodeDriverRegistrar.tag` | node-driver-registrar image tag | `v2.18.0` |
+| `sidecars.nodeDriverRegistrar.healthPort` | node-driver-registrar HTTP health port | `29764` |
 | `controller.replicas` | Controller replicas | `2` |
 | `controller.priorityClassName` | Controller pod priority class | `system-cluster-critical` |
 | `controller.tolerations` | Controller pod tolerations (control-plane taints only; does not tolerate `CriticalAddonsOnly`) | control-plane `master`/`controlplane`/`control-plane` |

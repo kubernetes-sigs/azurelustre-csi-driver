@@ -220,14 +220,16 @@ Each `csi-azurelustre-node` pod runs four containers. Kernel-module loading and
 LNet setup are split into a dedicated startup sidecar so the CSI driver socket
 opens quickly: the `node-driver-registrar` no longer waits behind the full
 client install, only behind the driver's much smaller userspace utils install,
-which must still finish inside the registrar's hardcoded 30s connect deadline:
+with an HTTP startup probe holding off liveness checks for up to about a minute.
+The registrar still exits if its initial CSI connection times out after 30 seconds;
+Kubernetes then restarts it with backoff.
 
 | Container | Kind | Responsibility | Health checks |
 | --------- | ---- | -------------- | ------------- |
 | `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) | Installs the full Lustre client metapackage, loads the kernel modules into the shared host kernel, configures LNet, then runs an LNet-config reconcile loop for the life of the pod. | `startupProbe` + `readinessProbe`: `/app/readinessProbe.sh` (full LNet health — NIDs, self-ping, interfaces). `livenessProbe`: `test -d /sys/module/lnet` (restart only if the kernel module disappears). |
 | `azurelustre` | driver | Installs the userspace Lustre tools, then serves the CSI gRPC API. | `startupProbe`: `/healthz` HTTP on port 29763 (holds off the liveness check while the utils install runs). `readinessProbe`: `test -S /csi/csi.sock` (driver socket is serving). `livenessProbe`: `/healthz` HTTP on port 29763. |
 | `liveness-probe` | sidecar | Exposes the driver's `/healthz` endpoint to the kubelet. | — |
-| `node-driver-registrar` | sidecar | Registers the driver socket with the kubelet. | `livenessProbe`: registration probe. |
+| `node-driver-registrar` | sidecar | Registers the driver socket with the kubelet. | `startupProbe` + `livenessProbe`: `/healthz` HTTP on port 29764 (registration socket responds; not confirmation of completed kubelet registration). |
 
 The pod's overall `Ready` condition is the AND of every container's readiness,
 including the `lustre-loader` sidecar (a native sidecar's `readinessProbe`

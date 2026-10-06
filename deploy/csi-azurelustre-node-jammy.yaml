@@ -168,15 +168,26 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
+            - --http-endpoint=:29764
             - --v=2
+          ports:
+            - containerPort: 29764
+              name: registration
+              protocol: TCP
+          startupProbe:
+            failureThreshold: 6
+            httpGet:
+              path: /healthz
+              port: registration
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 10
           livenessProbe:
-            exec:
-              command:
-                - /csi-node-driver-registrar
-                - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
-                - --mode=kubelet-registration-probe
-            initialDelaySeconds: 30
-            timeoutSeconds: 15
+            httpGet:
+              path: /healthz
+              port: registration
+            timeoutSeconds: 5
+            periodSeconds: 10
           env:
             - name: ADDRESS
               value: /csi/csi.sock

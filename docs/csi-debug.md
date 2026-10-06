@@ -13,7 +13,7 @@
 > | `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) that loads the Lustre kernel modules + brings up LNet, then runs an LNet reconcile loop for the life of the pod | `startupProbe` + `readinessProbe` = `/app/readinessProbe.sh` (LNet health); `livenessProbe` = `test -d /sys/module/lnet` | kernel modules, LNet/NIDs, metapackage install |
 > | `azurelustre` | CSI driver: installs userspace tools, then serves the gRPC socket | `startupProbe` + `livenessProbe` = `/healthz` (port 29763); `readinessProbe` = `test -S /csi/csi.sock` | userspace utils install, mounts, gRPC/CSI logs |
 > | `liveness-probe` | exposes the driver `/healthz` to the kubelet | — | — |
-> | `node-driver-registrar` | registers the driver socket with the kubelet | registration `livenessProbe` | kubelet registration |
+> | `node-driver-registrar` | registers the driver socket with the kubelet | `startupProbe` + `livenessProbe` = `/healthz` (port 29764; registration socket responds) | kubelet registration |
 >
 > A node pod is `Ready` (`4/4`) only when the `lustre-loader` sidecar reports
 > LNet healthy **and** the `azurelustre` driver socket is serving. LNet and
@@ -51,7 +51,12 @@ During initial startup it is normal to see the loader's startup probe fail a few
 times while LNet comes up; once LNet is operational the probes succeed and the
 gated `azurelustre` and `node-driver-registrar` containers start. The driver's
 startup probe may likewise fail with `connection refused` until its CSI socket
-exists. Neither is a problem on a pod that goes on to reach Ready.
+exists, and the registrar's startup probe may fail until its registration socket
+responds. The registrar's startup probe holds off liveness checks with a budget of
+about one minute. It does not extend the registrar's 30-second CSI connection
+timeout: if that expires, the registrar exits and Kubernetes restarts it with
+backoff. Its HTTP health check does not confirm completed kubelet registration; check the
+registrar logs for `NotifyRegistrationStatus` when diagnosing registration failures.
 
 #### Run the LNet readiness probe directly (loader sidecar)
 
