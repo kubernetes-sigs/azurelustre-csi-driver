@@ -9,6 +9,7 @@ sidecars:
   provisioner:
     repository: mcr.microsoft.com/oss/v2/kubernetes-csi/csi-provisioner
     tag: v5.3.0
+    healthPort: 29761
     resources:
       limits:
         cpu: 100m

@@ -148,6 +148,7 @@ driver image family when it packages a chart:
 | `sidecars.pullPolicy` | Pull policy for all sidecar images | `Always` |
 | `sidecars.provisioner.repository` | csi-provisioner sidecar image | `mcr.microsoft.com/oss/v2/kubernetes-csi/csi-provisioner` |
 | `sidecars.provisioner.tag` | csi-provisioner image tag | `v5.3.0` |
+| `sidecars.provisioner.healthPort` | csi-provisioner leader-election health port | `29761` |
 | `sidecars.livenessProbe.repository` | liveness probe image | `mcr.microsoft.com/oss/v2/kubernetes-csi/livenessprobe` |
 | `sidecars.livenessProbe.tag` | liveness probe image tag | `v2.20.0` |
 | `sidecars.nodeDriverRegistrar.repository` | node-driver-registrar image | `mcr.microsoft.com/oss/v2/kubernetes-csi/csi-node-driver-registrar` |

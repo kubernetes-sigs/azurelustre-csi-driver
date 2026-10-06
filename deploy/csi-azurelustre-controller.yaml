@@ -97,6 +97,7 @@ spec:
           args:
             - -v=2
             - --leader-election
+            - --http-endpoint=:29761
             - --timeout=15m
             - --extra-create-metadata=true
             - --volume-name-uuid-length=-1
@@ -104,9 +105,28 @@ spec:
           env:
             - name: ADDRESS
               value: /csi/csi.sock
+          ports:
+            - containerPort: 29761
+              name: provisioner
+              protocol: TCP
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
+          startupProbe:
+            failureThreshold: 60
+            httpGet:
+              path: /healthz/leader-election
+              port: provisioner
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /healthz/leader-election
+              port: provisioner
+            timeoutSeconds: 10
+            periodSeconds: 20
           resources:
             limits:
               cpu: 100m

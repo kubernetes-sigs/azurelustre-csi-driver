@@ -20,6 +20,20 @@
 > kernel-module troubleshooting targets `-c lustre-loader`; mount and CSI driver
 > troubleshooting targets `-c azurelustre`.
 
+### Controller provisioner health
+
+The controller's `csi-provisioner` exposes `/healthz/leader-election` on port
+29761, separate from the CSI driver's `/healthz` on port 29762. The provisioner
+starts its HTTP server only after connecting to and initializing with the CSI
+driver. Its startup probe allows about ten minutes for that initialization,
+holding off liveness checks until the endpoint responds successfully.
+
+After startup, the liveness probe can restart a provisioner whose leader-election
+health check fails. A successful response does not mean that this replica is the
+leader or that a volume operation succeeded; standby replicas can also be healthy.
+Check `-c csi-provisioner` logs for election and provisioning errors, and
+`-c azurelustre` logs for CSI driver errors.
+
 ### LNet readiness troubleshooting (loader sidecar)
 
 **Symptoms:**

@@ -100,6 +100,7 @@ spec:
           args:
             - -v=2
             - --leader-election
+            - --http-endpoint=:{{ .Values.sidecars.provisioner.healthPort }}
             - --timeout=15m
             - --extra-create-metadata=true
             - --volume-name-uuid-length=-1
@@ -107,9 +108,28 @@ spec:
           env:
             - name: ADDRESS
               value: /csi/csi.sock
+          ports:
+            - containerPort: {{ .Values.sidecars.provisioner.healthPort }}
+              name: provisioner
+              protocol: TCP
           volumeMounts:
             - mountPath: /csi
               name: socket-dir
+          startupProbe:
+            failureThreshold: 60
+            httpGet:
+              path: /healthz/leader-election
+              port: provisioner
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /healthz/leader-election
+              port: provisioner
+            timeoutSeconds: 10
+            periodSeconds: 20
           resources:
             {{- toYaml .Values.sidecars.provisioner.resources | nindent 12 }}
           securityContext:
