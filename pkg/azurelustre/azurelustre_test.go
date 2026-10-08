@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -484,15 +483,7 @@ func TestSelectForceUnmounter(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := os.MkdirTemp(os.TempDir(), "azurelustre-csi-mount-test")
-	if err != nil {
-		t.Fatalf("failed to create tmp dir: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(existingMountPath); err != nil {
-			t.Fatalf("failed to remove tmp dir: %v", err)
-		}
-	}()
+	existingMountPath := t.TempDir()
 
 	tests := []struct {
 		desc           string
@@ -501,7 +492,7 @@ func TestIsCorruptedDir(t *testing.T) {
 	}{
 		{
 			desc:           "NotExist dir",
-			dir:            "/tmp/NotExist",
+			dir:            filepath.Join(existingMountPath, "missing"),
 			expectedResult: false,
 		},
 		{
@@ -627,8 +618,10 @@ func TestGetLustreVolFromID(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			lustreVolume, err := getLustreVolFromID(test.volumeID)
 
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
+			if test.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, test.expectedErr.Error())
 			}
 			assert.Equal(t, test.expectedLustreVolume, lustreVolume, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, lustreVolume, test.expectedLustreVolume)
 		})
@@ -637,132 +630,88 @@ func TestGetLustreVolFromID(t *testing.T) {
 
 func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 	testCases := []struct {
-		name     string
-		testFunc func(t *testing.T)
+		name                          string
+		subscriptionID                string
+		networkResourceSubscriptionID string
+		resourceGroup                 string
+		vnetResourceGroup             string
+		input                         SubnetProperties
+		expected                      SubnetProperties
 	}{
 		{
-			name: "NetworkResourceSubscriptionID is Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "fakeSubID"
-				d.cloud.NetworkResourceSubscriptionID = ""
-				d.cloud.ResourceGroup = "foo"
-				d.cloud.VnetResourceGroup = "foo"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, d.cloud.SubscriptionID, "foo", d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "foo",
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.SubscriptionID should be used as the SubID")
+			name:              "NetworkResourceSubscriptionID is Empty",
+			subscriptionID:    "fakeSubID",
+			resourceGroup:     "foo",
+			vnetResourceGroup: "foo",
+			expected: SubnetProperties{
+				VnetResourceGroup: "foo",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "fakeSubID", "foo", "", ""),
 			},
 		},
 		{
-			name: "NetworkResourceSubscriptionID is not Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "fakeSubID"
-				d.cloud.NetworkResourceSubscriptionID = "fakeNetSubID"
-				d.cloud.ResourceGroup = "foo"
-				d.cloud.VnetResourceGroup = "foo"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, d.cloud.NetworkResourceSubscriptionID, "foo", d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "foo",
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.NetworkResourceSubscriptionID should be used as the SubID")
+			name:                          "NetworkResourceSubscriptionID is not Empty",
+			subscriptionID:                "fakeSubID",
+			networkResourceSubscriptionID: "fakeNetSubID",
+			resourceGroup:                 "foo",
+			vnetResourceGroup:             "foo",
+			expected: SubnetProperties{
+				VnetResourceGroup: "foo",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "fakeNetSubID", "foo", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup is Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = ""
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", d.cloud.ResourceGroup, d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: d.cloud.ResourceGroup,
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.ResourceGroup should be used as the rg")
+			name:                          "VnetResourceGroup is Empty",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			expected: SubnetProperties{
+				VnetResourceGroup: "fakeResourceGroup",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "fakeResourceGroup", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup is not Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = "fakeVnetResourceGroup"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", d.cloud.VnetResourceGroup, d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: d.cloud.VnetResourceGroup,
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.VnetResourceGroup should be used as the rg")
+			name:                          "VnetResourceGroup is not Empty",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			vnetResourceGroup:             "fakeVnetResourceGroup",
+			expected: SubnetProperties{
+				VnetResourceGroup: "fakeVnetResourceGroup",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "fakeVnetResourceGroup", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup, vnetName, subnetName is specified",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = "fakeVnetResourceGroup"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "vnetrg",
-					VnetName:          "vnetName",
-					SubnetName:        "subnetName",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", "vnetrg", "vnetName", "subnetName")
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "vnetrg",
-					VnetName:          "vnetName",
-					SubnetName:        "subnetName",
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "VnetResourceGroup, vnetName, subnetName is specified")
+			name:                          "VnetResourceGroup, vnetName, subnetName is specified",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			vnetResourceGroup:             "fakeVnetResourceGroup",
+			input: SubnetProperties{
+				VnetResourceGroup: "vnetrg",
+				VnetName:          "vnetName",
+				SubnetName:        "subnetName",
+			},
+			expected: SubnetProperties{
+				VnetResourceGroup: "vnetrg",
+				VnetName:          "vnetName",
+				SubnetName:        "subnetName",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "vnetrg", "vnetName", "subnetName"),
 			},
 		},
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, tc.testFunc)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			driver := NewFakeDriver(t)
+			driver.cloud = &azure.Cloud{}
+			driver.cloud.SubscriptionID = testCase.subscriptionID
+			driver.cloud.NetworkResourceSubscriptionID = testCase.networkResourceSubscriptionID
+			driver.cloud.ResourceGroup = testCase.resourceGroup
+			driver.cloud.VnetResourceGroup = testCase.vnetResourceGroup
+
+			actual := driver.populateSubnetPropertiesFromCloudConfig(testCase.input)
+
+			assert.Equal(t, testCase.expected, actual)
+		})
 	}
 }
 
@@ -872,7 +821,7 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 
 				// Create fake kubernetes client
 				fakeClient := kubefake.NewSimpleClientset()

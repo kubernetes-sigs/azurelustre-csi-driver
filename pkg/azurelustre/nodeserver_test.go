@@ -17,11 +17,10 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"syscall"
 	"testing"
 
@@ -44,7 +43,7 @@ func TestNodeGetInfo(t *testing.T) {
 
 	// Test valid request
 	req := csi.NodeGetInfoRequest{}
-	resp, err := d.NodeGetInfo(context.Background(), &req)
+	resp, err := d.NodeGetInfo(t.Context(), &req)
 	require.NoError(t, err)
 	assert.Equal(t, fakeNodeID, resp.GetNodeId())
 }
@@ -62,7 +61,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 	d.NSCap = capList
 	// Test valid request
 	req := csi.NodeGetCapabilitiesRequest{}
-	resp, err := d.NodeGetCapabilities(context.Background(), &req)
+	resp, err := d.NodeGetCapabilities(t.Context(), &req)
 	assert.NotNil(t, resp)
 	assert.Equal(t, capType, resp.GetCapabilities()[0].GetType())
 	require.NoError(t, err)
@@ -82,7 +81,7 @@ func TestEnsureMountPoint(t *testing.T) {
 		{
 			desc:        "[Error] Mocked by IsLikelyNotMountPoint",
 			target:      errorTarget,
-			expectedErr: fmt.Errorf("fake IsLikelyNotMountPoint: fake error"),
+			expectedErr: errors.New("fake IsLikelyNotMountPoint: fake error"),
 		},
 		{
 			desc:        "[Error] Error opening file",
@@ -125,8 +124,18 @@ func TestEnsureMountPoint(t *testing.T) {
 
 		t.Run(test.desc, func(t *testing.T) {
 			_, err := d.ensureMountPoint(test.target)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
+			var expectedPathError *os.PathError
+			switch {
+			case test.expectedErr == nil:
+				require.NoError(t, err)
+			case errors.As(test.expectedErr, &expectedPathError):
+				var pathError *os.PathError
+				require.ErrorAs(t, err, &pathError)
+				assert.Equal(t, expectedPathError.Op, pathError.Op)
+				assert.Equal(t, expectedPathError.Path, pathError.Path)
+				require.ErrorIs(t, pathError.Err, expectedPathError.Err)
+			default:
+				require.EqualError(t, err, test.expectedErr.Error())
 			}
 		})
 
@@ -579,10 +588,8 @@ func TestNodePublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err = d.NodePublishVolume(context.Background(), &test.req)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
+			_, err = d.NodePublishVolume(t.Context(), &test.req)
+			require.ErrorIs(t, err, test.expectedErr)
 
 			mountPoints, err := d.mounter.List()
 			require.NoError(t, err)
@@ -680,7 +687,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
 					Readonly:      false,
 				}
-				_, err := d.NodePublishVolume(context.Background(), &req)
+				_, err := d.NodePublishVolume(t.Context(), &req)
 				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1"},
@@ -718,7 +725,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					VolumeContext: map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
 					Readonly:      false,
 				}
-				_, err := d.NodePublishVolume(context.Background(), &req)
+				_, err := d.NodePublishVolume(t.Context(), &req)
 				require.NoError(t, err)
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
@@ -774,10 +781,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 		fakeMounter.ResetLog()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodeUnpublishVolume(context.Background(), &test.req)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
+			_, err := d.NodeUnpublishVolume(t.Context(), &test.req)
+			require.ErrorIs(t, err, test.expectedErr)
 			mountPoints, err := d.mounter.List()
 			require.NoError(t, err)
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
@@ -837,16 +842,16 @@ func TestMakeDir(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func NewSafeMounter() (*mount.SafeFormatAndMount, error) {
+func NewSafeMounter() *mount.SafeFormatAndMount {
 	return &mount.SafeFormatAndMount{
 		Interface: mount.New(""),
-	}, nil
+	}
 }
 
 func TestNewSafeMounter(t *testing.T) {
-	resp, err := NewSafeMounter()
-	assert.NotNil(t, resp)
-	require.NoError(t, err)
+	mounter := NewSafeMounter()
+	require.NotNil(t, mounter)
+	assert.NotNil(t, mounter.Interface)
 }
 
 func TestNodeGetVolumeStats(t *testing.T) {
@@ -894,10 +899,8 @@ func TestNodeGetVolumeStats(t *testing.T) {
 		}()
 
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodeGetVolumeStats(context.Background(), &test.req)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
+			_, err := d.NodeGetVolumeStats(t.Context(), &test.req)
+			require.ErrorIs(t, err, test.expectedErr)
 		})
 	}
 }
@@ -994,9 +997,7 @@ func TestGetInternalVolumePath(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalVolumePath(test.workingMountDir, test.mountPath, test.subDirPath)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
+			require.ErrorIs(t, err, test.expectedErr)
 			assert.Equal(t, test.result, path)
 		})
 	}
@@ -1036,9 +1037,7 @@ func TestGetInternalMountPath(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.desc, func(t *testing.T) {
 			path, err := getInternalMountPath(test.workingMountDir, test.mountPath)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
-			}
+			require.ErrorIs(t, err, test.expectedErr)
 			assert.Equal(t, test.result, path)
 		})
 	}
@@ -1334,9 +1333,7 @@ func TestNewLustreVolume(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.desc, func(t *testing.T) {
 			vol, err := newLustreVolume(test.id, test.volName, test.params)
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("[test: %s] Unexpected error: %v, expected error: %v", test.desc, err, test.expectedErr)
-			}
+			require.ErrorIs(t, err, test.expectedErr)
 			assert.Equal(t, test.expectedLustreVolume, vol, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, vol, test.expectedLustreVolume)
 		})
 	}
@@ -1345,7 +1342,7 @@ func TestNewLustreVolume(t *testing.T) {
 func TestNodeStageVolume(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.NodeStageVolumeRequest{}
-	resp, err := d.NodeStageVolume(context.Background(), &req)
+	resp, err := d.NodeStageVolume(t.Context(), &req)
 	assert.Nil(t, resp)
 	require.ErrorContains(t, err, "not implemented")
 	assert.Equal(t, codes.Unimplemented, status.Code(err))
@@ -1354,7 +1351,7 @@ func TestNodeStageVolume(t *testing.T) {
 func TestNodeUnstageVolume(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.NodeUnstageVolumeRequest{}
-	resp, err := d.NodeUnstageVolume(context.Background(), &req)
+	resp, err := d.NodeUnstageVolume(t.Context(), &req)
 	assert.Nil(t, resp)
 	require.ErrorContains(t, err, "not implemented")
 	assert.Equal(t, codes.Unimplemented, status.Code(err))

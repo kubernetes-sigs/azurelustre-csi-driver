@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"slices"
@@ -38,7 +37,7 @@ func TestControllerGetCapabilities(t *testing.T) {
 	d := NewFakeDriver(t)
 	d.AddControllerServiceCapabilities(controllerServiceCapabilities)
 	req := csi.ControllerGetCapabilitiesRequest{}
-	resp, err := d.ControllerGetCapabilities(context.Background(), &req)
+	resp, err := d.ControllerGetCapabilities(t.Context(), &req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	capabilitiesSupported := make([]csi.ControllerServiceCapability_RPC_Type, 0, len(resp.GetCapabilities()))
@@ -110,7 +109,7 @@ func buildDynamicProvCreateVolumeRequest() *csi.CreateVolumeRequest {
 func TestCreateVolume_Success(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -123,7 +122,7 @@ func TestCreateVolume_Success_DoesNotCallDynamicProvisioner(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 	req := buildCreateVolumeRequest()
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.Empty(t, fakeDynamicProvisioner.Filesystems)
 	assert.Empty(t, fakeDynamicProvisioner.fakeCallCount, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
@@ -135,7 +134,7 @@ func TestDynamicCreateVolume_Success(t *testing.T) {
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -177,7 +176,7 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -203,7 +202,7 @@ func TestDynamicCreateVolume_Success_ZonesSynonym(t *testing.T) {
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "zone")
 	req.Parameters["zones"] = expectedZone
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -221,7 +220,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "location")
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -237,7 +236,7 @@ func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "resource-group-name")
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -251,7 +250,7 @@ func TestDynamicCreateVolume_Success_UsesReturnedIPAddress(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "resource-group-name")
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -295,7 +294,7 @@ func TestCreateVolume_Success_CapacityRoundUp(t *testing.T) {
 			req.CapacityRange = &csi.CapacityRange{
 				RequiredBytes: tC.capacity,
 			}
-			rep, err := d.CreateVolume(context.Background(), req)
+			rep, err := d.CreateVolume(t.Context(), req)
 			require.NoError(t, err)
 			assert.Equal(t, tC.expected, rep.GetVolume().GetCapacityBytes())
 		})
@@ -312,7 +311,7 @@ func TestDynamicCreateVolume_Err_CreateError(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Name = clusterRequestFailureName
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -331,7 +330,7 @@ func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "zone")
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -349,7 +348,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidZone(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["zone"] = "invalid-zone"
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -369,12 +368,12 @@ func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["location"] = emptyZonesLocation
 	req.Parameters["zone"] = "invalid-zone"
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, fmt.Sprintf("Parameter zone cannot be used in location %s", emptyZonesLocation))
+	require.ErrorContains(t, err, "Parameter zone cannot be used in location "+emptyZonesLocation)
 	require.ErrorContains(t, err, "no zones available for SKU")
 }
 
@@ -391,7 +390,7 @@ func TestDynamicCreateVolume_Success_AllowUnadvertisedZone(t *testing.T) {
 	req.Parameters["location"] = emptyZonesLocation
 	req.Parameters["zone"] = "3"
 
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	require.Len(t, fakeDynamicProvisioner.Filesystems, 1)
@@ -410,7 +409,7 @@ func TestDynamicCreateVolume_Err_AllowUnadvertisedZoneDoesNotSkipAdvertisedValid
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["zone"] = "invalid-zone"
 
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.ErrorContains(t, err, "zone must be one of")
@@ -429,7 +428,7 @@ func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
 	d.cloud = azure.GetTestCloud(ctrl)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Name = tooLongName
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -442,7 +441,7 @@ func TestCreateVolume_Err_NoName(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Name = ""
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -454,7 +453,7 @@ func TestCreateVolume_Err_NoVolumeCapabilities(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = nil
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -466,7 +465,7 @@ func TestCreateVolume_Err_EmptyVolumeCapabilities(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeCapabilities = []*csi.VolumeCapability{}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -478,7 +477,7 @@ func TestCreateVolume_Err_NoParameters(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Parameters = nil
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -490,7 +489,7 @@ func TestCreateVolume_Err_BadSku(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["sku-name"] = "bad-sku"
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -502,7 +501,7 @@ func TestCreateVolume_Err_ErrorRetrievingSku(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["location"] = errorLocation
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -516,7 +515,7 @@ func TestCreateVolume_Err_CapacityAboveSkuMax(t *testing.T) {
 	req.CapacityRange = &csi.CapacityRange{
 		RequiredBytes: 9000 * util.TiB,
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -530,7 +529,7 @@ func TestCreateVolume_Err_CapacityOverflow(t *testing.T) {
 	req.CapacityRange = &csi.CapacityRange{
 		RequiredBytes: math.MaxInt64,
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -545,7 +544,7 @@ func TestCreateVolume_Err_CapacityAboveLimit(t *testing.T) {
 		RequiredBytes: 2 * util.TiB,
 		LimitBytes:    1 * util.TiB,
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -557,7 +556,7 @@ func TestCreateVolume_Success_NoFSName(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	delete(req.GetParameters(), VolumeContextFSName)
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	expectedOutput := "test_volume#lustrefs#127.0.0.1#testSubDir#f#"
@@ -568,7 +567,7 @@ func TestCreateVolume_Success_EmptyFSName(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.GetParameters()[VolumeContextFSName] = ""
-	rep, err := d.CreateVolume(context.Background(), req)
+	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	expectedOutput := "test_volume#lustrefs#127.0.0.1#testSubDir#f#"
@@ -579,7 +578,7 @@ func TestCreateVolume_Err_ParametersEmptySubDir(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Parameters[VolumeContextSubDir] = ""
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -592,7 +591,7 @@ func TestCreateVolume_Err_UnknownParameters(t *testing.T) {
 	req := buildCreateVolumeRequest()
 	req.Parameters["FirstNonexistentParameter"] = "Invalid"
 	req.Parameters["AnotherNonexistentParameter"] = "Invalid"
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -607,7 +606,7 @@ func TestCreateVolume_Err_UnknownParametersDynamicProvisioning(t *testing.T) {
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["FirstNonexistentParameter"] = "Invalid"
 	req.Parameters["AnotherNonexistentParameter"] = "Invalid"
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -621,7 +620,7 @@ func TestCreateVolume_Err_HasVolumeContentSource(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.VolumeContentSource = &csi.VolumeContentSource{}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -633,7 +632,7 @@ func TestCreateVolume_Err_HasSecrets(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Secrets = map[string]string{}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -645,7 +644,7 @@ func TestCreateVolume_Err_HasSecretsValue(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.Secrets = map[string]string{"test": "test"}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -657,7 +656,7 @@ func TestCreateVolume_Err_HasAccessibilityRequirements(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildCreateVolumeRequest()
 	req.AccessibilityRequirements = &csi.TopologyRequirement{}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -678,7 +677,7 @@ func TestCreateVolume_Err_BlockVolume(t *testing.T) {
 			},
 		},
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -698,7 +697,7 @@ func TestCreateVolume_Err_BlockMountVolume(t *testing.T) {
 				Mode: volumeCapabilities[0],
 			},
 		})
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -734,7 +733,7 @@ func TestCreateVolume_Err_NotSupportedAccessMode(t *testing.T) {
 			},
 		)
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -748,7 +747,7 @@ func TestCreateVolume_Err_OperationExists(t *testing.T) {
 	if acquired := d.volumeLocks.TryAcquire(req.GetName()); !acquired {
 		assert.Fail(t, "Can't acquire volume lock")
 	}
-	_, err := d.CreateVolume(context.Background(), req)
+	_, err := d.CreateVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -764,7 +763,7 @@ func TestDeleteVolume_Success(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "f", ""),
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Empty(t, fakeDynamicProvisioner.fakeCallCount, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
 	require.NoError(t, err)
 }
@@ -777,7 +776,7 @@ func TestDeleteVolume_Success_MissingDynamicCreateValue(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "", ""),
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Empty(t, fakeDynamicProvisioner.fakeCallCount, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
 	require.NoError(t, err)
 }
@@ -790,7 +789,7 @@ func TestDeleteVolume_Success_UnnecessaryResourceGroup(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "f", "testResourceGroupName"),
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Empty(t, fakeDynamicProvisioner.fakeCallCount, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
 	require.NoError(t, err)
 }
@@ -801,7 +800,7 @@ func TestDeleteVolume_Success_NoFsName(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"testVolume", "", "127.0.0.1", "testSubDir", "f", ""),
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.NoError(t, err)
 }
 
@@ -814,7 +813,7 @@ func TestDynamicDeleteVolume_Success(t *testing.T) {
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
 	createReq := buildDynamicProvCreateVolumeRequest()
-	rep, err := d.CreateVolume(context.Background(), createReq)
+	rep, err := d.CreateVolume(t.Context(), createReq)
 	require.NoError(t, err)
 	assert.NotEmpty(t, rep.GetVolume())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
@@ -825,7 +824,7 @@ func TestDynamicDeleteVolume_Success(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
 	}
-	_, err = d.DeleteVolume(context.Background(), deleteRequest)
+	_, err = d.DeleteVolume(t.Context(), deleteRequest)
 	require.Len(t, fakeDynamicProvisioner.fakeCallCount, 1, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
 	require.Equal(t, 1, fakeDynamicProvisioner.fakeCallCount["DeleteAmlFilesystem"])
 	require.NoError(t, err)
@@ -844,7 +843,7 @@ func TestDynamicDeleteVolume_Err_DeleteError(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			clusterRequestFailureName, "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -858,7 +857,7 @@ func TestDeleteVolume_Err_NoVolumeID(t *testing.T) {
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: "",
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -871,7 +870,7 @@ func TestDeleteVolume_Success_InvalidVolumeID(t *testing.T) {
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: "#",
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.NoError(t, err)
 }
 
@@ -882,7 +881,7 @@ func TestDeleteVolume_Err_HasSecrets(t *testing.T) {
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
 		Secrets: map[string]string{},
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -902,7 +901,7 @@ func TestDynamicDeleteVolume_Err_NoResourceGroup(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	d.cloud = azure.GetTestCloud(ctrl)
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -920,7 +919,7 @@ func TestDeleteVolume_Err_HasSecretsValue(t *testing.T) {
 			"test": "test",
 		},
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -937,7 +936,7 @@ func TestDeleteVolume_Err_OperationExists(t *testing.T) {
 	if acquired := d.volumeLocks.TryAcquire(req.GetVolumeId()); !acquired {
 		assert.Fail(t, "Can't acquire volume lock")
 	}
-	_, err := d.DeleteVolume(context.Background(), req)
+	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -965,7 +964,7 @@ func TestValidateVolumeCapabilities_Success(t *testing.T) {
 		VolumeCapabilities: capabilities,
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.NoError(t, err)
 }
 
@@ -988,7 +987,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeID(t *testing.T) {
 		VolumeCapabilities: capabilities,
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1004,7 +1003,7 @@ func TestValidateVolumeCapabilities_Err_NoVolumeCapabilities(t *testing.T) {
 		VolumeCapabilities: nil,
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1020,7 +1019,7 @@ func TestValidateVolumeCapabilities_Err_EmptyVolumeCapabilities(t *testing.T) {
 		VolumeCapabilities: []*csi.VolumeCapability{},
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1049,7 +1048,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretes(t *testing.T) {
 		Secrets:            map[string]string{},
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1078,7 +1077,7 @@ func TestValidateVolumeCapabilities_Err_HasSecretesValue(t *testing.T) {
 		Secrets:            map[string]string{"test": "test"},
 	}
 
-	_, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	_, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
 	assert.True(t, ok)
@@ -1108,7 +1107,7 @@ func TestValidateVolumeCapabilities_Success_BlockCapabilities(t *testing.T) {
 		VolumeCapabilities: capabilities,
 	}
 
-	res, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	res, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.NoError(t, err)
 	assert.Nil(t, res.GetConfirmed())
 }
@@ -1148,7 +1147,7 @@ func TestValidateVolumeCapabilities_Success_HasUnsupportedAccessMode(
 		VolumeCapabilities: capabilities,
 	}
 
-	res, err := d.ValidateVolumeCapabilities(context.Background(), req)
+	res, err := d.ValidateVolumeCapabilities(t.Context(), req)
 	require.NoError(t, err)
 	assert.Nil(t, res.GetConfirmed())
 }

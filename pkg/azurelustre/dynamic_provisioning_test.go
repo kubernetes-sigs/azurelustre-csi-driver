@@ -143,6 +143,7 @@ func newMockAmlfsRecorder(failureBehaviors []string) *mockAmlfsRecorder {
 }
 
 func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *DynamicProvisioner {
+	t.Helper()
 	dynamicProvisioner := &DynamicProvisioner{
 		amlFilesystemsClient: newFakeAmlFilesystemsClient(t, recorder),
 		vnetClient:           newFakeVnetClient(t, recorder),
@@ -155,6 +156,7 @@ func newTestDynamicProvisioner(t *testing.T, recorder *mockAmlfsRecorder) *Dynam
 }
 
 func newFakeSkusClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.SKUsClient {
+	t.Helper()
 	skusClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -351,6 +353,7 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 }
 
 func newFakeVnetClient(t *testing.T, recorder *mockAmlfsRecorder) *armnetwork.VirtualNetworksClient {
+	t.Helper()
 	vnetClientFactory, err := armnetwork.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -441,6 +444,7 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 }
 
 func newFakeMgmtClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.ManagementClient {
+	t.Helper()
 	mgmtClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -525,6 +529,7 @@ func createAscInternalErrorResponse() *azcore.ResponseError {
 }
 
 func newFakeAmlFilesystemsClient(t *testing.T, recorder *mockAmlfsRecorder) *armstoragecache.AmlFilesystemsClient {
+	t.Helper()
 	amlFilesystemsClientFactory, err := armstoragecache.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
@@ -690,7 +695,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	mgsIPAddress, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	mgsIPAddress, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName:    expectedResourceGroupName,
 		AmlFilesystemName:    expectedAmlFilesystemName,
 		Location:             expectedLocation,
@@ -727,7 +732,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Tags(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		Tags:              expectedTags,
@@ -747,7 +752,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Zone(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		Zone:              expectedZone,
@@ -763,7 +768,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_NoZone(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -777,7 +782,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_EmptyZone(t *testing.T) 
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		Zone:              "",
@@ -794,7 +799,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_Identities(t *testing.T)
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		Identities:        expectedIdentities,
@@ -930,7 +935,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
 			if tC.failureBehaviors[0] == "" {
-				_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+				_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 					ResourceGroupName: expectedResourceGroupName,
 					AmlFilesystemName: expectedAmlFilesystemName,
 					SubnetInfo:        buildExpectedSubnetInfo(),
@@ -939,7 +944,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Aborted_TriesDeleteOnImmediateCl
 				require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 			}
 
-			_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+			_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 				ResourceGroupName: expectedResourceGroupName,
 				AmlFilesystemName: expectedAmlFilesystemName,
 				SubnetInfo:        buildExpectedSubnetInfo(),
@@ -969,7 +974,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_Timeout(t *testing.T) {
 		// Use 1.5x the poll frequency so the deadline expires between poll ticks
 		// rather than coinciding with one. Aligning with a tick creates a select
 		// race between time.After and ctx.Done in the SDK's Delay helper.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*quickPollFrequency/2)
+		ctx, cancel := context.WithTimeout(t.Context(), 3*quickPollFrequency/2)
 		defer cancel()
 
 		_, err := dynamicProvisioner.CreateAmlFilesystem(ctx, &AmlFilesystemProperties{
@@ -993,7 +998,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedDeleteOnRetryForCluste
 	recorder := newMockAmlfsRecorder(failureBehaviors)
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: clusterRequestRetryDeleteFailureName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1047,7 +1052,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_FailedClusterStateGetOnRetry
 			recorder := newMockAmlfsRecorder(failureBehaviors)
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-			_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+			_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 				ResourceGroupName: expectedResourceGroupName,
 				AmlFilesystemName: clusterGetRetryCheckFailureName,
 				SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1082,7 +1087,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_NilClient(t *testing.T) {
 	dynamicProvisioner.amlFilesystemsClient = nil
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        SubnetProperties{},
@@ -1137,7 +1142,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err(t *testing.T) {
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 			require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-			_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+			_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 				ResourceGroupName: tC.resourceGroupName,
 				AmlFilesystemName: tC.amlFilesystemName,
 				SubnetInfo:        tC.subnetProperties,
@@ -1155,7 +1160,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_EmptySubnetInfo(t *testing.T
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        SubnetProperties{},
@@ -1173,7 +1178,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Err_EmptyInsufficientCapacity(t 
 	subnetProperties := buildExpectedSubnetInfo()
 	subnetProperties.VnetName = fullVnetName
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        subnetProperties,
@@ -1190,7 +1195,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_NoCapacityCheckIfCurrent
 
 	subnetProperties := buildExpectedSubnetInfo()
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        subnetProperties,
@@ -1198,14 +1203,14 @@ func TestDynamicProvisioner_CreateAmlFilesystem_Success_NoCapacityCheckIfCurrent
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 
-	currentClusterState, err := dynamicProvisioner.currentClusterState(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	currentClusterState, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.NoError(t, err)
 	require.Equal(t, ClusterStateExists, currentClusterState)
 
 	subnetProperties.VnetName = fullVnetName
 
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
-	_, err = dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err = dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        subnetProperties,
@@ -1219,7 +1224,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success(t *testing.T) {
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1228,7 +1233,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 
-	err = dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 
 	require.NoError(t, err)
 	assert.Empty(t, recorder.recordedAmlfsConfigurations)
@@ -1239,7 +1244,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_NilCLient(t *testing.T) {
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.amlFilesystemsClient = nil
 
-	err := dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	err := dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.ErrorContains(t, err, "aml filesystem client is nil")
 }
 
@@ -1248,7 +1253,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_Timeout(t *testing.T) {
 		recorder := newMockAmlfsRecorder([]string{})
 		dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-		_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+		_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 			ResourceGroupName: expectedResourceGroupName,
 			AmlFilesystemName: expectedAmlFilesystemName,
 			SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1258,7 +1263,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_Timeout(t *testing.T) {
 		// Use 1.5x the poll frequency so the deadline expires between poll ticks
 		// rather than coinciding with one. Aligning with a tick creates a select
 		// race between time.After and ctx.Done in the SDK's Delay helper.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*quickPollFrequency/2)
+		ctx, cancel := context.WithTimeout(t.Context(), 3*quickPollFrequency/2)
 		defer cancel()
 		err = dynamicProvisioner.DeleteAmlFilesystem(ctx, expectedResourceGroupName, expectedAmlFilesystemName)
 		require.Error(t, err)
@@ -1276,7 +1281,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_ImmediateFailure(t *testing.
 
 	amlFilesystemName := immediateDeleteFailureName
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: amlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1284,7 +1289,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_ImmediateFailure(t *testing.
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 
-	err = dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, amlFilesystemName)
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, amlFilesystemName)
 	require.ErrorContains(t, err, immediateDeleteFailureName)
 	assert.Len(t, recorder.recordedAmlfsConfigurations, 1)
 }
@@ -1296,7 +1301,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_EventualFailure(t *testing.T
 
 	amlFilesystemName := eventualDeleteFailureName
 
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: amlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1304,7 +1309,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Err_EventualFailure(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 
-	err = dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, amlFilesystemName)
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, amlFilesystemName)
 	require.ErrorContains(t, err, eventualDeleteFailureName)
 	assert.Len(t, recorder.recordedAmlfsConfigurations, 1)
 }
@@ -1315,13 +1320,13 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success_DeletesCorrectCluster(t 
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
 	})
 	require.NoError(t, err)
-	_, err = dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err = dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: otherAmlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1329,7 +1334,7 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success_DeletesCorrectCluster(t 
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 2)
 
-	err = dynamicProvisioner.DeleteAmlFilesystem(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 	assert.Equal(t, otherAmlFilesystemName, *recorder.recordedAmlfsConfigurations[otherAmlFilesystemName].Name)
@@ -1339,7 +1344,7 @@ func TestDynamicProvisioner_CurrentClusterState_Success(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
-	_, err := dynamicProvisioner.CreateAmlFilesystem(context.Background(), &AmlFilesystemProperties{
+	_, err := dynamicProvisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
 		ResourceGroupName: expectedResourceGroupName,
 		AmlFilesystemName: expectedAmlFilesystemName,
 		SubnetInfo:        buildExpectedSubnetInfo(),
@@ -1347,7 +1352,7 @@ func TestDynamicProvisioner_CurrentClusterState_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, recorder.recordedAmlfsConfigurations, 1)
 
-	currentClusterState, err := dynamicProvisioner.currentClusterState(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	currentClusterState, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.NoError(t, err)
 	require.Equal(t, ClusterStateExists, currentClusterState)
 }
@@ -1357,7 +1362,7 @@ func TestDynamicProvisioner_CurrentClusterState_SuccessNotFound(t *testing.T) {
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-	currentClusterState, err := dynamicProvisioner.currentClusterState(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	currentClusterState, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	require.NoError(t, err)
 	require.Equal(t, ClusterStateNotFound, currentClusterState)
 }
@@ -1368,7 +1373,7 @@ func TestDynamicProvisioner_CurrentClusterState_Err(t *testing.T) {
 	require.Empty(t, recorder.recordedAmlfsConfigurations)
 
 	amlFilesystemName := clusterGetImmediateFailureName
-	_, err := dynamicProvisioner.currentClusterState(context.Background(), expectedResourceGroupName, amlFilesystemName)
+	_, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, amlFilesystemName)
 	assert.ErrorContains(t, err, clusterGetImmediateFailureName)
 }
 
@@ -1377,7 +1382,7 @@ func TestDynamicProvisioner_CurrentClusterState_ErrNilClient(t *testing.T) {
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.amlFilesystemsClient = nil
 
-	_, err := dynamicProvisioner.currentClusterState(context.Background(), expectedResourceGroupName, expectedAmlFilesystemName)
+	_, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
 	assert.ErrorContains(t, err, "aml filesystem client is nil")
 }
 
@@ -1385,7 +1390,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_Success(t *testing.T) {
 	recorder := newMockAmlfsRecorder([]string{})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
 	require.NoError(t, err)
 	assert.True(t, hasSufficientCapacity)
 }
@@ -1396,7 +1401,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_FullVnet(t *testing.T) {
 
 	subnetInfo := buildExpectedSubnetInfo()
 	subnetInfo.VnetName = fullVnetName
-	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), subnetInfo, expectedSku, expectedClusterSize)
+	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), subnetInfo, expectedSku, expectedClusterSize)
 	require.NoError(t, err)
 	assert.False(t, hasSufficientCapacity)
 }
@@ -1415,7 +1420,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_Success_CaseInsensitiveSubnetIDM
 	// subnetInfo.SubnetID keeps expectedAmlFilesystemSubnetID's normal casing,
 	// while the fake ARM server (keyed off caseMismatchVnetName) returns the
 	// same subnet ID as caseMismatchAmlFilesystemSubnetID (upper-cased).
-	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), subnetInfo, expectedSku, expectedClusterSize)
+	hasSufficientCapacity, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), subnetInfo, expectedSku, expectedClusterSize)
 	require.NoError(t, err)
 	assert.True(t, hasSufficientCapacity)
 }
@@ -1425,7 +1430,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_Err_NilMgmtClient(t *testing.T) 
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.mgmtClient = nil
 
-	_, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+	_, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
 	assert.ErrorContains(t, err, "storage management client is nil")
 }
 
@@ -1434,7 +1439,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_Err_NilVnetClient(t *testing.T) 
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.vnetClient = nil
 
-	_, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+	_, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
 	assert.ErrorContains(t, err, "vnet client is nil")
 }
 
@@ -1476,7 +1481,7 @@ func TestDynamicProvisioner_CheckSubnetCapacity_Err(t *testing.T) {
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 			require.Empty(t, recorder.recordedAmlfsConfigurations)
 
-			_, err := dynamicProvisioner.CheckSubnetCapacity(context.Background(), tC.subnetProperties, tC.sku, expectedClusterSize)
+			_, err := dynamicProvisioner.CheckSubnetCapacity(t.Context(), tC.subnetProperties, tC.sku, expectedClusterSize)
 			assert.ErrorContains(t, err, tC.expectedError)
 		})
 	}
@@ -1492,7 +1497,7 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Success(t *testing.T) {
 		otherSkuForLocation: {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: expectedZones},
 	}
 
-	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
 	t.Logf("SKU values: %#v", skuValues)
 	require.NoError(t, err)
 	require.Len(t, skuValues, 2)
@@ -1504,7 +1509,7 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Err_NilClient(t *testing.T) 
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 	dynamicProvisioner.skusClient = nil
 
-	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
 	t.Log(err)
 	require.Nil(t, skuValues)
 	require.Error(t, err)
@@ -1519,7 +1524,7 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.
 	recorder := newMockAmlfsRecorder([]string{noZonesForLocation})
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
 	t.Log(skuValues)
 	require.NoError(t, err)
 	require.Len(t, skuValues, 1)
@@ -1587,7 +1592,7 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 			recorder := newMockAmlfsRecorder(tC.failureBehaviors)
 			dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
-			skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(context.Background(), expectedLocation)
+			skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
 			require.Nil(t, skuValues)
 			t.Log(err)
 			require.Error(t, err)

@@ -17,8 +17,7 @@ limitations under the License.
 package azurelustre
 
 import (
-	"fmt"
-	"reflect"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -35,9 +34,9 @@ type fakeMounter struct {
 // Mount overrides mount.FakeMounter.Mount.
 func (f *fakeMounter) Mount(source, target, fstype string, options []string) error {
 	if strings.Contains(source, "ut-container") {
-		return fmt.Errorf("fake Mount: source error")
+		return errors.New("fake Mount: source error")
 	} else if strings.Contains(target, "error_mount") {
-		return fmt.Errorf("fake Mount: target error")
+		return errors.New("fake Mount: target error")
 	}
 
 	return f.FakeMounter.Mount(source, target, fstype, options)
@@ -46,9 +45,9 @@ func (f *fakeMounter) Mount(source, target, fstype string, options []string) err
 // MountSensitive overrides mount.FakeMounter.MountSensitive.
 func (f *fakeMounter) MountSensitive(source, target, fstype string, options, sensitiveOptions []string) error {
 	if strings.Contains(source, "ut-container-sens") {
-		return fmt.Errorf("fake MountSensitive: source error")
+		return errors.New("fake MountSensitive: source error")
 	} else if strings.Contains(target, "error_mount_sens") {
-		return fmt.Errorf("fake MountSensitive: target error")
+		return errors.New("fake MountSensitive: target error")
 	}
 
 	return f.FakeMounter.MountSensitive(source, target, fstype, options, sensitiveOptions)
@@ -57,9 +56,9 @@ func (f *fakeMounter) MountSensitive(source, target, fstype string, options, sen
 // MountSensitiveWithoutSystemdWithMountFlags overrides mount.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags.
 func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source, target, fstype string, options, sensitiveOptions, mountFlags []string) error {
 	if strings.Contains(source, "ut-container-sens-mountflags") {
-		return fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
+		return errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
 	} else if strings.Contains(target, "error_mount_sens_mountflags") {
-		return fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: target error")
+		return errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: target error")
 	}
 
 	return f.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags(source, target, fstype, options, sensitiveOptions, mountFlags)
@@ -67,7 +66,7 @@ func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source, target,
 
 func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {
 	if strings.Contains(file, "error_is_likely") {
-		return false, fmt.Errorf("fake IsLikelyNotMountPoint: fake error")
+		return false, errors.New("fake IsLikelyNotMountPoint: fake error")
 	}
 	if strings.Contains(file, "false_is_likely") {
 		return false, nil
@@ -90,13 +89,13 @@ func TestMount(t *testing.T) {
 			desc:        "[Error] Mocked source error",
 			source:      "ut-container",
 			target:      targetTest,
-			expectedErr: fmt.Errorf("fake Mount: source error"),
+			expectedErr: errors.New("fake Mount: source error"),
 		},
 		{
 			desc:        "[Error] Mocked target error",
 			source:      "container",
 			target:      "error_mount",
-			expectedErr: fmt.Errorf("fake Mount: target error"),
+			expectedErr: errors.New("fake Mount: target error"),
 		},
 		{
 			desc:        "[Success] Successful run",
@@ -113,8 +112,10 @@ func TestMount(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.Mount(test.source, test.target, "", nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }
@@ -130,13 +131,13 @@ func TestMountSensitive(t *testing.T) {
 			desc:        "[Error] Mocked source error",
 			source:      "ut-container-sens",
 			target:      targetTest,
-			expectedErr: fmt.Errorf("fake MountSensitive: source error"),
+			expectedErr: errors.New("fake MountSensitive: source error"),
 		},
 		{
 			desc:        "[Error] Mocked target error",
 			source:      "container",
 			target:      "error_mount_sens",
-			expectedErr: fmt.Errorf("fake MountSensitive: target error"),
+			expectedErr: errors.New("fake MountSensitive: target error"),
 		},
 		{
 			desc:        "[Success] Successful run",
@@ -153,8 +154,10 @@ func TestMountSensitive(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.MountSensitive(test.source, test.target, "", nil, nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }
@@ -171,13 +174,13 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 			desc:        "[Error] Mocked source error",
 			source:      "ut-container-sens-mountflags",
 			target:      targetTest,
-			expectedErr: fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: source error"),
+			expectedErr: errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: source error"),
 		},
 		{
 			desc:        "[Error] Mocked target error",
 			source:      "container",
 			target:      "error_mount_sens_mountflags",
-			expectedErr: fmt.Errorf("fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
+			expectedErr: errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
 		},
 		{
 			desc:                "[Success] Successful run",
@@ -195,8 +198,10 @@ func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(test.source, test.target, "", nil, nil, nil)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("actualErr: (%v), expectedErr: (%v)", err, test.expectedErr)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 
 		mountPoints, err := d.mounter.List()
@@ -214,7 +219,7 @@ func TestIsLikelyNotMountPoint(t *testing.T) {
 		{
 			desc:        "[Error] Mocked file error",
 			file:        "./error_is_likely_target",
-			expectedErr: fmt.Errorf("fake IsLikelyNotMountPoint: fake error"),
+			expectedErr: errors.New("fake IsLikelyNotMountPoint: fake error"),
 		},
 		{
 			desc:        "[Success] Successful run",
@@ -235,8 +240,10 @@ func TestIsLikelyNotMountPoint(t *testing.T) {
 	}
 	for _, test := range tests {
 		_, err := d.mounter.IsLikelyNotMountPoint(test.file)
-		if !reflect.DeepEqual(err, test.expectedErr) {
-			t.Errorf("Unexpected error: %v", err)
+		if test.expectedErr == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
 		}
 	}
 }

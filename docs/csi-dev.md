@@ -50,6 +50,42 @@ verification; automatic toolchain selection does not downgrade a newer Go.
 For pin locations, release hashes, dependency-lock updates, and isolated
 validation commands, see [Maintaining verification tools](verification-tools.md).
 
+Go lint policy is defined in [.golangci.yaml](../.golangci.yaml). Verification
+uses `modernize` for current Go idioms, `unparam` for unused parameters and
+results, and `fatcontext` for nested contexts in loops and closures. Tests use
+`usetesting` to prefer `t.Context()`, `t.TempDir()`, `t.Chdir()`, and `t.Setenv()`
+where appropriate so resources follow the test lifetime.
+
+Additional lint checks cover these conventions:
+
+| Linter | Purpose |
+| --- | --- |
+| `canonicalheader` | Use canonical HTTP header names. |
+| `dogsled` | Flag assignments that discard too many return values. |
+| `dupword` | Detect accidentally repeated words in comments and strings. |
+| `errname` | Give sentinel errors and error types recognizable names. |
+| `exptostd` | Prefer standard-library equivalents of experimental APIs. |
+| `forbidigo` | Prefer logging and error returns to printing, panic, or os.Exit. |
+| `goconst` | Detect repeated production strings; preserve literal test fixtures. |
+| `gocritic` | Check suspicious constructs with its default stable rules. |
+| `godoclint` | Keep Go documentation consistent with the symbols it describes. |
+| `goprintffuncname` | Name printf-style helpers with an f suffix. |
+| `govet.deepequalerrors` | Assert error contracts instead of comparing private error fields. |
+| `grouper` | Group constants while allowing separate enum and unrelated constant blocks. |
+| `iface` | Detect duplicate interfaces with identical method sets. |
+| `iotamixing` | Avoid mixing iota and explicit constants in one block. |
+| `mirror` | Use matching string or byte APIs without unnecessary conversions. |
+| `perfsprint` | Replace unnecessary formatting calls with simpler expressions. |
+| `testableexamples` | Give Go examples expected output so tests execute them. |
+| `testifylint` | Enable all checks for assertions and suite helpers. |
+| `thelper` | Mark test helpers so failures point to their callers. |
+| `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
+
+General Go checks remain enabled to catch mistakes when a construct is first
+introduced, even when the current code has no examples, parallel tests, or iota
+declarations. SQL, span-lifecycle, and zerolog checks are not enabled because the
+driver does not use those APIs directly; add their checks with the APIs if needed.
+
 &nbsp;
 
 ### Verify Helm chart source changes

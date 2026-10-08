@@ -6,26 +6,40 @@ linters:
     - asciicheck
     - bidichk
     - bodyclose
+    - canonicalheader
     - containedctx
     - contextcheck
     - copyloopvar
     - decorder
+    - dogsled
     - dupl
+    - dupword
     - durationcheck
     - errchkjson
+    - errname
     - errorlint
     - exhaustive
+    - exptostd
+    - fatcontext
     - forbidigo
     - forcetypeassert
     - gocheckcompilerdirectives
     - gochecksumtype
+    - goconst
+    - gocritic
+    - godoclint
+    - goprintffuncname
     - gosec
     - gosmopolitan
     - grouper
+    - iface
     - inamedparam
+    - iotamixing
     - loggercheck
     - makezero
+    - mirror
     - misspell
+    - modernize
     - musttag
     - nilerr
     - nilnesserr
@@ -33,22 +47,24 @@ linters:
     - nolintlint
     - nonamedreturns
     - nosprintfhostport
+    - perfsprint
     - predeclared
     - protogetter
     - reassign
     - recvcheck
     - revive
-    - rowserrcheck
-    - spancheck
-    - sqlclosecheck
     - staticcheck
     - tagalign
+    - testableexamples
     - testifylint
+    - thelper
+    - tparallel
     - unconvert
+    - unparam
     - usestdlibvars
+    - usetesting
     - wastedassign
     - whitespace
-    - zerologlint
   settings:
     copyloopvar:
       check-alias: true
@@ -56,8 +72,21 @@ linters:
       disable-default-exclusions: true
       check-type-assertions: true
       check-blank: true
+    forbidigo:
+      forbid:
+        - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
+          msg: use klog for logging
+        - pattern: '^os\.Exit$'
+          msg: return errors instead of calling os.Exit
+        - pattern: '^panic$'
+          msg: return errors instead of panicking
+    goconst:
+      ignore-tests: true
+    govet:
+      enable:
+        - deepequalerrors
     grouper:
-      const-require-single-const: true
+      const-require-single-const: false
       const-require-grouping: true
       import-require-single-import: true
       import-require-grouping: false
@@ -68,8 +97,13 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+    testifylint:
+      enable-all: true
     unparam:
       check-exported: true
+    usetesting:
+      context-background: true
+      context-todo: true
   exclusions:
     presets:
       - comments
