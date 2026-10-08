@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -1685,6 +1686,18 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 			expectedCode: codes.DeadlineExceeded,
 		},
 		{
+			name:                "Canceled",
+			inputError:          context.Canceled,
+			expectedCode:        codes.Canceled,
+			expectedMsgContains: "context canceled",
+		},
+		{
+			name:                "DeadlineExceeded",
+			inputError:          context.DeadlineExceeded,
+			expectedCode:        codes.DeadlineExceeded,
+			expectedMsgContains: "context deadline exceeded",
+		},
+		{
 			name:         "InternalExecutionError",
 			inputError:   &azcore.ResponseError{StatusCode: http.StatusOK, ErrorCode: "InternalExecutionError"},
 			expectedCode: codes.DeadlineExceeded,
@@ -1722,16 +1735,28 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := convertHTTPResponseErrorToGrpcCodeError(tt.inputError)
 			if tt.inputError == nil {
+				err := convertHTTPResponseErrorToGrpcCodeError(nil)
 				require.NoError(t, err)
 				return
 			}
-			status, ok := status.FromError(err)
-			require.True(t, ok)
-			assert.Equal(t, tt.expectedCode, status.Code())
-			if tt.expectedMsgContains != "" {
-				assert.Contains(t, status.Message(), tt.expectedMsgContains)
+			inputs := []struct {
+				name string
+				err  error
+			}{
+				{name: "Direct", err: tt.inputError},
+				{name: "Wrapped", err: fmt.Errorf("wrapped error: %w", tt.inputError)},
+			}
+			for _, input := range inputs {
+				t.Run(input.name, func(t *testing.T) {
+					err := convertHTTPResponseErrorToGrpcCodeError(input.err)
+					grpcStatus, ok := status.FromError(err)
+					require.True(t, ok, "converted error must be a gRPC status")
+					assert.Equal(t, tt.expectedCode, grpcStatus.Code())
+					if tt.expectedMsgContains != "" {
+						assert.Contains(t, grpcStatus.Message(), tt.expectedMsgContains)
+					}
+				})
 			}
 		})
 	}

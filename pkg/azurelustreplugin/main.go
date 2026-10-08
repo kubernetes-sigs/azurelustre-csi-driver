@@ -21,6 +21,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -47,7 +50,7 @@ var (
 
 func main() {
 	if err := run(); err != nil {
-		klog.Fatalln(err)
+		klog.Fatalln(err) //nolint:forbidigo // Only the executable entry point terminates the process.
 	}
 }
 
@@ -72,7 +75,9 @@ func run() error {
 		return nil
 	}
 
-	return handle()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return handle(ctx)
 }
 
 func runPreDeleteCheck(
@@ -94,19 +99,21 @@ func runPreDeleteCheck(
 	return nil
 }
 
-func handle() error {
+func handle(ctx context.Context) error {
 	driverOptions := newDriverOptions()
-	driver, err := azurelustre.NewDriver(&driverOptions)
+	driver, err := azurelustre.NewDriver(ctx, &driverOptions)
 	if err != nil {
 		return errors.Join(errDriverInitFailed, err)
 	}
-	if err := driver.Run(*endpoint, false); err != nil {
+	if err := driver.Run(ctx, *endpoint); err != nil {
 		return err
 	}
-	// driver.Run is expected to block forever serving the CSI gRPC endpoint;
-	// returning means the server stopped without an explicit shutdown signal,
-	// which should surface as a non-zero process exit.
-	return errDriverRunReturnedEarly
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+		return errDriverRunReturnedEarly
+	}
 }
 
 func newDriverOptions() azurelustre.DriverOptions {

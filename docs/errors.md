@@ -1,6 +1,6 @@
 # Azure Lustre CSI Driver - Resolving Common Errors
 
-This document describes common errors that can occur during volume creation, mounting, and driver uninstall, along with debugging and troubleshooting steps.
+This document describes common errors that can occur during driver startup and shutdown, volume creation, mounting, and driver uninstall, along with debugging and troubleshooting steps.
 
 Examples use `kube-system` and static-manifest workload names. For Helm installs,
 substitute your release namespace and the workload names returned by:
@@ -11,6 +11,7 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
 
 ## Table of Contents
 
+- [Driver Lifecycle Errors](#driver-lifecycle-errors)
 - [Driver Uninstall Errors](#driver-uninstall-errors)
 - [Volume Creation Errors](#volume-creation-errors)
   - [Dynamic Provisioning Errors](#dynamic-provisioning-errors)
@@ -44,6 +45,33 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
     - [Controller Logs](#controller-logs)
     - [Node Logs](#node-logs)
     - [Comprehensive Log Collection](#comprehensive-log-collection)
+
+---
+
+## Driver Lifecycle Errors
+
+Check `azurelustre` logs for startup, serving, and cleanup failures, and
+client logs (such as `csi-provisioner`) for gRPC statuses. Use the
+[startup and shutdown troubleshooting steps](csi-debug.md#driver-startup-and-shutdown-failures)
+to collect current and previous logs, termination details, and events.
+
+| Message or gRPC status | Meaning | What to check |
+| ---------------------- | ------- | ------------- |
+| `failed to initialize Azure Lustre CSI driver` | Driver construction failed. | Read the accompanying error for the specific configuration, identity, or local initialization failure. |
+| `invalid endpoint`, `failed to remove <path>`, or `failed to listen` | The CSI endpoint could not be prepared. | Check `--endpoint`, the underlying OS error, socket-directory mounts and permissions, and address conflicts. Do not remove a socket belonging to a running driver. |
+| `failed to serve on <address>` | gRPC serving failed. | Inspect the underlying listener error and correlate it with container restarts or pod termination. |
+| `timed out shutting down gRPC server` | The driver's ten-second cleanup deadline expired. Remaining gRPC connections are closed and the process exits with an error. | Capture the driver logs and in-flight request details. This is not an Azure filesystem provisioning timeout; extending the pod termination grace period does not change this driver deadline. |
+| `Unavailable` with `gRPC server is shutting down` | A new request was rejected during shutdown. | Check whether termination was planned and whether a replacement driver is healthy. Other `Unavailable` messages can have different causes. |
+| `Canceled` / `context canceled` | The caller or driver shutdown canceled a request. | Correlate driver and client logs with termination events. This does not establish that an Azure operation failed or was canceled. |
+| `driver.Run returned unexpectedly` | Serving returned without cancellation of the executable's context. | Collect driver logs and termination details and report the unexpected exit. |
+
+A completed signal-driven shutdown exits successfully; see the
+[shutdown contract](../README.md#driver-shutdown). Cancellation stops local
+polling, not an operation already accepted by Azure. Do not delete or recreate
+a PVC or AMLFS resource solely because one of these messages appeared. Check
+the resource's actual state and ownership before considering recovery actions;
+deleting a PVC with a `Delete` reclaim policy can delete the filesystem and
+its data.
 
 ---
 
@@ -151,7 +179,12 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 **Resolution:**
 
 - Wait for automatic cleanup and retry
-- Manually delete any stuck AMLFS resources in Azure portal
+- Before considering manual deletion, confirm that the AMLFS operation has
+  actually failed, verify resource ownership, and establish whether its data
+  must be retained. A canceled request or driver shutdown timeout alone is not
+  evidence of a failed Azure operation. Follow the
+  [safe teardown procedure](../charts/README.md#safe-teardown-procedure) for
+  intentional deletion.
 - Verify network and permissions configuration
 - Wait for Azure service issues to resolve if applicable
 - Try creating the volume in a different zone or region
