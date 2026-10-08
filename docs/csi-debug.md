@@ -345,14 +345,15 @@ kubectl get events -n kube-system --field-selector involvedObject.kind=DaemonSet
 
 2. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which conflicts with the new distribution-specific architecture.
@@ -436,14 +437,15 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which can result in multiple pods on the same node when upgrading.
@@ -604,14 +606,15 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns='N
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet which can cause version inconsistencies when mixing with the new OS-specific DaemonSets.
@@ -1250,12 +1253,19 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
    kubectl get pvc <pvc-name> -o yaml
    ```
 
-5. **Reinstall Driver**
-    Ensure that all of your volumes are unmounted before uninstalling the driver.
+5. **Repair the Driver Installation**
+
+   Do not uninstall merely to restart the driver; use an appropriate rollout
+   restart or in-place upgrade to preserve existing PVCs and PVs. Follow the
+   [upgrade precautions](../charts/README.md#upgrade), including stopping consumers
+   and waiting for unmounts before replacing node plugins. For Helm, use
+   `helm upgrade`. For a manifest installation, use the installer from a checkout
+   of the intended driver version:
 
    ```bash
-   ./deploy/uninstall-driver.sh
-   ./deploy/install-driver.sh
-   # You can install other versions by checking them out locally and running a local install
-   # See the output of ./deploy/install-driver.sh --help for more information
+   ./deploy/install-driver.sh local
    ```
+
+   If the goal really is driver removal rather than repair, follow the
+   [safe teardown procedure](../charts/README.md#safe-teardown-procedure) instead.
+   Unmounting alone does not satisfy the guard while matching PVs remain.
