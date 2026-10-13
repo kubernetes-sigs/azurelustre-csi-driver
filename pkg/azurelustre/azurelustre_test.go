@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -136,6 +137,7 @@ type FakeDynamicProvisioner struct {
 	DynamicProvisionerInterface
 	Filesystems   []*AmlFilesystemProperties
 	fakeCallCount map[string]int
+	mutex         sync.Mutex
 }
 
 func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
@@ -146,6 +148,8 @@ func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
 }
 
 func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.recordFakeCall("CreateAmlFilesystem")
 	if strings.HasSuffix(amlFilesystemProperties.AmlFilesystemName, clusterRequestFailureName) {
 		return "", status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
@@ -154,18 +158,23 @@ func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFiles
 	return "127.0.0.2", nil
 }
 
-func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, _, amlFilesystemName string) error {
+func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, resourceGroupName, amlFilesystemName string) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.recordFakeCall("DeleteAmlFilesystem")
 	if amlFilesystemName == clusterRequestFailureName {
 		return status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
 	}
 	f.Filesystems = slices.DeleteFunc(f.Filesystems, func(filesystem *AmlFilesystemProperties) bool {
-		return filesystem.AmlFilesystemName == amlFilesystemName
+		return strings.EqualFold(filesystem.ResourceGroupName, resourceGroupName) &&
+			strings.EqualFold(filesystem.AmlFilesystemName, amlFilesystemName)
 	})
 	return nil
 }
 
 func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, location string) (map[string]*LustreSkuValue, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.recordFakeCall("GetSkuValuesForLocation")
 	if location == errorLocation {
 		return nil, status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", errorLocation)
@@ -209,6 +218,63 @@ func TestAzureConfigFilePath(t *testing.T) {
 
 			assert.Equal(t, test.expectedPath, azureConfigFilePath())
 		})
+	}
+}
+
+type blockingDynamicProvisioner struct {
+	*FakeDynamicProvisioner
+	operation      string
+	entered        chan struct{}
+	release        chan struct{}
+	firstCall      sync.Once
+	firstCallError error
+}
+
+func newBlockingDynamicProvisioner(operation string) *blockingDynamicProvisioner {
+	return &blockingDynamicProvisioner{
+		FakeDynamicProvisioner: &FakeDynamicProvisioner{},
+		operation:              operation,
+		entered:                make(chan struct{}),
+		release:                make(chan struct{}),
+	}
+}
+
+func (provisioner *blockingDynamicProvisioner) CreateAmlFilesystem(ctx context.Context, properties *AmlFilesystemProperties) (string, error) {
+	if err := provisioner.wait(ctx, "create"); err != nil {
+		return "", err
+	}
+	return provisioner.FakeDynamicProvisioner.CreateAmlFilesystem(ctx, properties)
+}
+
+func (provisioner *blockingDynamicProvisioner) DeleteAmlFilesystem(ctx context.Context, resourceGroup, filesystemName string) error {
+	if err := provisioner.wait(ctx, "delete"); err != nil {
+		return err
+	}
+	return provisioner.FakeDynamicProvisioner.DeleteAmlFilesystem(ctx, resourceGroup, filesystemName)
+}
+
+func (provisioner *blockingDynamicProvisioner) wait(ctx context.Context, operation string) error {
+	if operation != provisioner.operation {
+		return nil
+	}
+
+	// Pause only the first matching call and signal the test to start its competitor.
+	// Later calls must proceed normally so the fake cannot hide a missing controller lock.
+	firstCall := false
+	provisioner.firstCall.Do(func() {
+		firstCall = true
+		close(provisioner.entered)
+	})
+	if !firstCall {
+		return nil
+	}
+
+	// Wait outside Once.Do; blocking inside it would serialize competing calls.
+	select {
+	case <-provisioner.release:
+		return provisioner.firstCallError
+	case <-ctx.Done():
+		return convertHTTPResponseErrorToGrpcCodeError(ctx.Err())
 	}
 }
 

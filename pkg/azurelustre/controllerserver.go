@@ -272,18 +272,6 @@ func (d *Driver) CreateVolume(
 		return nil, err
 	}
 
-	if acquired := d.volumeLocks.TryAcquire(volName); !acquired {
-		return nil, status.Errorf(codes.Aborted,
-			volumeOperationAlreadyExistsFmt,
-			volName)
-	}
-	defer d.volumeLocks.Release(volName)
-
-	isOperationSucceeded := false
-	defer func() {
-		mc.ObserveOperationWithResult(isOperationSucceeded)
-	}()
-
 	parameters := req.GetParameters()
 	if parameters == nil {
 		return nil, status.Error(codes.InvalidArgument,
@@ -302,6 +290,25 @@ func (d *Driver) CreateVolume(
 	if err != nil {
 		return nil, err
 	}
+
+	lockKey := volName
+	if shouldCreateAmlfsCluster {
+		if len(amlFilesystemProperties.ResourceGroupName) == 0 {
+			amlFilesystemProperties.ResourceGroupName = d.resourceGroup
+		}
+		lockKey = amlFilesystemLockKey(d.cloud.SubscriptionID, amlFilesystemProperties.ResourceGroupName, volName)
+	}
+	if acquired := d.volumeLocks.TryAcquire(lockKey); !acquired {
+		return nil, status.Errorf(codes.Aborted,
+			volumeOperationAlreadyExistsFmt,
+			volName)
+	}
+	defer d.volumeLocks.Release(lockKey)
+
+	isOperationSucceeded := false
+	defer func() {
+		mc.ObserveOperationWithResult(isOperationSucceeded)
+	}()
 
 	capacityRange := req.GetCapacityRange()
 
@@ -323,10 +330,6 @@ func (d *Driver) CreateVolume(
 
 		if len(amlFilesystemProperties.Location) == 0 {
 			amlFilesystemProperties.Location = d.location
-		}
-
-		if len(amlFilesystemProperties.ResourceGroupName) == 0 {
-			amlFilesystemProperties.ResourceGroupName = d.resourceGroup
 		}
 
 		amlFilesystemProperties.SubnetInfo = d.populateSubnetPropertiesFromCloudConfig(amlFilesystemProperties.SubnetInfo)
@@ -543,12 +546,19 @@ func (d *Driver) DeleteVolume(
 		klog.Warningf("error parsing volume ID '%v'", err)
 	}
 
-	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
+	lockKey := volumeID
+	if lustreVolume != nil && lustreVolume.createdByDynamicProvisioning {
+		if lustreVolume.resourceGroupName == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "volume was dynamically created but associated resource group is not specified. AMLFS cluster may need to be deleted manually")
+		}
+		lockKey = amlFilesystemLockKey(d.cloud.SubscriptionID, lustreVolume.resourceGroupName, lustreVolume.name)
+	}
+	if acquired := d.volumeLocks.TryAcquire(lockKey); !acquired {
 		return nil, status.Errorf(codes.Aborted,
 			volumeOperationAlreadyExistsFmt,
 			volumeID)
 	}
-	defer d.volumeLocks.Release(volumeID)
+	defer d.volumeLocks.Release(lockKey)
 
 	isOperationSucceeded := false
 	defer func() {
@@ -560,10 +570,6 @@ func (d *Driver) DeleteVolume(
 	if lustreVolume != nil && lustreVolume.createdByDynamicProvisioning {
 		amlFilesystemName := lustreVolume.name
 		resourceGroupName := lustreVolume.resourceGroupName
-
-		if resourceGroupName == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "volume was dynamically created but associated resource group is not specified. AMLFS cluster may need to be deleted manually")
-		}
 
 		err := d.dynamicProvisioner.DeleteAmlFilesystem(ctx, resourceGroupName, amlFilesystemName)
 		if err != nil {

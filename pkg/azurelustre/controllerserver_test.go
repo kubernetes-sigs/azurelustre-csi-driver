@@ -17,11 +17,14 @@ limitations under the License.
 package azurelustre
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
@@ -755,6 +758,20 @@ func TestCreateVolume_Err_OperationExists(t *testing.T) {
 	assert.Regexp(t, "operation.*already exists", err.Error())
 }
 
+func TestDynamicCreateVolume_Err_OperationExists(t *testing.T) {
+	d := NewFakeDriver(t)
+	req := buildDynamicProvCreateVolumeRequest()
+	lockKey := amlFilesystemLockKey(d.cloud.SubscriptionID, req.GetParameters()[VolumeContextResourceGroupName], req.GetName())
+	acquired := d.volumeLocks.TryAcquire(lockKey)
+	require.True(t, acquired, "the test must acquire the backend lock")
+	t.Cleanup(func() { d.volumeLocks.Release(lockKey) })
+
+	_, err := d.CreateVolume(t.Context(), req)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Aborted, status.Code(err))
+}
+
 func TestDeleteVolume_Success(t *testing.T) {
 	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
@@ -821,8 +838,7 @@ func TestDynamicDeleteVolume_Success(t *testing.T) {
 	fakeDynamicProvisioner.fakeCallCount = make(map[string]int)
 
 	deleteRequest := &csi.DeleteVolumeRequest{
-		VolumeId: fmt.Sprintf(volumeIDTemplate,
-			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
+		VolumeId: rep.GetVolume().GetVolumeId(),
 	}
 	_, err = d.DeleteVolume(t.Context(), deleteRequest)
 	require.Len(t, fakeDynamicProvisioner.fakeCallCount, 1, "unexpected calls made to dynamic provisioner, all calls: %#v", fakeDynamicProvisioner.fakeCallCount)
@@ -933,15 +949,228 @@ func TestDeleteVolume_Err_OperationExists(t *testing.T) {
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			"test_volume", "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
 	}
-	if acquired := d.volumeLocks.TryAcquire(req.GetVolumeId()); !acquired {
-		assert.Fail(t, "Can't acquire volume lock")
-	}
+	lockKey := amlFilesystemLockKey(d.cloud.SubscriptionID, "testResourceGroupName", "test_volume")
+	acquired := d.volumeLocks.TryAcquire(lockKey)
+	require.True(t, acquired, "the test must acquire the backend lock")
+	t.Cleanup(func() { d.volumeLocks.Release(lockKey) })
 	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
+	assert.True(t, ok, "lock contention must return a gRPC status")
 	assert.Equal(t, codes.Aborted, grpcStatus.Code())
 	assert.Regexp(t, "operation.*already exists", err.Error())
+}
+
+type controllerLockRequest struct {
+	method         string
+	resourceGroup  string
+	filesystemName string
+	subDir         string
+}
+
+func (request controllerLockRequest) invoke(ctx context.Context, driver *Driver) error {
+	if request.method == "create" {
+		createRequest := buildDynamicProvCreateVolumeRequest()
+		createRequest.Name = request.filesystemName
+		createRequest.Parameters[VolumeContextResourceGroupName] = request.resourceGroup
+		createRequest.Parameters[VolumeContextSubDir] = request.subDir
+		_, err := driver.CreateVolume(ctx, createRequest)
+		return err
+	}
+	volumeID := fmt.Sprintf(volumeIDTemplate, request.filesystemName, DefaultLustreFsName,
+		"127.0.0.3", request.subDir, "t", request.resourceGroup)
+	_, err := driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{VolumeId: volumeID})
+	return err
+}
+
+func TestControllerVolumeLockUsesBackendIdentity(test *testing.T) {
+	testCases := []struct {
+		name                 string
+		first                controllerLockRequest
+		competing            controllerLockRequest
+		defaultResourceGroup string
+		expectedCode         codes.Code
+	}{
+		{
+			name:         "create blocks another create for the same filesystem",
+			first:        controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.Aborted,
+		},
+		{
+			name:         "create blocks deletion of the same filesystem",
+			first:        controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.Aborted,
+		},
+		{
+			name:         "delete blocks creation of the same filesystem",
+			first:        controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.Aborted,
+		},
+		{
+			name:         "different subdirectories do not make deletion independent",
+			first:        controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "first-dir"},
+			competing:    controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "second-dir"},
+			expectedCode: codes.Aborted,
+		},
+		{
+			name:         "resource group casing does not change backend identity",
+			first:        controllerLockRequest{method: "create", resourceGroup: "Test-Group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "delete", resourceGroup: "TEST-GROUP", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.Aborted,
+		},
+		{
+			name:                 "creation resolves the configured group before locking",
+			first:                controllerLockRequest{method: "create", resourceGroup: "", filesystemName: "test-volume", subDir: "data"},
+			competing:            controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			defaultResourceGroup: "test-group",
+			expectedCode:         codes.Aborted,
+		},
+		{
+			name:         "a different resource group permits independent deletion",
+			first:        controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "delete", resourceGroup: "other-group", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.OK,
+		},
+		{
+			name:         "a different filesystem name permits independent deletion",
+			first:        controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "delete", resourceGroup: "test-group", filesystemName: "other-volume", subDir: "data"},
+			expectedCode: codes.OK,
+		},
+		{
+			name:         "different resource groups permit independent creates",
+			first:        controllerLockRequest{method: "create", resourceGroup: "test-group", filesystemName: "test-volume", subDir: "data"},
+			competing:    controllerLockRequest{method: "create", resourceGroup: "other-group", filesystemName: "test-volume", subDir: "data"},
+			expectedCode: codes.OK,
+		},
+	}
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			synctest.Test(test, func(test *testing.T) {
+				driver := NewFakeDriver(test)
+				if testCase.defaultResourceGroup != "" {
+					driver.resourceGroup = testCase.defaultResourceGroup
+				}
+				provisioner := newBlockingDynamicProvisioner(testCase.first.method)
+				driver.dynamicProvisioner = provisioner
+				if testCase.first.method == "delete" {
+					provisioner.Filesystems = []*AmlFilesystemProperties{{
+						ResourceGroupName: testCase.first.resourceGroup,
+						AmlFilesystemName: testCase.first.filesystemName,
+					}}
+				}
+				release := sync.OnceFunc(func() { close(provisioner.release) })
+				defer release()
+				result := make(chan error, 1)
+				go func() { result <- testCase.first.invoke(test.Context(), driver) }()
+				<-provisioner.entered
+
+				err := testCase.competing.invoke(test.Context(), driver)
+
+				assert.Equal(test, testCase.expectedCode, status.Code(err),
+					"while %+v is blocked in Azure, %+v must return %s; got %v",
+					testCase.first, testCase.competing, testCase.expectedCode, err)
+				release()
+				err = <-result
+				require.NoError(test, err, "the first RPC must complete after the backend is released")
+
+				err = testCase.competing.invoke(test.Context(), driver)
+
+				require.NoError(test, err, "the competing RPC must succeed after the first RPC releases its lock")
+			})
+		})
+	}
+}
+
+func TestControllerVolumeLockReleasesAfterErrorOrCancellation(test *testing.T) {
+	testCases := []struct {
+		name          string
+		operation     string
+		backendError  error
+		cancelRequest bool
+		expectedCode  codes.Code
+	}{
+		{name: "create backend reports Internal", operation: "create", backendError: status.Error(codes.Internal, "backend create failed"), expectedCode: codes.Internal},
+		{name: "delete backend reports Internal", operation: "delete", backendError: status.Error(codes.Internal, "backend delete failed"), expectedCode: codes.Internal},
+		{name: "create backend reports Unknown", operation: "create", backendError: status.Error(codes.Unknown, "backend create failed"), expectedCode: codes.Unknown},
+		{name: "delete backend reports Unknown", operation: "delete", backendError: status.Error(codes.Unknown, "backend delete failed"), expectedCode: codes.Unknown},
+		{name: "caller cancels a blocked create", operation: "create", cancelRequest: true, expectedCode: codes.Canceled},
+		{name: "caller cancels a blocked delete", operation: "delete", cancelRequest: true, expectedCode: codes.Canceled},
+	}
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			synctest.Test(test, func(test *testing.T) {
+				driver := NewFakeDriver(test)
+				provisioner := newBlockingDynamicProvisioner(testCase.operation)
+				provisioner.firstCallError = testCase.backendError
+				driver.dynamicProvisioner = provisioner
+				release := sync.OnceFunc(func() { close(provisioner.release) })
+				defer release()
+				ctx, cancel := context.WithCancel(test.Context())
+				defer cancel()
+				request := controllerLockRequest{
+					method: testCase.operation, resourceGroup: "test-group",
+					filesystemName: "test-volume", subDir: "data",
+				}
+				result := make(chan error, 1)
+				go func() { result <- request.invoke(ctx, driver) }()
+				<-provisioner.entered
+
+				if testCase.cancelRequest {
+					cancel()
+				} else {
+					release()
+				}
+				err := <-result
+
+				assert.Equal(test, testCase.expectedCode, status.Code(err),
+					"the first RPC must return %s before its lock is reused; got %v", testCase.expectedCode, err)
+
+				err = request.invoke(test.Context(), driver)
+
+				require.NoError(test, err, "an unsuccessful RPC must release its backend lock")
+			})
+		})
+	}
+}
+
+func TestFakeDynamicProvisionerDeleteKeepsSameNameInOtherResourceGroup(test *testing.T) {
+	retained := &AmlFilesystemProperties{ResourceGroupName: "other-group", AmlFilesystemName: "test_volume"}
+	provisioner := &FakeDynamicProvisioner{Filesystems: []*AmlFilesystemProperties{
+		{ResourceGroupName: "test-group", AmlFilesystemName: "test_volume"},
+		retained,
+	}}
+
+	err := provisioner.DeleteAmlFilesystem(test.Context(), "test-group", "test_volume")
+
+	require.NoError(test, err)
+	assert.Equal(test, []*AmlFilesystemProperties{retained}, provisioner.Filesystems,
+		"the fake must not delete another group's filesystem just because the names match")
+}
+
+func TestAmlFilesystemLockKey(test *testing.T) {
+	testCases := []struct {
+		name          string
+		subscription  string
+		resourceGroup string
+		filesystem    string
+		expectedKey   string
+	}{
+		{name: "normalize ARM identifier casing", subscription: "Sub", resourceGroup: "Group", filesystem: "Filesystem", expectedKey: "amlfs/sub/group/filesystem"},
+		{name: "include subscription", subscription: "other", resourceGroup: "Group", filesystem: "Filesystem", expectedKey: "amlfs/other/group/filesystem"},
+		{name: "include resource group", subscription: "Sub", resourceGroup: "other", filesystem: "Filesystem", expectedKey: "amlfs/sub/other/filesystem"},
+		{name: "include filesystem name", subscription: "Sub", resourceGroup: "Group", filesystem: "other", expectedKey: "amlfs/sub/group/other"},
+	}
+	for _, testCase := range testCases {
+		test.Run(testCase.name, func(test *testing.T) {
+			key := amlFilesystemLockKey(testCase.subscription, testCase.resourceGroup, testCase.filesystem)
+
+			assert.Equal(test, testCase.expectedKey, key)
+		})
+	}
 }
 
 func TestValidateVolumeCapabilities_Success(t *testing.T) {
