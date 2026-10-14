@@ -397,6 +397,14 @@ Keep the driver running, inspect the node logs for the original mount error and
 any cleanup error, and correct the reported node or filesystem problem. Do not
 remove kubelet volume metadata or force-delete storage objects to hide the error.
 
+For `temporary mount cleanup incomplete`, the driver could not finish removing
+the temporary mount used to create a subdirectory. The publish call does not
+report success. A later subdirectory-creation attempt retries that cleanup before
+publishing, and unpublishing also checks for a leftover temporary mount. An
+already-mounted publish retains its idempotent fast path.
+The message includes both errors if subdirectory creation and cleanup failed.
+Unmounting preserves the filesystem's data; it does not delete the subdirectory.
+
 **Symptoms:**
 
 - Pod fails to start with mount errors

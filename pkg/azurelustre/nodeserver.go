@@ -18,6 +18,7 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -318,6 +319,10 @@ func (d *Driver) NodeUnpublishVolume(
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)
 	}
+	if err := d.cleanupInternalMountIfPresent(targetPath); err != nil {
+		return nil, status.Errorf(codes.Unavailable,
+			"temporary mount cleanup incomplete for %q: %v", targetPath, err)
+	}
 	klog.V(2).Infof(
 		"NodeUnpublishVolume: unmount volume %s on %s successfully",
 		volumeID,
@@ -542,7 +547,9 @@ func (d *Driver) NodeGetVolumeStats(
 // On error, true means a mount may still exist and cleanup must remain possible.
 func (d *Driver) ensureMountPoint(target string) (bool, error) {
 	notMnt, err := d.mounter.IsLikelyNotMountPoint(target)
-	if err != nil && !os.IsNotExist(err) {
+	if os.IsNotExist(err) {
+		notMnt = true
+	} else if err != nil {
 		if IsCorruptedDir(target) {
 			notMnt = false
 			klog.Warningf("detected corrupted mount for targetPath [%s]",
@@ -567,7 +574,6 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 			return !notMnt, err
 		}
 		notMnt = true
-		return !notMnt, err
 	}
 	if err := volumehelper.MakeDir(target); err != nil {
 		klog.Errorf("MakeDir failed on target: %s (%v)", target, err)
@@ -584,21 +590,22 @@ func mountPreparationError(target string, mayBeMounted bool, err error) error {
 	return status.Errorf(code, "Could not mount target %q: %v", target, err)
 }
 
-func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, mountOptions []string) error {
+func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, mountOptions []string) (err error) {
+	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, mountPath, subDirPath)
+	if err != nil {
+		return err
+	}
+
 	if err := d.internalMount(vol, mountPath, mountOptions); err != nil {
 		return err
 	}
 
 	defer func() {
-		if err := d.internalUnmount(mountPath); err != nil {
-			klog.Warningf("failed to unmount lustre server: %v", err.Error())
+		if cleanupErr := d.internalUnmount(mountPath); cleanupErr != nil {
+			err = status.Errorf(codes.Unavailable, "temporary mount cleanup incomplete for %q: %v",
+				mountPath, errors.Join(err, cleanupErr))
 		}
 	}()
-
-	internalVolumePath, err := getInternalVolumePath(d.workingMountDir, mountPath, subDirPath)
-	if err != nil {
-		return err
-	}
 
 	klog.V(2).Infof("Making subdirectory at %q", internalVolumePath)
 
@@ -644,37 +651,36 @@ func getInternalVolumePath(workingMountDir, mountPath, subDirPath string) (strin
 	return filepath.Join(internalMountPath, subDirPath), nil
 }
 
-func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions []string) error {
-	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
-
+func (d *Driver) prepareInternalMount(mountPath string) (string, error) {
 	target, err := getInternalMountPath(d.workingMountDir, mountPath)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	klog.V(4).Infof("internally mounting %v", target)
 
 	mnt, err := d.ensureMountPoint(target)
 	if err != nil {
-		return mountPreparationError(target, mnt, err)
+		return "", mountPreparationError(target, mnt, err)
 	}
 
 	if mnt {
-		klog.Warningf(
-			"volume %q is already mounted on %q",
-			vol.id,
-			target,
-		)
-
 		err = d.internalUnmount(mountPath)
 		if err != nil {
-			return status.Errorf(codes.Unavailable,
+			return "", status.Errorf(codes.Unavailable,
 				"Could not unmount existing volume at %q: %v",
 				target,
 				err)
 		}
+		err = volumehelper.MakeDir(target)
 	}
+	return target, err
+}
 
+func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions []string) error {
+	target, err := d.prepareInternalMount(mountPath)
+	if err != nil {
+		return err
+	}
+	source := getSourceString(vol.mgsIPAddress, vol.azureLustreName)
 	klog.V(2).Infof(
 		"volume %q mounting %q at %q with mountOptions: %v",
 		vol.id, source, target, mountOptions,
@@ -686,6 +692,18 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 	}
 
 	return nil
+}
+
+func (d *Driver) cleanupInternalMountIfPresent(mountPath string) error {
+	target, err := getInternalMountPath(d.workingMountDir, mountPath)
+	if err != nil {
+		return err
+	}
+	mounted, err := d.mounter.IsMountPoint(target)
+	if os.IsNotExist(err) || (err == nil && !mounted) {
+		return nil
+	}
+	return d.internalUnmount(mountPath)
 }
 
 func (d *Driver) internalUnmount(mountPath string) error {

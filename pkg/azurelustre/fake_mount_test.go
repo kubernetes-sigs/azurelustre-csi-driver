@@ -18,6 +18,9 @@ package azurelustre
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +105,35 @@ func (f *fakeMounter) Unmount(target string) error {
 
 func (f *fakeMounter) UnmountWithForce(target string, _ time.Duration) error {
 	return f.Unmount(target)
+}
+
+func preserveFakeUnmountedData(t *testing.T, mounter *fakeMounter) string {
+	t.Helper()
+	// Each fake unmount moves its visible tree to snapshot 0, 1, ...; no remote filesystem is involved.
+	backingDirectory := t.TempDir()
+	unmountCount := 0
+	mounter.UnmountFunc = func(target string) error {
+		// Hide the mounted filesystem's contents without deleting its data.
+		backingPath := filepath.Join(backingDirectory, strconv.Itoa(unmountCount))
+		if err := os.Rename(target, backingPath); err != nil {
+			return err
+		}
+		unmountCount++
+		return os.Mkdir(target, 0o700)
+	}
+	return backingDirectory
+}
+
+func newNodeMountTestDriver(t *testing.T) (*Driver, *fakeMounter, string) {
+	t.Helper()
+	driver := NewFakeDriver(t)
+	driver.workingMountDir = t.TempDir()
+	mounter := &fakeMounter{}
+	backingDirectory := preserveFakeUnmountedData(t, mounter)
+	driver.mounter = &mount.SafeFormatAndMount{Interface: mounter}
+	forceMounter := mount.MounterForceUnmounter(mounter)
+	driver.forceMounter = &forceMounter
+	return driver, mounter, backingDirectory
 }
 
 func TestMount(t *testing.T) {

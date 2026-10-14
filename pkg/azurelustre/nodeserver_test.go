@@ -68,82 +68,162 @@ func TestNodeGetCapabilities(t *testing.T) {
 }
 
 func TestEnsureMountPoint(t *testing.T) {
-	errorTarget := "./error_is_likely_target"
-	alreadyExistTarget := "./false_is_likely_exist_target"
-	falseTarget := "./false_is_likely_target"
-	azureFile := "./azurelustre.go"
-
+	lookupFailure := errors.New("mount lookup failed")
 	tests := []struct {
-		desc        string
-		target      string
-		expectedErr error
+		name            string
+		onDisk          string
+		notMountPoint   bool
+		lookupError     error
+		expectedError   error
+		mayBeMounted    bool
+		expectedUnmount bool
 	}{
-		{
-			desc:        "[Error] Mocked by IsLikelyNotMountPoint",
-			target:      errorTarget,
-			expectedErr: errors.New("fake IsLikelyNotMountPoint: fake error"),
-		},
-		{
-			desc:        "[Error] Error opening file",
-			target:      falseTarget,
-			expectedErr: &os.PathError{Op: "open", Path: "./false_is_likely_target", Err: syscall.ENOENT},
-		},
-		{
-			desc:        "[Error] Not a directory",
-			target:      azureFile,
-			expectedErr: &os.PathError{Op: "mkdir", Path: "./azurelustre.go", Err: syscall.ENOTDIR},
-		},
-		{
-			desc:        "[Success] Successful run",
-			target:      targetTest,
-			expectedErr: nil,
-		},
-		{
-			desc:        "[Success] Already existing mount",
-			target:      alreadyExistTarget,
-			expectedErr: nil,
-		},
+		{name: "lookup failure leaves mount state uncertain", onDisk: "absent", lookupError: lookupFailure, expectedError: lookupFailure, mayBeMounted: true},
+		{name: "unreadable reported mount is unmounted and target recreated", onDisk: "absent", notMountPoint: false, expectedUnmount: true},
+		{name: "regular file cannot be used as a target directory", onDisk: "file", notMountPoint: true, expectedError: syscall.ENOTDIR},
+		{name: "unmounted missing directory is created", onDisk: "absent", notMountPoint: true},
+		{name: "readable existing mount is reused", onDisk: "directory", notMountPoint: false, mayBeMounted: true},
+		{name: "lookup NotExist creates an unmounted directory", onDisk: "absent", lookupError: os.ErrNotExist},
 	}
-
-	// Setup
-	d := NewFakeDriver(t)
-	fakeMounter := &fakeMounter{}
-	fakeExec := &testingexec.FakeExec{ExactOrder: true}
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: fakeMounter,
-		Exec:      fakeExec,
-	}
-	forceMounter, ok := d.mounter.Interface.(mount.MounterForceUnmounter)
-	require.True(t, ok, "Mounter should implement MounterForceUnmounter")
-	d.forceMounter = &forceMounter
-
-	for i := range tests {
-		test := &tests[i]
-		err := makeDir(alreadyExistTarget)
-		require.NoError(t, err)
-
-		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.ensureMountPoint(test.target)
-			var expectedPathError *os.PathError
-			switch {
-			case test.expectedErr == nil:
-				require.NoError(t, err)
-			case errors.As(test.expectedErr, &expectedPathError):
-				var pathError *os.PathError
-				require.ErrorAs(t, err, &pathError)
-				assert.Equal(t, expectedPathError.Op, pathError.Op)
-				assert.Equal(t, expectedPathError.Path, pathError.Path)
-				require.ErrorIs(t, pathError.Err, expectedPathError.Err)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "target")
+			switch testCase.onDisk {
+			case "directory":
+				require.NoError(t, os.Mkdir(target, 0o700))
+			case "file":
+				require.NoError(t, os.WriteFile(target, []byte("not a directory"), 0o600))
+			case "absent":
 			default:
-				require.EqualError(t, err, test.expectedErr.Error())
+				t.Fatalf("unknown target fixture %q", testCase.onDisk)
+			}
+			driver := NewFakeDriver(t)
+			mounter := &fakeMounter{notMountPoint: new(testCase.notMountPoint), mountCheckError: testCase.lookupError}
+			driver.mounter = &mount.SafeFormatAndMount{Interface: mounter}
+
+			mounted, err := driver.ensureMountPoint(target)
+
+			assert.Equal(t, testCase.mayBeMounted, mounted, "reported mount certainty must match the observed state")
+			if testCase.expectedError != nil {
+				require.ErrorIs(t, err, testCase.expectedError)
+			} else {
+				require.NoError(t, err)
+				assert.DirExists(t, target)
+			}
+			if testCase.expectedUnmount {
+				assert.Equal(t, []mount.FakeAction{{Action: "unmount", Target: target}}, mounter.GetLog())
+			} else {
+				assert.Empty(t, mounter.GetLog())
 			}
 		})
-
-		err = os.RemoveAll(alreadyExistTarget)
-		require.NoError(t, err)
-		err = os.RemoveAll(targetTest)
-		require.NoError(t, err)
 	}
+}
+
+func TestCreateSubDirValidation(t *testing.T) {
+	testCases := []struct {
+		name            string
+		mountPath       string
+		subDirPath      string
+		mountCheckError error
+		expectedCode    codes.Code
+	}{
+		{name: "invalid mount path", mountPath: "../target", subDirPath: "child", expectedCode: codes.Internal},
+		{name: "invalid subdirectory", mountPath: "target", subDirPath: "../child", expectedCode: codes.InvalidArgument},
+		{name: "failed mount preparation", mountPath: "target", subDirPath: "child", mountCheckError: errors.New("lookup failed"), expectedCode: codes.Unavailable},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			driver, mounter, _ := newNodeMountTestDriver(t)
+			mounter.mountCheckError = test.mountCheckError
+
+			err := driver.createSubDir(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, test.mountPath, test.subDirPath, nil)
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err))
+			assert.Empty(t, mounter.GetLog(), "invalid paths and failed preparation must not mount")
+		})
+	}
+}
+
+func TestInternalMountAndCleanupRejectEscapingPaths(t *testing.T) {
+	t.Run("mount rejects traversal before filesystem work", func(t *testing.T) {
+		driver, mounter, _ := newNodeMountTestDriver(t)
+
+		err := driver.internalMount(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, "../target", nil)
+
+		require.Error(t, err)
+		assert.Empty(t, mounter.GetLog())
+	})
+	t.Run("cleanup rejects traversal before unmount", func(t *testing.T) {
+		driver, mounter, _ := newNodeMountTestDriver(t)
+
+		err := driver.cleanupInternalMountIfPresent("../target")
+
+		require.Error(t, err)
+		assert.Empty(t, mounter.GetLog())
+	})
+}
+
+func TestNodeUnpublishRetriesTemporaryCleanup(t *testing.T) {
+	driver, mounter, backingDirectory := newNodeMountTestDriver(t)
+	mounter.unmountError = errors.New("temporary unmount failed")
+	target := filepath.Join(t.TempDir(), "target")
+	request := &csi.NodePublishVolumeRequest{
+		VolumeId:   "volume#lustrefs#127.0.0.1#child#f#",
+		TargetPath: target,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+		},
+		VolumeContext: map[string]string{VolumeContextMGSIPAddress: "127.0.0.1", VolumeContextSubDir: "child"},
+	}
+
+	response, err := driver.NodePublishVolume(t.Context(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Nil(t, response)
+	require.ErrorContains(t, err, "temporary unmount failed")
+	require.Len(t, mounter.MountPoints, 1, "only the temporary mount may remain")
+	temporaryMount := mounter.MountPoints[0]
+	assert.NotEqual(t, target, temporaryMount.Path, "failed preparation must not leave a published target")
+	unpublish := &csi.NodeUnpublishVolumeRequest{VolumeId: request.GetVolumeId(), TargetPath: target}
+
+	_, err = driver.NodeUnpublishVolume(t.Context(), unpublish)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Equal(t, []mount.MountPoint{temporaryMount}, mounter.MountPoints, "failed cleanup must keep the same temporary mount visible")
+	mounter.unmountError = nil
+
+	_, err = driver.NodeUnpublishVolume(t.Context(), unpublish)
+
+	require.NoError(t, err)
+	assert.Empty(t, mounter.MountPoints)
+	assert.NoDirExists(t, target)
+	assert.DirExists(t, filepath.Join(backingDirectory, "0", "child"), "the first unmounted snapshot must retain the simulated filesystem data")
+
+	_, err = driver.NodeUnpublishVolume(t.Context(), unpublish)
+
+	require.NoError(t, err, "cleanup must remain idempotent")
+}
+
+func TestCreateSubDirPreservesCleanupErrors(t *testing.T) {
+	driver, mounter, _ := newNodeMountTestDriver(t)
+	mounter.unmountError = errors.New("temporary unmount failed")
+	internalTarget := filepath.Join(driver.workingMountDir, "target")
+	err := os.Mkdir(internalTarget, 0o700)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(internalTarget, "occupied"), []byte("test"), 0o600)
+	require.NoError(t, err)
+
+	err = driver.createSubDir(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, "target", "occupied/child", nil)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	require.ErrorContains(t, err, "failed to make subdirectory")
+	require.ErrorContains(t, err, "temporary unmount failed")
+	assert.Len(t, mounter.MountPoints, 1)
 }
 
 func TestPublishAndInternalMountPreservePreparationUncertainty(t *testing.T) {
@@ -685,6 +765,7 @@ func TestNodePublishVolume(t *testing.T) {
 		test := &tests[i]
 
 		fakeMounter := &fakeMounter{}
+		preserveFakeUnmountedData(t, fakeMounter)
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
 			Interface: fakeMounter,
@@ -714,22 +795,6 @@ func TestNodePublishVolume(t *testing.T) {
 			assert.Equal(t, test.expectedMountpoints, mountPoints, "Desc: %s - Incorrect mount points: %v - Expected: %v", test.desc, mountPoints, test.expectedMountpoints)
 			mountActions := fakeMounter.GetLog()
 			assert.Equal(t, test.expectedMountActions, mountActions, "Desc: %s - Incorrect mount actions: %v - Expected: %v", test.desc, mountActions, test.expectedMountActions)
-
-			// Check that sub-dir has been created in the mount. This works because
-			// the contents in workingMountDir still exist after the test. The reason is
-			// os.Remove on workingMountDir fails because it is non-empty after unmount
-			// since it's not a real mounted Lustre
-			if subDirPath, ok := test.req.GetPublishContext()["sub-dir"]; ok {
-				if test.expectedErr == nil {
-					internalMountDir := filepath.Join(d.workingMountDir, test.req.GetVolumeId())
-					subDirPath := filepath.Join(internalMountDir, subDirPath)
-					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be created", subDirPath)
-					err = d.mounter.Unmount(internalMountDir)
-					require.NoError(t, err)
-					err = os.RemoveAll(internalMountDir)
-					require.NoError(t, err)
-				}
-			}
 		})
 
 		if test.cleanup != nil {
@@ -764,6 +829,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 		req                  csi.NodeUnpublishVolumeRequest
 		expectedErr          error
 		expectExistingSubDir bool
+		expectUnmountedData  bool
 		expectedMountpoints  []mount.MountPoint
 		expectedMountActions []mount.FakeAction
 		cleanup              func(*Driver)
@@ -848,7 +914,8 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			},
 			req:                  csi.NodeUnpublishVolumeRequest{TargetPath: targetTest, VolumeId: "vol_1#lustrefs#1.1.1.1#testSubDir"},
 			expectedErr:          nil,
-			expectExistingSubDir: true,
+			expectExistingSubDir: false,
+			expectUnmountedData:  true,
 			expectedMountpoints:  []mount.MountPoint{},
 			expectedMountActions: []mount.FakeAction{
 				{Action: "unmount", Target: "target_test", Source: "", FSType: ""},
@@ -881,6 +948,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	for i := range tests {
 		test := &tests[i]
 		fakeMounter := &fakeMounter{}
+		backingDirectory := preserveFakeUnmountedData(t, fakeMounter)
 		fakeExec := &testingexec.FakeExec{ExactOrder: true}
 		d.mounter = &mount.SafeFormatAndMount{
 			Interface: fakeMounter,
@@ -914,6 +982,9 @@ func TestNodeUnpublishVolume(t *testing.T) {
 					assert.DirExists(t, subDirPath, "Expected sub-dir %q to be created", subDirPath)
 				} else {
 					assert.NoDirExists(t, subDirPath, "Expected sub-dir %q not to exist", subDirPath)
+				}
+				if test.expectUnmountedData {
+					assert.DirExists(t, filepath.Join(backingDirectory, "0", subDir), "unmount must preserve the filesystem's subdirectory")
 				}
 			}
 			err = d.mounter.Unmount(internalMountDir)
