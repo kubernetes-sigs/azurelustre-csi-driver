@@ -17,6 +17,7 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
   - [Dynamic Provisioning Errors](#dynamic-provisioning-errors)
     - [Authentication and Authorization Errors](#authentication-and-authorization-errors)
     - [Error: Lease access is forbidden](#error-lease-access-is-forbidden)
+    - [Error: Incomplete Azure API response](#error-incomplete-azure-api-response)
     - [Error: AMLFS cluster creation timed out](#error-amlfs-cluster-creation-timed-out)
     - [Error: Resource not found](#error-resource-not-found)
     - [Error: Cannot create AMLFS cluster, not enough IP addresses available](#error-cannot-create-amlfs-cluster-not-enough-ip-addresses-available)
@@ -36,7 +37,7 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
     - [Error: CreateVolume Parameter zone cannot be used in location, no zones available for SKU](#error-createvolume-parameter-zone-cannot-be-used-in-location-no-zones-available-for-sku)
     - [Error: CreateVolume Parameter zone must be one of available zones](#error-createvolume-parameter-zone-must-be-one-of-available-zones)
     - [Error: CreateVolume Parameter sku-name must be one of supported values](#error-createvolume-parameter-sku-name-must-be-one-of-supported-values)
-    - [Error: SKU retrieval failures](#error-sku-retrieval-failures)
+    - [Warning: SKU retrieval failures](#warning-sku-retrieval-failures)
     - [Error: CreateVolume Parameter maintenance-time-of-day-utc must be in HH:MM format](#error-createvolume-parameter-maintenance-time-of-day-utc-must-be-in-hhmm-format)
   - [Kubernetes resource quota restriction](#kubernetes-resource-quota-restriction)
     - [Error: Dynamic provisioning would exceed default quota](#error-dynamic-provisioning-would-exceed-default-quota)
@@ -138,6 +139,27 @@ kubectl get role,rolebinding -n <driver-namespace> -l app.kubernetes.io/name=azu
 Check that the Role permits Lease access and its RoleBinding names
 `csi-azurelustre-controller-sa` in the controller's namespace. Restore the
 chart's namespaced RBAC rather than granting cluster-wide Lease access.
+
+---
+
+#### Error: Incomplete Azure API response
+
+Provisioning reports `Unavailable` with `received incomplete AMLFS response` or
+`received incomplete subnet usage response`.
+The message identifies the affected resource or location and missing information.
+
+Missing subnet-usage data prevents the driver from checking capacity; it does not
+mean the subnet is full. A missing MGS address does not prove creation failed:
+the filesystem may already exist, and this error does not trigger its deletion.
+
+SKU lookup warnings do not by themselves prevent provisioning. See
+[SKU retrieval failures](#warning-sku-retrieval-failures).
+
+Keep the PVC and driver in place while provisioning retries. If the error
+persists, collect the
+[controller logs](#controller-logs), check the affected resource in Azure, and
+contact Azure support with the missing-field message and resource details. Do not
+delete the PVC or filesystem solely because of this error.
 
 ---
 
@@ -700,46 +722,44 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 ---
 
-#### Error: SKU retrieval failures
+#### Warning: SKU retrieval failures
 
 **Symptoms:**
 
-- Dynamic provisioning fails during SKU validation
+- The driver cannot use the requested SKU's metadata and defers SKU, zone and capacity validation
+  to ARM during creation
 - Controller logs show one or more of the following:
   - `error retrieving SKUs: ...`
   - `found no AMLFS SKUs for location <location>`
   - `could not find location info for sku <sku> in location <location>`
+  - `received incomplete SKU response ...` or `received invalid SKU response ...`
 
 **Possible Causes:**
 
 - Azure API connectivity issues
 - Insufficient permissions to list Azure SKUs
 - Invalid or unsupported Azure region
-- SKU not available in the specified location
+- Missing or malformed SKU response fields
 
 **Debugging Steps:**
 
 ```bash
-# Check controller logs for SKU retrieval errors
+# Check controller logs for SKU retrieval warnings
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "sku\|retrieving"
 
 # Verify location parameter in StorageClass
 kubectl get storageclass <storageclass> -o yaml | grep location
-
-# Check Azure permissions for kubelet identity
-# Ensure the identity has the correct permissions for the subscription
 
 ```
 
 **Resolution:**
 
 - Verify Azure region name is correct (e.g., `eastus`, `westus2`)
-- Ensure kubelet identity has sufficient permissions to list Azure SKUs
-  - See [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity)
-
-- Check if AMLFS service is available in your target region
-- Retry the operation to handle temporary Azure API issues
-- Contact Azure support if SKUs are consistently unavailable in supported regions
+- SKU lookup permissions are optional; the actual creation request still requires
+  the documented resource permissions.
+- Check the actual creation error if provisioning fails.
+- See [SKU discovery and capacity validation](dynamic-provisioning.md#sku-discovery-and-capacity-validation)
+  for capacity rounding.
 
 ---
 

@@ -14,6 +14,21 @@ kubelet identity must have the correct permissions granted to it.
 Ensure that the kubelet identity has all of the permissions that are listed in the section
 on [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
 
+### SKU discovery and capacity validation
+
+When information about the requested SKU is available, the driver validates the
+zone and rounds the PVC's requested capacity up to that SKU's allocation increment,
+enforcing its maximum size.
+
+If that information is unavailable or unusable, the driver logs a warning and
+continues with the configured SKU and zone. Capacity is rounded up in 4-TiB
+increments. Azure validates the creation request and may reject unsupported
+values.
+
+The provisioned capacity can be larger than the size requested in the PVC. See
+[SKU retrieval warnings](errors.md#warning-sku-retrieval-failures) for
+troubleshooting.
+
 ### Azure cloud environment
 
 AKS creates `/etc/kubernetes/azure.json` for the cluster. The driver reads this

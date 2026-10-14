@@ -138,6 +138,7 @@ type FakeDynamicProvisioner struct {
 	Filesystems   []*AmlFilesystemProperties
 	fakeCallCount map[string]int
 	mutex         sync.Mutex
+	skuError      error
 }
 
 func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
@@ -176,8 +177,8 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	f.recordFakeCall("GetSkuValuesForLocation")
-	if location == errorLocation {
-		return nil, status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", errorLocation)
+	if f.skuError != nil {
+		return nil, f.skuError
 	}
 	if location == driverDefaultLocation {
 		return DefaultLocationSkuValues, nil

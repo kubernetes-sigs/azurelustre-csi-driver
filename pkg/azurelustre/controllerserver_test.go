@@ -500,18 +500,6 @@ func TestCreateVolume_Err_BadSku(t *testing.T) {
 	require.ErrorContains(t, err, "sku-name must be one of")
 }
 
-func TestCreateVolume_Err_ErrorRetrievingSku(t *testing.T) {
-	d := NewFakeDriver(t)
-	req := buildDynamicProvCreateVolumeRequest()
-	req.Parameters["location"] = errorLocation
-	_, err := d.CreateVolume(t.Context(), req)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, errorLocation)
-}
-
 func TestCreateVolume_Err_CapacityAboveSkuMax(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := buildDynamicProvCreateVolumeRequest()

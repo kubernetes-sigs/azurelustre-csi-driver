@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
 
 type ClusterState string
@@ -291,8 +293,15 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		return "", convertHTTPResponseErrorToGrpcCodeError(err)
 	}
 
-	klog.V(2).Infof("Successfully created AML filesystem: %s", amlFilesystemProperties.AmlFilesystemName)
+	if res.Properties == nil || res.Properties.ClientInfo == nil || res.Properties.ClientInfo.MgsAddress == nil ||
+		strings.TrimSpace(*res.Properties.ClientInfo.MgsAddress) == "" {
+		return "", status.Errorf(codes.Unavailable,
+			"received incomplete AMLFS response for %s in resource group %s: missing MGS address",
+			amlFilesystemProperties.AmlFilesystemName, amlFilesystemProperties.ResourceGroupName)
+	}
+
 	mgsAddress := *res.Properties.ClientInfo.MgsAddress
+	klog.V(2).Infof("Successfully created AML filesystem: %s", amlFilesystemProperties.AmlFilesystemName)
 	return mgsAddress, nil
 }
 
@@ -330,6 +339,8 @@ func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, 
 	return false, nil
 }
 
+// GetSkuValuesForLocation returns usable entries even when an error indicates
+// that the rest of the catalog is incomplete.
 func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error) {
 	if d.skusClient == nil {
 		klog.Error("skus client is nil")
@@ -338,102 +349,119 @@ func (d *DynamicProvisioner) GetSkuValuesForLocation(ctx context.Context, locati
 
 	skusPager := d.skusClient.NewListPager(nil)
 	skuValues := make(map[string]*LustreSkuValue)
-
-	var amlfsSkus []*armstoragecache.ResourceSKU
-	var skusForLocation []*armstoragecache.ResourceSKU
+	var lookupErrors []error
 
 	for skusPager.More() {
 		page, err := skusPager.NextPage(ctx)
 		if err != nil {
-			klog.Errorf("error retrieving SKUs for location %s: %v", location, err)
-			// Preserve the mapped gRPC code (e.g. 403 -> PermissionDenied with the
-			// auth hint, matching CreateAmlFilesystem/DeleteAmlFilesystem) while
-			// adding the SKU-listing context to the message.
 			st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
-			return nil, status.Errorf(st.Code(), "error retrieving SKUs for location %s: %s", location, st.Message())
+			lookupErrors = append(lookupErrors, status.Errorf(st.Code(), "error retrieving SKUs for location %s: %s", location, st.Message()))
+			break
 		}
 
 		for _, sku := range page.Value {
-			if *sku.ResourceType == AmlfsSkuResourceType {
-				amlfsSkus = append(amlfsSkus, sku)
+			if sku == nil || sku.ResourceType == nil || *sku.ResourceType == "" {
+				lookupErrors = append(lookupErrors, status.Errorf(codes.Unavailable, "received incomplete SKU response for location %s: missing resource type", location))
+				continue
 			}
-		}
-	}
-
-	if len(amlfsSkus) == 0 {
-		klog.Errorf("found no AMLFS SKUs for location %s", location)
-		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
-	}
-
-	for _, sku := range amlfsSkus {
-		for _, skuLocation := range sku.Locations {
-			if strings.EqualFold(*skuLocation, location) {
-				skusForLocation = append(skusForLocation, sku)
+			if *sku.ResourceType != AmlfsSkuResourceType {
+				continue
 			}
-		}
-	}
 
-	if len(skusForLocation) == 0 {
-		klog.Errorf("found no AMLFS SKUs for location %s", location)
-		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
-	}
-
-	for _, sku := range skusForLocation {
-		var incrementInTib int64
-		var maximumInTib int64
-		availableZones := []string{}
-		foundLocation := false
-		for _, locationInfo := range sku.LocationInfo {
-			if locationInfo.Location != nil && strings.EqualFold(*locationInfo.Location, location) {
-				if locationInfo.Zones != nil {
-					foundLocation = true
-					for _, zone := range locationInfo.Zones {
-						if zone != nil && *zone != "" {
-							availableZones = append(availableZones, *zone)
-						}
-					}
-				} else {
-					klog.Warningf("no zones available for SKU %s in location %s", *sku.Name, location)
+			matchesLocation := false
+			missingLocation := len(sku.Locations) == 0
+			for _, skuLocation := range sku.Locations {
+				if skuLocation == nil || *skuLocation == "" {
+					missingLocation = true
+				} else if strings.EqualFold(*skuLocation, location) {
+					matchesLocation = true
+					break
 				}
 			}
-		}
-		if !foundLocation {
-			klog.Errorf("could not find location info for sku %s in location %s", *sku.Name, location)
-			return nil, status.Errorf(codes.Internal, "could not find location info for sku %s in location %s", *sku.Name, location)
-		}
-		for _, capability := range sku.Capabilities {
-			if *capability.Name == AmlfsSkuCapacityIncrementName {
-				parsedValue, err := strconv.ParseInt(*capability.Value, 10, 64)
-				if err != nil {
-					klog.Errorf("failed to parse capability value: %v", err)
-					continue
+			if !matchesLocation {
+				if missingLocation {
+					lookupErrors = append(lookupErrors, status.Errorf(codes.Unavailable, "received incomplete SKU response for location %s: missing location", location))
 				}
-				incrementInTib = parsedValue
-			} else if *capability.Name == AmlfsSkuCapacityMaximumName {
-				parsedValue, err := strconv.ParseInt(*capability.Value, 10, 64)
-				if err != nil {
-					klog.Errorf("failed to parse capability value: %v", err)
-					continue
-				}
-				maximumInTib = parsedValue
+				continue
 			}
-		}
-		if incrementInTib != 0 && maximumInTib != 0 {
-			sort.Strings(availableZones)
-			skuValues[*sku.Name] = &LustreSkuValue{
-				IncrementInTib: incrementInTib,
-				MaximumInTib:   maximumInTib,
-				AvailableZones: availableZones,
+
+			value, err := parseSkuResponse(sku, location)
+			if err != nil {
+				lookupErrors = append(lookupErrors, err)
+				continue
 			}
+			skuValues[*sku.Name] = value
 		}
 	}
 
 	if len(skuValues) == 0 {
-		klog.Errorf("found no AMLFS SKUs for location %s", location)
-		return nil, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location)
+		skuValues = nil
+		if len(lookupErrors) == 0 {
+			lookupErrors = append(lookupErrors, status.Errorf(codes.Internal, "found no AMLFS SKUs for location %s", location))
+		}
+	}
+	return skuValues, errors.Join(lookupErrors...)
+}
+
+func parseSkuResponse(sku *armstoragecache.ResourceSKU, location string) (*LustreSkuValue, error) {
+	if sku.Name == nil || *sku.Name == "" {
+		return nil, status.Errorf(codes.Unavailable, "received incomplete SKU response for location %s: missing SKU name", location)
+	}
+	availableZones := []string{}
+	foundLocation := false
+	for _, locationInfo := range sku.LocationInfo {
+		if locationInfo == nil || locationInfo.Location == nil || !strings.EqualFold(*locationInfo.Location, location) || locationInfo.Zones == nil {
+			continue
+		}
+		foundLocation = true
+		for _, zone := range locationInfo.Zones {
+			if zone == nil || *zone == "" {
+				return nil, status.Errorf(codes.Unavailable, "received incomplete SKU response for SKU %s in location %s: missing zone", *sku.Name, location)
+			}
+			availableZones = append(availableZones, *zone)
+		}
+	}
+	if !foundLocation {
+		return nil, status.Errorf(codes.Unavailable, "received incomplete SKU response for SKU %s in location %s: missing location info", *sku.Name, location)
 	}
 
-	return skuValues, nil
+	var incrementInTib, maximumInTib int64
+	for _, capability := range sku.Capabilities {
+		if capability == nil || capability.Name == nil ||
+			(*capability.Name != AmlfsSkuCapacityIncrementName && *capability.Name != AmlfsSkuCapacityMaximumName) {
+			continue
+		}
+		if capability.Value == nil || *capability.Value == "" {
+			return nil, status.Errorf(codes.Unavailable, "received incomplete SKU response for SKU %s in location %s: missing value for capability %s", *sku.Name, location, *capability.Name)
+		}
+		parsedValue, err := strconv.ParseInt(*capability.Value, 10, 64)
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable,
+				"received invalid SKU response for SKU %s in location %s: invalid %s value %q: %v",
+				*sku.Name, location, *capability.Name, *capability.Value, err)
+		}
+		if parsedValue <= 0 || parsedValue > math.MaxInt64/util.TiB {
+			return nil, status.Errorf(codes.Unavailable,
+				"received invalid SKU response for SKU %s in location %s: %s must be positive and fit in CSI capacity bytes, received %q",
+				*sku.Name, location, *capability.Name, *capability.Value)
+		}
+		if *capability.Name == AmlfsSkuCapacityIncrementName {
+			incrementInTib = parsedValue
+		} else {
+			maximumInTib = parsedValue
+		}
+	}
+	if incrementInTib == 0 || maximumInTib == 0 || incrementInTib > maximumInTib {
+		return nil, status.Errorf(codes.Unavailable,
+			"received incomplete or inconsistent SKU response for SKU %s in location %s: missing or inconsistent capacity increment or maximum",
+			*sku.Name, location)
+	}
+	sort.Strings(availableZones)
+	return &LustreSkuValue{
+		IncrementInTib: incrementInTib,
+		MaximumInTib:   maximumInTib,
+		AvailableZones: availableZones,
+	}, nil
 }
 
 func (d *DynamicProvisioner) getAmlfsSubnetSize(ctx context.Context, sku string, clusterSize float32) (int, error) {
@@ -474,10 +502,20 @@ func (d *DynamicProvisioner) checkSubnetAddresses(ctx context.Context, vnetResou
 		}
 
 		for _, usageValue := range page.Value {
+			if usageValue == nil || usageValue.ID == nil || *usageValue.ID == "" {
+				return 0, status.Errorf(codes.Unavailable,
+					"received incomplete subnet usage response for vnet %s in resource group %s: missing subnet ID",
+					vnetName, vnetResourceGroup)
+			}
 			// Azure resource group names are case-insensitive, but different ARM
 			// endpoints may echo back different casing for the same resource ID,
 			// so compare case-insensitively to avoid false "subnet not found" errors.
 			if strings.EqualFold(*usageValue.ID, subnetID) {
+				if usageValue.CurrentValue == nil || usageValue.Limit == nil {
+					return 0, status.Errorf(codes.Unavailable,
+						"received incomplete subnet usage response for subnet %s in vnet %s, resource group %s: missing CurrentValue or Limit",
+						subnetID, vnetName, vnetResourceGroup)
+				}
 				usedIPs := *usageValue.CurrentValue
 				limitIPs := *usageValue.Limit
 				availableIPs := int(limitIPs) - int(usedIPs)
