@@ -145,7 +145,8 @@ func (d *DynamicProvisioner) currentClusterState(ctx context.Context, resourceGr
 
 	resp, err := d.amlFilesystemsClient.Get(ctx, resourceGroupName, amlFilesystemName, nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "ResourceNotFound") {
+		var responseError *azcore.ResponseError
+		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound && responseError.ErrorCode == "ResourceNotFound" {
 			klog.V(2).Infof("Cluster %s not found!", amlFilesystemName)
 			return ClusterStateNotFound, nil
 		}

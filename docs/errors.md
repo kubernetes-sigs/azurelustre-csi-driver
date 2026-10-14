@@ -217,13 +217,20 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 #### Error: Resource not found
 
+Check the Azure error code and affected resource, not just words in the message.
+A failed lookup of a configured resource group or network is not evidence that
+an AMLFS filesystem is absent. Authorization failures and unavailable responses
+also stop provisioning; address the underlying error before expecting creation.
+
 **Symptoms:**
 
 - Controller logs show one or more of the following:
   - `Resource group 'myapp-rg/myapp-vnet-rg' could not be found.`
   - `The Resource '.../myapp-vnet' under resource group 'myapp-rg' was not found.`
   - `subnet ../myapp-subnet not found in vnet myapp-vnet, resource group myapp-rg. Ensure permissions are correct for configuration`
-- Error code: `FailedPrecondition`
+- Status: `NotFound` for ARM 404 responses or `FailedPrecondition` when the
+  requested subnet is absent from the returned usage inventory. Permission errors
+  are reported separately as `PermissionDenied` or `Unauthenticated`.
 
 **Possible Causes:**
 

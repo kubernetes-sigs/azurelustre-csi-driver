@@ -50,6 +50,9 @@ type mockAmlfsRecorder struct {
 	createResponse              *armstoragecache.AmlFilesystem
 	subnetUsageResponse         *armnetwork.VirtualNetworkListUsageResult
 	skuResponse                 *armstoragecache.ResourceSKUsResult
+	getError                    error
+	deleteError                 error
+	deletePollingError          *azcore.ResponseError
 }
 
 const (
@@ -573,6 +576,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		recorder.recordFakeCall()
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.PollerResponder[armstoragecache.AmlFilesystemsClientDeleteResponse]{}
+		if recorder.deleteError != nil {
+			errResp.SetError(recorder.deleteError)
+			return resp, errResp
+		}
 		if amlFilesystemName == immediateDeleteFailureName {
 			errResp.SetError(&azcore.ResponseError{StatusCode: http.StatusConflict})
 			return resp, errResp
@@ -584,9 +591,18 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			return resp, errResp
 		}
 
+		if _, exists := recorder.recordedAmlfsConfigurations[amlFilesystemName]; !exists {
+			resp.SetTerminalResponse(http.StatusNoContent, armstoragecache.AmlFilesystemsClientDeleteResponse{}, nil)
+			return resp, errResp
+		}
+
 		resp.AddNonTerminalResponse(http.StatusAccepted, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
+		if recorder.deletePollingError != nil {
+			resp.SetTerminalError(recorder.deletePollingError.StatusCode, recorder.deletePollingError.ErrorCode)
+			return resp, errResp
+		}
 		if amlFilesystemName == eventualDeleteFailureName {
 			resp.SetTerminalError(http.StatusInternalServerError, eventualDeleteFailureName)
 			return resp, errResp
@@ -669,6 +685,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		var amlFilesystem *armstoragecache.AmlFilesystem
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.Responder[armstoragecache.AmlFilesystemsClientGetResponse]{}
+		if recorder.getError != nil {
+			errResp.SetError(recorder.getError)
+			return resp, errResp
+		}
 		if amlFilesystemName == clusterGetImmediateFailureName {
 			errResp.SetError(errors.New(clusterGetImmediateFailureName))
 			return resp, errResp
@@ -680,7 +700,7 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			}
 		}
 		if amlFilesystem == nil {
-			errResp.SetError(errors.New("ResourceNotFound"))
+			errResp.SetResponseError(http.StatusNotFound, "ResourceNotFound")
 			return resp, errResp
 		}
 		amlFilesystem.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeSucceeded)
@@ -1686,6 +1706,80 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.NoError(t, err, "repeating deletion after completion must succeed")
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_AbsentBackendCompletesWithoutPolling(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.NoError(t, err, "the documented HTTP 204 response must succeed without polling")
+	assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_RejectsSubmissionErrors(t *testing.T) {
+	testCases := []struct {
+		name         string
+		response     error
+		expectedCode codes.Code
+	}{
+		{name: "resource not found error is not the documented 204", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing resource group", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing operation", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "OperationNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "permission denied", response: &azcore.ResponseError{
+			StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
+		}, expectedCode: codes.PermissionDenied},
+		{name: "unauthenticated", response: &azcore.ResponseError{
+			StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed",
+		}, expectedCode: codes.Unauthenticated},
+		{name: "throttled", response: &azcore.ResponseError{
+			StatusCode: http.StatusTooManyRequests, ErrorCode: "TooManyRequests",
+		}, expectedCode: codes.Unavailable},
+		{name: "untyped error text", response: errors.New("ResourceNotFound"), expectedCode: codes.Unknown},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.deleteError = test.response
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err),
+				"DELETE submission must report %s instead of claiming deletion completed; got %v", test.expectedCode, err)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_MissingOperationDoesNotProveBackendDeletion(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName] = armstoragecache.AmlFilesystem{
+		Name: new(expectedAmlFilesystemName),
+	}
+	recorder.deletePollingError = &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound"}
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.NotFound, status.Code(err))
+	assert.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName, "a failed status poll must not establish successful deletion")
+	assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_Err_NilCLient(t *testing.T) {
@@ -1806,14 +1900,86 @@ func TestDynamicProvisioner_CurrentClusterState_Success(t *testing.T) {
 	require.Equal(t, ClusterStateExists, currentClusterState)
 }
 
-func TestDynamicProvisioner_CurrentClusterState_SuccessNotFound(t *testing.T) {
-	recorder := newMockAmlfsRecorder([]string{})
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
-	require.Empty(t, recorder.recordedAmlfsConfigurations)
+func TestDynamicProvisioner_CurrentClusterState_AcceptsTypedResourceNotFound(t *testing.T) {
+	testCases := []struct {
+		name     string
+		getError error
+	}{
+		{name: "empty backend returns HTTP 404 ResourceNotFound"},
+		{name: "wrapped typed response", getError: fmt.Errorf("looking up AMLFS: %w", &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound",
+		})},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.getError = test.getError
+			provisioner := newTestDynamicProvisioner(t, recorder)
 
-	currentClusterState, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
-	require.NoError(t, err)
-	require.Equal(t, ClusterStateNotFound, currentClusterState)
+			clusterState, err := provisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+			require.NoError(t, err)
+			assert.Equal(t, ClusterStateNotFound, clusterState)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_DoesNotMutateWhenLookupFails(t *testing.T) {
+	testCases := []struct {
+		name         string
+		getError     error
+		expectedCode codes.Code
+	}{
+		{name: "untyped message", getError: errors.New("ResourceNotFound"), expectedCode: codes.Unknown},
+		{name: "synthetic gRPC status lacks ARM absence evidence", getError: status.Error(codes.NotFound, "ResourceNotFound"), expectedCode: codes.NotFound},
+		{name: "missing resource group", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing operation", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "OperationNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing error code", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound,
+		}, expectedCode: codes.NotFound},
+		{name: "missing status code", getError: &azcore.ResponseError{
+			ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.Unknown},
+		{name: "permission failure mentioning absence", getError: fmt.Errorf("ResourceNotFound text: %w", &azcore.ResponseError{
+			StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
+		}), expectedCode: codes.PermissionDenied},
+		{name: "wrong status with absence code", getError: &azcore.ResponseError{
+			StatusCode: http.StatusServiceUnavailable, ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.Unavailable},
+		{name: "unauthenticated", getError: &azcore.ResponseError{
+			StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed",
+		}, expectedCode: codes.Unauthenticated},
+		{name: "throttled", getError: &azcore.ResponseError{
+			StatusCode: http.StatusTooManyRequests, ErrorCode: "TooManyRequests",
+		}, expectedCode: codes.Unavailable},
+		{name: "canceled", getError: context.Canceled, expectedCode: codes.Canceled},
+		{name: "deadline exceeded", getError: context.DeadlineExceeded, expectedCode: codes.DeadlineExceeded},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.getError = test.getError
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			mgsAddress, err := provisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
+				ResourceGroupName: expectedResourceGroupName,
+				AmlFilesystemName: expectedAmlFilesystemName,
+				SubnetInfo:        buildExpectedSubnetInfo(),
+			})
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err),
+				"lookup failure must report %s before any mutation; got %v", test.expectedCode, err)
+			assert.Empty(t, mgsAddress)
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount, "failed observation must not create or delete storage")
+		})
+	}
 }
 
 func TestDynamicProvisioner_CurrentClusterState_Err(t *testing.T) {
