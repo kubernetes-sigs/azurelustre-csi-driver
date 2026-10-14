@@ -386,6 +386,17 @@ kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i
 
 #### Error: Could not mount target
 
+If the driver cannot determine whether a target is mounted, cannot unmount an
+existing target, or cannot remove a target after a failed mount, it returns
+`Unavailable`. Kubelet keeps the mount state uncertain so it can retry or clean up
+the volume when the Pod is removed. This error is not proof that the volume is
+unmounted. A failed mount whose target is confirmed removed or absent can return
+`Internal` instead.
+
+Keep the driver running, inspect the node logs for the original mount error and
+any cleanup error, and correct the reported node or filesystem problem. Do not
+remove kubelet volume metadata or force-delete storage objects to hide the error.
+
 **Symptoms:**
 
 - Pod fails to start with mount errors

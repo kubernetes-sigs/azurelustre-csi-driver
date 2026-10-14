@@ -29,10 +29,17 @@ import (
 
 type fakeMounter struct {
 	mount.FakeMounter
+	notMountPoint   *bool
+	mountCheckError error
+	mountError      error
+	unmountError    error
 }
 
 // Mount overrides mount.FakeMounter.Mount.
 func (f *fakeMounter) Mount(source, target, fstype string, options []string) error {
+	if f.mountError != nil {
+		return f.mountError
+	}
 	if strings.Contains(source, "ut-container") {
 		return errors.New("fake Mount: source error")
 	} else if strings.Contains(target, "error_mount") {
@@ -44,6 +51,9 @@ func (f *fakeMounter) Mount(source, target, fstype string, options []string) err
 
 // MountSensitive overrides mount.FakeMounter.MountSensitive.
 func (f *fakeMounter) MountSensitive(source, target, fstype string, options, sensitiveOptions []string) error {
+	if f.mountError != nil {
+		return f.mountError
+	}
 	if strings.Contains(source, "ut-container-sens") {
 		return errors.New("fake MountSensitive: source error")
 	} else if strings.Contains(target, "error_mount_sens") {
@@ -55,6 +65,9 @@ func (f *fakeMounter) MountSensitive(source, target, fstype string, options, sen
 
 // MountSensitiveWithoutSystemdWithMountFlags overrides mount.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags.
 func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source, target, fstype string, options, sensitiveOptions, mountFlags []string) error {
+	if f.mountError != nil {
+		return f.mountError
+	}
 	if strings.Contains(source, "ut-container-sens-mountflags") {
 		return errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
 	} else if strings.Contains(target, "error_mount_sens_mountflags") {
@@ -65,6 +78,12 @@ func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source, target,
 }
 
 func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {
+	if f.mountCheckError != nil {
+		return true, f.mountCheckError
+	}
+	if f.notMountPoint != nil {
+		return *f.notMountPoint, nil
+	}
 	if strings.Contains(file, "error_is_likely") {
 		return false, errors.New("fake IsLikelyNotMountPoint: fake error")
 	}
@@ -72,6 +91,13 @@ func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func (f *fakeMounter) Unmount(target string) error {
+	if f.unmountError != nil {
+		return f.unmountError
+	}
+	return f.FakeMounter.Unmount(target)
 }
 
 func (f *fakeMounter) UnmountWithForce(target string, _ time.Duration) error {

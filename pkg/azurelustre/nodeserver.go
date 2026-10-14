@@ -96,10 +96,7 @@ func (d *Driver) NodePublishVolume(
 	// (which itself mounts the MGS).
 	mnt, err := d.ensureMountPoint(target)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal,
-			"Could not mount target %q: %v",
-			target,
-			err)
+		return nil, mountPreparationError(target, mnt, err)
 	}
 	if mnt {
 		klog.V(2).Infof(
@@ -172,16 +169,7 @@ func (d *Driver) NodePublishVolume(
 
 	err = mountVolumeAtPath(d, source, target, mountOptions)
 	if err != nil {
-		if removeErr := os.Remove(target); removeErr != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"Could not remove mount target %q: %v",
-				target,
-				removeErr,
-			)
-		}
-		return nil, status.Errorf(codes.Internal,
-			"Could not mount %q at %q: %v", source, target, err)
+		return nil, failedMountError(source, target, err)
 	}
 
 	klog.V(2).Infof(
@@ -276,6 +264,15 @@ func mountVolumeAtPath(d *Driver, source, target string, mountOptions []string) 
 		[]string{"--no-mtab"},
 	)
 	return err
+}
+
+func failedMountError(source, target string, mountErr error) error {
+	if cleanupErr := os.Remove(target); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+		return status.Errorf(codes.Unavailable,
+			"Could not mount %q at %q: %v; could not remove mount target: %v",
+			source, target, mountErr, cleanupErr)
+	}
+	return status.Errorf(codes.Internal, "Could not mount %q at %q: %v", source, target, mountErr)
 }
 
 // NodeUnpublishVolume unmount the volume from the target path
@@ -542,6 +539,7 @@ func (d *Driver) NodeGetVolumeStats(
 // ensureMountPoint: create mount point if not exists
 // return <true, nil> if it's already a mounted point
 // otherwise return <false, nil>
+// On error, true means a mount may still exist and cleanup must remain possible.
 func (d *Driver) ensureMountPoint(target string) (bool, error) {
 	notMnt, err := d.mounter.IsLikelyNotMountPoint(target)
 	if err != nil && !os.IsNotExist(err) {
@@ -550,7 +548,7 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 			klog.Warningf("detected corrupted mount for targetPath [%s]",
 				target)
 		} else {
-			return !notMnt, err
+			return true, err
 		}
 	}
 
@@ -576,6 +574,14 @@ func (d *Driver) ensureMountPoint(target string) (bool, error) {
 		return !notMnt, err
 	}
 	return !notMnt, nil
+}
+
+func mountPreparationError(target string, mayBeMounted bool, err error) error {
+	code := codes.Internal
+	if mayBeMounted {
+		code = codes.Unavailable
+	}
+	return status.Errorf(code, "Could not mount target %q: %v", target, err)
 }
 
 func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, mountOptions []string) error {
@@ -650,10 +656,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 
 	mnt, err := d.ensureMountPoint(target)
 	if err != nil {
-		return status.Errorf(codes.Internal,
-			"Could not mount target %q: %v",
-			target,
-			err)
+		return mountPreparationError(target, mnt, err)
 	}
 
 	if mnt {
@@ -665,7 +668,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 
 		err = d.internalUnmount(mountPath)
 		if err != nil {
-			return status.Errorf(codes.Internal,
+			return status.Errorf(codes.Unavailable,
 				"Could not unmount existing volume at %q: %v",
 				target,
 				err)
@@ -679,17 +682,7 @@ func (d *Driver) internalMount(vol *lustreVolume, mountPath string, mountOptions
 
 	err = mountVolumeAtPath(d, source, target, mountOptions)
 	if err != nil {
-		if removeErr := os.Remove(target); removeErr != nil {
-			return status.Errorf(
-				codes.Internal,
-				"Could not remove mount target %q: %v",
-				target,
-				removeErr,
-			)
-		}
-
-		return status.Errorf(codes.Internal,
-			"Could not mount %q at %q: %v", source, target, err)
+		return failedMountError(source, target, err)
 	}
 
 	return nil

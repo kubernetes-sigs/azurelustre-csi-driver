@@ -146,6 +146,124 @@ func TestEnsureMountPoint(t *testing.T) {
 	}
 }
 
+func TestPublishAndInternalMountPreservePreparationUncertainty(t *testing.T) {
+	testCases := []struct {
+		name            string
+		mountCheckError error
+		unmountError    error
+	}{
+		{name: "mount lookup cannot establish current state", mountCheckError: errors.New("mount lookup failed")},
+		{name: "mount table claims a mount but its unreadable target cannot be unmounted", unmountError: errors.New("unmount failed")},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			driver := NewFakeDriver(t)
+			driver.workingMountDir = t.TempDir()
+			target := filepath.Join(driver.workingMountDir, "mounted-target")
+			fakeMount := &fakeMounter{notMountPoint: new(false), mountCheckError: test.mountCheckError, unmountError: test.unmountError}
+			driver.mounter = &mount.SafeFormatAndMount{Interface: fakeMount}
+			forceMounter := mount.MounterForceUnmounter(fakeMount)
+			driver.forceMounter = &forceMounter
+			mountPoint := mount.MountPoint{Device: "127.0.0.1@tcp:/lustrefs", Path: target, Type: "lustre"}
+			fakeMount.MountPoints = []mount.MountPoint{mountPoint}
+			request := &csi.NodePublishVolumeRequest{
+				VolumeId:         "volume#lustrefs#127.0.0.1##f#",
+				TargetPath:       target,
+				VolumeCapability: &csi.VolumeCapability{},
+				VolumeContext:    map[string]string{VolumeContextMGSIPAddress: "127.0.0.1"},
+			}
+
+			response, err := driver.NodePublishVolume(t.Context(), request)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unavailable, status.Code(err), "kubelet must retain uncertain mount state")
+			assert.Nil(t, response)
+			assert.Equal(t, []mount.MountPoint{mountPoint}, fakeMount.MountPoints)
+			acquired := driver.volumeLocks.TryAcquire(request.GetVolumeId() + "-" + target)
+			require.True(t, acquired, "the failed publish must release its operation lock")
+			driver.volumeLocks.Release(request.GetVolumeId() + "-" + target)
+
+			err = driver.internalMount(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, filepath.Base(target), nil)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unavailable, status.Code(err), "temporary mount uncertainty must survive propagation")
+			assert.Equal(t, []mount.MountPoint{mountPoint}, fakeMount.MountPoints)
+		})
+	}
+}
+
+func TestFailedMountError(t *testing.T) {
+	testCases := []struct {
+		name         string
+		createTarget bool
+		createEntry  bool
+		expectedCode codes.Code
+	}{
+		{name: "empty target can be removed after mount failure", createTarget: true, expectedCode: codes.Internal},
+		{name: "already absent target leaves no uncertain mount", expectedCode: codes.Internal},
+		{name: "nonempty target cannot be removed safely", createTarget: true, createEntry: true, expectedCode: codes.Unavailable},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "target")
+			if test.createTarget {
+				err := os.Mkdir(target, 0o700)
+				require.NoError(t, err)
+			}
+			if test.createEntry {
+				err := os.WriteFile(filepath.Join(target, "entry"), []byte("test"), 0o600)
+				require.NoError(t, err)
+			}
+
+			err := failedMountError("127.0.0.1@tcp:/lustrefs", target, errors.New("mount failed"))
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err), "cleanup certainty must determine the returned status; got %v", err)
+			require.ErrorContains(t, err, "mount failed")
+			if test.createEntry {
+				require.ErrorContains(t, err, "could not remove mount target")
+				assert.FileExists(t, filepath.Join(target, "entry"))
+			} else {
+				assert.NoDirExists(t, target)
+			}
+		})
+	}
+}
+
+func TestInternalMountReportsMountFailureAfterRemovingEmptyTarget(t *testing.T) {
+	driver := NewFakeDriver(t)
+	driver.workingMountDir = t.TempDir()
+	driver.mounter = &mount.SafeFormatAndMount{Interface: &fakeMounter{mountError: errors.New("injected mount failure")}}
+	mountPath := "target"
+
+	err := driver.internalMount(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, mountPath, nil)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err), "successful cleanup establishes a final failed mount")
+	require.ErrorContains(t, err, "injected mount failure")
+	assert.NoDirExists(t, filepath.Join(driver.workingMountDir, mountPath))
+}
+
+func TestInternalMountPreservesExistingMountWhenUnmountFails(t *testing.T) {
+	driver := NewFakeDriver(t)
+	driver.workingMountDir = t.TempDir()
+	target := filepath.Join(driver.workingMountDir, "mounted-target")
+	err := os.Mkdir(target, 0o700)
+	require.NoError(t, err)
+	fakeMount := &fakeMounter{notMountPoint: new(false), unmountError: errors.New("existing unmount failed")}
+	fakeMount.MountPoints = []mount.MountPoint{{Device: "127.0.0.1@tcp:/lustrefs", Path: target, Type: "lustre"}}
+	driver.mounter = &mount.SafeFormatAndMount{Interface: fakeMount}
+	forceMounter := mount.MounterForceUnmounter(fakeMount)
+	driver.forceMounter = &forceMounter
+
+	err = driver.internalMount(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, filepath.Base(target), nil)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	require.ErrorContains(t, err, "existing unmount failed")
+	assert.Len(t, fakeMount.MountPoints, 1)
+}
+
 func TestNodePublishVolume(t *testing.T) {
 	workingDirectory, err := os.Getwd()
 	if err != nil {
