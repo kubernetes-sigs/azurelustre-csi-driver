@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	mount "k8s.io/mount-utils"
 	testingexec "k8s.io/utils/exec/testing"
+	volumehelper "sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
 
 const (
@@ -271,6 +272,128 @@ func TestCreateSubDirPreservesCleanupErrors(t *testing.T) {
 	require.ErrorContains(t, err, "failed to make subdirectory")
 	require.ErrorContains(t, err, "temporary unmount failed")
 	assert.Len(t, mounter.MountPoints, 1)
+}
+
+func TestMakeSubDirInMountRootPathHandling(t *testing.T) {
+	testCases := []struct {
+		name            string
+		mountPath       string
+		subDir          string
+		linkTarget      string
+		absoluteLink    bool
+		existingFile    string
+		expectedCode    codes.Code
+		expectedPath    string
+		expectedMessage string
+	}{
+		{name: "nested directory", mountPath: "target", subDir: "nested/child", expectedPath: "nested/child"},
+		{name: "normalized relative path", mountPath: "target", subDir: "unused/../nested/child", expectedPath: "nested/child"},
+		{name: "relative link within the mount root", mountPath: "target", subDir: "link/child", linkTarget: "real", expectedPath: "real/child"},
+		{name: "link target outside the mount root", mountPath: "target", subDir: "link/child", linkTarget: "../sibling", expectedCode: codes.Internal, expectedMessage: "failed to make subdirectory"},
+		{name: "absolute link target is unsupported", mountPath: "target", subDir: "link/child", linkTarget: "real", absoluteLink: true, expectedCode: codes.Internal, expectedMessage: "failed to make subdirectory"},
+		{name: "file cannot be a parent directory", mountPath: "target", subDir: "regular/child", existingFile: "regular", expectedCode: codes.Internal, expectedMessage: "failed to make subdirectory"},
+		{name: "mount root must be within the working directory", mountPath: "../target", subDir: "child", expectedCode: codes.Internal, expectedMessage: "invalid mount path"},
+		{name: "mount root must exist", mountPath: "missing", subDir: "child", expectedCode: codes.Internal, expectedMessage: "failed to open internal mount root"},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			workingDirectory := t.TempDir()
+			root := filepath.Join(workingDirectory, "target")
+			sibling := filepath.Join(workingDirectory, "sibling")
+			require.NoError(t, makeDir(filepath.Join(root, "real")))
+			require.NoError(t, volumehelper.MakeDir(sibling))
+			if test.existingFile != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(root, test.existingFile), nil, 0o600))
+			}
+			if test.linkTarget != "" {
+				linkTarget := test.linkTarget
+				if test.absoluteLink {
+					linkTarget = filepath.Join(root, linkTarget)
+				}
+				require.NoError(t, os.Symlink(linkTarget, filepath.Join(root, "link")))
+			}
+			originalMode, err := os.Stat(filepath.Join(root, "real"))
+			require.NoError(t, err)
+
+			err = makeSubDirInMountRoot(workingDirectory, test.mountPath, test.subDir)
+
+			assert.Equal(t, test.expectedCode, status.Code(err),
+				"creating %q within mount path %q must return %s; actual error: %v", test.subDir, test.mountPath, test.expectedCode, err)
+			if test.expectedCode == codes.OK {
+				require.NoError(t, err)
+				info, err := os.Stat(filepath.Join(root, test.expectedPath))
+				require.NoError(t, err)
+				assert.True(t, info.IsDir(), "the resolved target must be a directory")
+				reference, err := os.Stat(sibling)
+				require.NoError(t, err)
+				assert.Equal(t, reference.Mode().Perm(), info.Mode().Perm(), "preserve the creation mode subject to umask")
+				require.NoError(t, makeSubDirInMountRoot(workingDirectory, test.mountPath, test.subDir),
+					"creating an existing subdirectory must remain idempotent")
+			} else {
+				require.ErrorContains(t, err, test.expectedMessage)
+			}
+			info, err := os.Stat(filepath.Join(root, "real"))
+			require.NoError(t, err)
+			assert.Equal(t, originalMode.Mode().Perm(), info.Mode().Perm(), "do not change existing ancestor permissions")
+			entries, err := os.ReadDir(sibling)
+			require.NoError(t, err)
+			assert.Empty(t, entries, "subdirectory creation must leave sibling directories unchanged")
+		})
+	}
+}
+
+func TestNodePublishVolumeRetriesAfterSubdirectoryPreparationFailure(t *testing.T) {
+	driver, mounter, backingDirectory := newNodeMountTestDriver(t)
+	target := filepath.Join(t.TempDir(), "target")
+	root, err := getInternalMountPath(driver.workingMountDir, target)
+	require.NoError(t, err)
+	err = makeDir(root)
+	require.NoError(t, err)
+	otherDirectory := t.TempDir()
+	err = os.Symlink(otherDirectory, filepath.Join(root, "link"))
+	require.NoError(t, err)
+	request := &csi.NodePublishVolumeRequest{
+		VolumeId:   "volume#lustrefs#127.0.0.1#link/child#f#",
+		TargetPath: target,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+		},
+		VolumeContext: map[string]string{VolumeContextMGSIPAddress: "127.0.0.1", VolumeContextSubDir: "link/child"},
+	}
+
+	response, err := driver.NodePublishVolume(t.Context(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Nil(t, response)
+	assert.Empty(t, mounter.MountPoints, "failed subdirectory preparation must clean up its temporary mount")
+	assert.NoDirExists(t, filepath.Join(otherDirectory, "child"))
+	acquired := driver.volumeLocks.TryAcquire(request.GetVolumeId() + "-" + target)
+	require.True(t, acquired, "failed preparation must release the volume lock")
+	driver.volumeLocks.Release(request.GetVolumeId() + "-" + target)
+	// The fake does not remount persistent data automatically: reuse the captured tree.
+	err = os.Rename(filepath.Join(backingDirectory, "0"), root)
+	require.NoError(t, err)
+
+	response, err = driver.NodePublishVolume(t.Context(), request)
+
+	require.Equal(t, codes.Internal, status.Code(err), "retrying without correcting the path must still fail: %v", err)
+	assert.Nil(t, response)
+	assert.Empty(t, mounter.MountPoints)
+	assert.NoDirExists(t, filepath.Join(otherDirectory, "child"))
+
+	err = os.Rename(filepath.Join(backingDirectory, "1"), root)
+	require.NoError(t, err)
+	err = os.Remove(filepath.Join(root, "link"))
+	require.NoError(t, err)
+
+	response, err = driver.NodePublishVolume(t.Context(), request)
+
+	require.NoError(t, err, "a later attempt with a valid subdirectory path must succeed")
+	assert.NotNil(t, response)
+	assert.DirExists(t, filepath.Join(backingDirectory, "2", "link", "child"))
+	assert.Len(t, mounter.MountPoints, 1, "only the published target must remain")
 }
 
 func TestPublishAndInternalMountPreservePreparationUncertainty(t *testing.T) {

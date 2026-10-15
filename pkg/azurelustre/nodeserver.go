@@ -614,8 +614,22 @@ func (d *Driver) createSubDir(vol *lustreVolume, mountPath, subDirPath string, m
 
 	klog.V(2).Infof("Making subdirectory at %q", internalVolumePath)
 
-	if err := volumehelper.MakeDir(internalVolumePath); err != nil {
-		return status.Errorf(codes.Internal, "failed to make subdirectory: %v", err.Error())
+	return makeSubDirInMountRoot(d.workingMountDir, mountPath, subDirPath)
+}
+
+func makeSubDirInMountRoot(workingMountDir, mountPath, subDirPath string) error {
+	internalMountPath, err := getInternalMountPath(workingMountDir, mountPath)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(internalMountPath)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to open internal mount root: %v", err)
+	}
+
+	// Keep path resolution and creation relative to the mounted filesystem root.
+	if err := errors.Join(root.MkdirAll(filepath.Clean(subDirPath), 0o775), root.Close()); err != nil {
+		return status.Errorf(codes.Internal, "failed to make subdirectory: %v", err)
 	}
 
 	return nil
@@ -727,10 +741,8 @@ func (d *Driver) internalUnmount(mountPath string) error {
 	return err
 }
 
-// Ensures that the given subpath, when joined with any base path, will be a path
-// within the given base path, and not equal to it. This ensures that this
-// subpath value can be safely created or deleted under the base path without
-// affecting other data in the base path.
+// ensureStrictSubpath checks lexical containment; filesystem path resolution
+// must still be relative to the intended root.
 func ensureStrictSubpath(subPath string) bool {
 	return filepath.IsLocal(subPath) && filepath.Clean(subPath) != "."
 }

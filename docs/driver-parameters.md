@@ -90,6 +90,25 @@ identities | User-assigned identities to assign to the AMLFS cluster. These iden
 tags | Tags to apply to the AMLFS cluster resource. These tags do not affect AMLFS cluster functionality. | Tag format: `"key1=val1,key2=val2"`. The tag name has a limit of 512 characters and the tag value has a limit of 256 characters. Tag names can't contain these characters: `<, >, %, &, \, ?, /`. | No | None
 sub-dir | This is the subdirectory within the AMLFS cluster's root directory which is where each pod will actually be mounted within the AMLFS filesystem. This subdirectory does not need to exist beforehand. | This must be a valid Linux file path. It can also interpret metadata such as `"${pvc.metadata.name}"`, `"${pvc.metadata.namespace}"`, `"${pv.metadata.name}"`, `"${pod.metadata.name}"`, `"${pod.metadata.namespace}"`, `"${pod.metadata.uid}"`. | No | None, will default to mounting the root directory of the AMLFS cluster.
 
+### Subdirectory creation
+
+For both static and dynamic provisioning, a writable mount creates the configured
+`sub-dir` if it does not already exist. Creation resolves paths relative to the
+mounted Lustre filesystem root. Path resolution outside that root and absolute
+symlink targets are rejected during creation.
+
+The configured `sub-dir` must use directory components, not symlinks. Lustre
+cannot mount a subdirectory through a symlink, even when a relative symlink stays
+within the same filesystem. Use the target's directory path instead. Directory
+creation can follow such an in-root link before the final mount fails, so a failed
+publish does not imply that no directories were created. This limitation applies
+to the configured mount path, not to ordinary symlink use inside a mounted volume.
+
+Read-only mounts do not create subdirectories; the configured path must already
+exist. Creation does not change permissions on existing directories.
+Administrators must still set appropriate Lustre directory permissions for
+shared storage.
+
 ### Controller override for incomplete SKU zone metadata
 
 Some zonal regions may temporarily return an empty zone list from the Azure
