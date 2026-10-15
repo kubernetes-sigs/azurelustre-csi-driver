@@ -208,6 +208,53 @@ func TestNodeUnpublishRetriesTemporaryCleanup(t *testing.T) {
 	require.NoError(t, err, "cleanup must remain idempotent")
 }
 
+func TestNodePublishRetriesTemporaryCleanupBeforeProbe(t *testing.T) {
+	driver, mounter, backingDirectory := newNodeMountTestDriver(t)
+	mounter.unmountError = errors.New("temporary unmount failed")
+	target := filepath.Join(t.TempDir(), "target")
+	request := &csi.NodePublishVolumeRequest{
+		VolumeId:   "volume#lustrefs#127.0.0.1#child#f#",
+		TargetPath: target,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+		},
+		VolumeContext: map[string]string{VolumeContextMGSIPAddress: "127.0.0.1", VolumeContextSubDir: "child"},
+	}
+
+	_, err := driver.NodePublishVolume(t.Context(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err))
+	assert.Len(t, mounter.MountPoints, 1)
+	probeCalls := 0
+	driver.pingChecker = &fakePingChecker{
+		err: status.Error(codes.FailedPrecondition, "probe failed"),
+		onCheck: func(address string) {
+			probeCalls++
+			assert.Equal(t, "127.0.0.1", address)
+		},
+	}
+
+	_, err = driver.NodePublishVolume(t.Context(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Unavailable, status.Code(err), "a failed probe must not discard unfinished temporary cleanup")
+	require.ErrorContains(t, err, "temporary unmount failed")
+	assert.Len(t, mounter.MountPoints, 1)
+	assert.Zero(t, probeCalls, "a pending cleanup must stop publish before the probe is called")
+	mounter.unmountError = nil
+
+	_, err = driver.NodePublishVolume(t.Context(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err), "the probe can report its own error once temporary cleanup is complete")
+	require.ErrorContains(t, err, "probe failed")
+	assert.Equal(t, 1, probeCalls, "only the retry after successful cleanup may run the probe")
+	assert.Empty(t, mounter.MountPoints)
+	assert.DirExists(t, filepath.Join(backingDirectory, "0", "child"), "the first unmount snapshot must retain the simulated filesystem data")
+}
+
 func TestCreateSubDirPreservesCleanupErrors(t *testing.T) {
 	driver, mounter, _ := newNodeMountTestDriver(t)
 	mounter.unmountError = errors.New("temporary unmount failed")
@@ -322,6 +369,26 @@ func TestInternalMountReportsMountFailureAfterRemovingEmptyTarget(t *testing.T) 
 	assert.Equal(t, codes.Internal, status.Code(err), "successful cleanup establishes a final failed mount")
 	require.ErrorContains(t, err, "injected mount failure")
 	assert.NoDirExists(t, filepath.Join(driver.workingMountDir, mountPath))
+}
+
+func TestInternalMountRecreatesExistingTarget(t *testing.T) {
+	driver, mounter, backingDirectory := newNodeMountTestDriver(t)
+	mounter.notMountPoint = new(false)
+	mountPath := "existing-target"
+	target := filepath.Join(driver.workingMountDir, mountPath)
+	err := os.Mkdir(target, 0o700)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(target, "entry"), []byte("test"), 0o600)
+	require.NoError(t, err)
+	err = mounter.Mount("127.0.0.1@tcp:/lustrefs", target, "lustre", nil)
+	require.NoError(t, err)
+
+	err = driver.internalMount(&lustreVolume{mgsIPAddress: "127.0.0.1", azureLustreName: DefaultLustreFsName}, mountPath, nil)
+
+	require.NoError(t, err)
+	assert.DirExists(t, target)
+	assert.Len(t, mounter.MountPoints, 1, "preparation must replace the old temporary mount")
+	assert.FileExists(t, filepath.Join(backingDirectory, "0", "entry"), "remount preparation must preserve old filesystem data")
 }
 
 func TestInternalMountPreservesExistingMountWhenUnmountFails(t *testing.T) {
@@ -657,10 +724,10 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			desc: "Internal mount path already mounted",
 			setup: func(d *Driver) {
-				d.workingMountDir = "./false_is_likely"
-				err = makeDir(filepath.Join("./false_is_likely", targetTest))
+				d.workingMountDir = workingMountDir
+				err = makeDir(filepath.Join(workingMountDir, targetTest))
 				require.NoError(t, err)
-				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs/existing", filepath.Join("./false_is_likely", targetTest), "lustre", []string{"noatime", "flock"})
+				err = d.mounter.Mount("1.1.1.1@tcp:/lustrefs/existing", filepath.Join(workingMountDir, targetTest), "lustre", []string{"noatime", "flock"})
 				require.NoError(t, err)
 			},
 			req: csi.NodePublishVolumeRequest{
@@ -675,9 +742,9 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedErr:         nil,
 			expectedMountpoints: []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"noatime", "flock"}}},
 			expectedMountActions: []mount.FakeAction{
-				{Action: "unmount", Target: filepath.Join("false_is_likely/", targetTest), Source: "", FSType: ""},
-				{Action: "mount", Target: filepath.Join("false_is_likely/", targetTest), Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"},
-				{Action: "unmount", Target: filepath.Join("false_is_likely/", targetTest), Source: "", FSType: ""},
+				{Action: "unmount", Target: filepath.Join(workingMountDir, targetTest), Source: "", FSType: ""},
+				{Action: "mount", Target: filepath.Join(workingMountDir, targetTest), Source: "1.1.1.1@tcp:/lustrefs", FSType: "lustre"},
+				{Action: "unmount", Target: filepath.Join(workingMountDir, targetTest), Source: "", FSType: ""},
 				{Action: "mount", Target: targetTest, Source: "1.1.1.1@tcp:/lustrefs/testSubDir", FSType: "lustre"},
 			},
 		},

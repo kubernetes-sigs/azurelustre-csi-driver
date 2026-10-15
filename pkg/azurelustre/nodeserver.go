@@ -90,6 +90,11 @@ func (d *Driver) NodePublishVolume(
 		mc.ObserveOperationWithResult(isOperationSucceeded)
 	}()
 
+	if err := d.cleanupInternalMountIfPresent(target); err != nil {
+		return nil, status.Errorf(codes.Unavailable,
+			"temporary mount cleanup incomplete for %q: %v", target, err)
+	}
+
 	// Check whether the target is already mounted before doing anything that requires
 	// the MGS to be reachable. NodePublishVolume must be idempotent: a retry against an
 	// already-published target has to return OK even if the cluster is briefly

@@ -399,9 +399,10 @@ remove kubelet volume metadata or force-delete storage objects to hide the error
 
 For `temporary mount cleanup incomplete`, the driver could not finish removing
 the temporary mount used to create a subdirectory. The publish call does not
-report success. A later subdirectory-creation attempt retries that cleanup before
-publishing, and unpublishing also checks for a leftover temporary mount. An
-already-mounted publish retains its idempotent fast path.
+report success. A later publish retries that cleanup before target preparation or
+the MGS probe, and unpublishing also checks for a leftover temporary mount. This
+keeps a later probe or preparation failure from hiding unfinished cleanup. An
+already-mounted public target still does not require an MGS probe.
 The message includes both errors if subdirectory creation and cleanup failed.
 Unmounting preserves the filesystem's data; it does not delete the subdirectory.
 
