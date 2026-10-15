@@ -173,6 +173,9 @@ type Config struct {
 	// ClusterServiceSharedLoadBalancerHealthProbePath defines the target path of the shared health probe. Default to `/healthz`.
 	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty" yaml:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 
+	// ServiceGatewayEnabled indicates whether the service gateway is enabled for the cluster.
+	ServiceGatewayEnabled bool `json:"serviceGatewayEnabled,omitempty" yaml:"serviceGatewayEnabled,omitempty"`
+
 	// NodeInstanceNotFoundGracePeriodInSeconds is the period, measured from a node's
 	// creation timestamp, during which a node whose backing VM/VMSS instance is not yet
 	// visible in ARM is still reported as existing. This tolerates the delay between a
@@ -180,9 +183,6 @@ type Config struct {
 	// ARM, preventing the cloud-node-lifecycle controller from deleting the node
 	// prematurely. If not set, it defaults to 0, which disables the grace period.
 	NodeInstanceNotFoundGracePeriodInSeconds int `json:"nodeInstanceNotFoundGracePeriodInSeconds,omitempty" yaml:"nodeInstanceNotFoundGracePeriodInSeconds,omitempty"`
-
-	// ServiceGatewayEnabled indicates whether the service gateway is enabled for the cluster.
-	ServiceGatewayEnabled bool `json:"serviceGatewayEnabled,omitempty" yaml:"serviceGatewayEnabled,omitempty"`
 }
 
 // HasExtendedLocation returns true if extendedlocation prop are specified.
