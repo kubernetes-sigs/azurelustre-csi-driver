@@ -109,6 +109,12 @@ exist. Creation does not change permissions on existing directories.
 Administrators must still set appropriate Lustre directory permissions for
 shared storage.
 
+For a new mount, a readonly CSI request or a standalone `ro` mount option takes
+precedence over contradictory writable options. The driver keeps the supplied
+options and adds a final `ro` when needed. This also keeps subdirectory-creation
+behavior consistent with the readonly mount request; other Lustre options are
+not restricted by a driver allowlist.
+
 ### Controller override for incomplete SKU zone metadata
 
 Some zonal regions may temporarily return an empty zone list from the Azure

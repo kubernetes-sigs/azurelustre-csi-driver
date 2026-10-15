@@ -217,21 +217,16 @@ func interpolateSubDirVariables(context map[string]string, vol *lustreVolume) st
 }
 
 func getMountOptions(req *csi.NodePublishVolumeRequest, userMountFlags []string) ([]string, bool) {
-	readOnly := false
-	mountOptions := []string{}
-	if req.GetReadonly() {
-		readOnly = true
-		mountOptions = append(mountOptions, "ro")
-	}
+	readOnly := req.GetReadonly()
+	mountOptions := make([]string, len(userMountFlags), len(userMountFlags)+1)
+	copy(mountOptions, userMountFlags)
 	for _, userMountFlag := range userMountFlags {
 		if userMountFlag == "ro" {
 			readOnly = true
-
-			if req.GetReadonly() {
-				continue
-			}
 		}
-		mountOptions = append(mountOptions, userMountFlag)
+	}
+	if readOnly && (len(mountOptions) == 0 || mountOptions[len(mountOptions)-1] != "ro") {
+		mountOptions = append(mountOptions, "ro")
 	}
 	return mountOptions, readOnly
 }

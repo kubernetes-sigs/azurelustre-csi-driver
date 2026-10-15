@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"testing"
 
@@ -534,6 +535,64 @@ func TestInternalMountPreservesExistingMountWhenUnmountFails(t *testing.T) {
 	assert.Len(t, fakeMount.MountPoints, 1)
 }
 
+func TestGetMountOptionsReadonlyPrecedence(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		readonly             bool
+		flags                []string
+		expectedMountOptions []string
+		expectedReadOnly     bool
+	}{
+		{name: "default", expectedMountOptions: []string{}},
+		{name: "readonly request", readonly: true, expectedMountOptions: []string{"ro"}, expectedReadOnly: true},
+		{name: "writable options", flags: []string{"rw", "flock"}, expectedMountOptions: []string{"rw", "flock"}},
+		{name: "request overrides rw", readonly: true, flags: []string{"rw", "flock"}, expectedMountOptions: []string{"rw", "flock", "ro"}, expectedReadOnly: true},
+		{name: "request overrides combined rw", readonly: true, flags: []string{"rw,noatime"}, expectedMountOptions: []string{"rw,noatime", "ro"}, expectedReadOnly: true},
+		{name: "ro flag overrides later rw", flags: []string{"ro", "rw"}, expectedMountOptions: []string{"ro", "rw", "ro"}, expectedReadOnly: true},
+		{name: "ro already last", readonly: true, flags: []string{"flock", "ro"}, expectedMountOptions: []string{"flock", "ro"}, expectedReadOnly: true},
+		{name: "quoted option preserved", readonly: true, flags: []string{`context="value,with,commas"`, "rw"}, expectedMountOptions: []string{`context="value,with,commas"`, "rw", "ro"}, expectedReadOnly: true},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			flags := make([]string, len(test.flags)+1)
+			copy(flags, test.flags)
+			flags[len(test.flags)] = "sentinel"
+			originalBackingArray := slices.Clone(flags)
+
+			options, readOnly := getMountOptions(&csi.NodePublishVolumeRequest{Readonly: test.readonly}, flags[:len(test.flags)])
+
+			assert.Equal(t, test.expectedMountOptions, options, "readonly precedence must preserve other mount options")
+			assert.Equal(t, test.expectedReadOnly, readOnly, "the effective readonly state also controls subdirectory creation")
+			assert.Equal(t, originalBackingArray, flags, "neither existing flags nor spare backing-array capacity may be modified")
+		})
+	}
+}
+
+func TestNodePublishReadonlyOverridesRWWithoutCreatingSubdirectory(t *testing.T) {
+	driver, mounter, _ := newNodeMountTestDriver(t)
+	target := filepath.Join(t.TempDir(), "target")
+	request := &csi.NodePublishVolumeRequest{
+		VolumeId:      "volume#lustrefs#127.0.0.1#child#f#",
+		TargetPath:    target,
+		Readonly:      true,
+		VolumeContext: map[string]string{VolumeContextMGSIPAddress: "127.0.0.1", VolumeContextSubDir: "child"},
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{"rw", "flock"}}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+		},
+	}
+
+	_, err := driver.NodePublishVolume(t.Context(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, []mount.MountPoint{{
+		Device: "127.0.0.1@tcp:/lustrefs/child", Path: target, Type: "lustre", Opts: []string{"rw", "flock", "ro"},
+	}}, mounter.MountPoints)
+	assert.Equal(t, []mount.FakeAction{{
+		Action: "mount", Target: target, Source: "127.0.0.1@tcp:/lustrefs/child", FSType: "lustre",
+	}}, mounter.GetLog(), "readonly publish must mount the requested subdirectory without a temporary create mount")
+}
+
 func TestNodePublishVolume(t *testing.T) {
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -684,7 +743,7 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:      true,
 			},
 			expectedErr:          nil,
-			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"ro", "noatime", "flock"}}},
+			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"noatime", "flock", "ro"}}},
 			expectedMountActions: []mount.FakeAction{{Action: "mount", Target: "target_test", Source: "1.1.1.1@tcp:/lustrefs/testSubDir", FSType: "lustre"}},
 		},
 		{
@@ -828,7 +887,7 @@ func TestNodePublishVolume(t *testing.T) {
 				Readonly:      true,
 			},
 			expectedErr:          nil,
-			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"ro", "noatime", "flock"}}},
+			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: "target_test", Type: "lustre", Opts: []string{"noatime", "flock", "ro"}}},
 			expectedMountActions: []mount.FakeAction{{Action: "mount", Target: "target_test", Source: "1.1.1.1@tcp:/lustrefs/testSubDir", FSType: "lustre"}},
 		},
 		{
