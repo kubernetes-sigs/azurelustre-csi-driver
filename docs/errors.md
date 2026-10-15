@@ -387,6 +387,16 @@ kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i
 
 #### Error: Could not mount target
 
+`node mount services are not initialized on this driver instance` returns
+`Unavailable` without mounting or unmounting. Check that kubelet is connected to
+the node plugin and inspect its startup logs; the controller does not initialize
+host mount services.
+
+`node path ... must be an absolute, non-root path without NUL characters` returns
+`InvalidArgument` before publish or unpublish filesystem work. CSI
+callers must provide a valid absolute target. Custom kubelet root directories are
+supported; this validation does not impose a fixed host directory allowlist.
+
 If the driver cannot determine whether a target is mounted, cannot unmount an
 existing target, or cannot remove a target after a failed mount, it returns
 `Unavailable`. Kubelet keeps the mount state uncertain so it can retry or clean up

@@ -41,6 +41,9 @@ func (d *Driver) NodePublishVolume(
 	_ context.Context,
 	req *csi.NodePublishVolumeRequest,
 ) (*csi.NodePublishVolumeResponse, error) {
+	if err := d.requireNodeMountServices(); err != nil {
+		return nil, err
+	}
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_publish_volume",
 		d.resourceGroup,
@@ -64,6 +67,9 @@ func (d *Driver) NodePublishVolume(
 	if len(target) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"Target path not provided")
+	}
+	if err := validateNodePath(target); err != nil {
+		return nil, err
 	}
 
 	volumeContext := req.GetVolumeContext()
@@ -281,6 +287,9 @@ func (d *Driver) NodeUnpublishVolume(
 	_ context.Context,
 	req *csi.NodeUnpublishVolumeRequest,
 ) (*csi.NodeUnpublishVolumeResponse, error) {
+	if err := d.requireNodeMountServices(); err != nil {
+		return nil, err
+	}
 	mc := metrics.NewMetricContext(azureLustreCSIDriverName,
 		"node_unpublish_volume",
 		d.resourceGroup,
@@ -297,6 +306,9 @@ func (d *Driver) NodeUnpublishVolume(
 	if len(targetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument,
 			"Target path missing in request")
+	}
+	if err := validateNodePath(targetPath); err != nil {
+		return nil, err
 	}
 
 	lockKey := fmt.Sprintf("%s-%s", volumeID, targetPath)
@@ -332,6 +344,21 @@ func (d *Driver) NodeUnpublishVolume(
 	isOperationSucceeded = true
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
+}
+
+func (d *Driver) requireNodeMountServices() error {
+	if d.cloud == nil || d.mounter == nil || d.mounter.Interface == nil ||
+		d.forceMounter == nil || *d.forceMounter == nil {
+		return status.Error(codes.Unavailable, "node mount services are not initialized on this driver instance")
+	}
+	return nil
+}
+
+func validateNodePath(path string) error {
+	if !filepath.IsAbs(path) || filepath.Clean(path) == "/" || strings.ContainsRune(path, '\x00') {
+		return status.Errorf(codes.InvalidArgument, "node path %q must be an absolute, non-root path without NUL characters", path)
+	}
+	return nil
 }
 
 func unmountVolumeAtPath(d *Driver, targetPath string) error {
