@@ -184,8 +184,8 @@ func listenGRPCEndpoint(ctx context.Context, endpoint string) (net.Listener, err
 	if network == "unix" {
 		// Unix socket paths can outlive the process that created them.
 		address = "/" + address
-		if err := os.Remove(address); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to remove %s: %w", address, err)
+		if err := removeSocketEndpoint(address); err != nil {
+			return nil, fmt.Errorf("failed to prepare Unix socket %s: %w", address, err)
 		}
 	}
 
@@ -195,4 +195,18 @@ func listenGRPCEndpoint(ctx context.Context, endpoint string) (net.Listener, err
 		return nil, fmt.Errorf("failed to listen: %w", err)
 	}
 	return listener, nil
+}
+
+func removeSocketEndpoint(address string) error {
+	info, err := os.Lstat(address)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect endpoint: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("refusing to remove endpoint that is not a socket: %s", address)
+	}
+	return os.Remove(address)
 }

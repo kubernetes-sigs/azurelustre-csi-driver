@@ -46,8 +46,9 @@ func TestRunGRPCServerStartupErrors(t *testing.T) {
 		message  string
 	}{
 		{name: "invalid endpoint", endpoint: "invalid", message: "invalid endpoint"},
-		{name: "listener failure", endpoint: "tcp://127.0.0.1", message: "failed to listen"},
-		{name: "socket removal failure", endpoint: "unix://" + blockedPath, message: "failed to remove"},
+		{name: "TCP address without a port cannot be listened on", endpoint: "tcp://127.0.0.1", message: "failed to listen"},
+		{name: "a directory must not be removed as a stale socket", endpoint: "unix://" + blockedPath, message: "not a socket"},
+		{name: "a regular-file parent prevents endpoint inspection", endpoint: "unix://" + filepath.Join(blockedPath, "keep", "csi.sock"), message: "failed to inspect endpoint"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -60,7 +61,10 @@ func TestRunGRPCServerStartupErrors(t *testing.T) {
 func TestRunGRPCServerServices(t *testing.T) {
 	// A stale socket path must be removed before the server can bind it.
 	socketPath := filepath.Join(t.TempDir(), "csi.sock")
-	err := os.WriteFile(socketPath, nil, 0o600)
+	staleListener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	require.NoError(t, err)
+	staleListener.SetUnlinkOnClose(false)
+	err = staleListener.Close()
 	require.NoError(t, err)
 
 	driver := &Driver{CSIDriver: CSIDriver{Name: fakeDriverName, Version: "test", NodeID: "test-node"}}
@@ -90,6 +94,59 @@ func TestRunGRPCServerServices(t *testing.T) {
 	node, err := csi.NewNodeClient(connection).NodeGetInfo(rpcCtx, &csi.NodeGetInfoRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, "test-node", node.GetNodeId())
+}
+
+func TestRemoveSocketEndpointPreservesObjects(t *testing.T) {
+	testCases := []struct {
+		name   string
+		create func(string) error
+	}{
+		{name: "regular file", create: func(path string) error { return os.WriteFile(path, []byte("keep"), 0o600) }},
+		{name: "directory", create: func(path string) error { return os.Mkdir(path, 0o700) }},
+		{name: "dangling symlink", create: func(path string) error { return os.Symlink("missing", path) }},
+		{name: "symlink to a socket is not itself a socket", create: func(path string) error {
+			target := path + "-target"
+			listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: target, Net: "unix"})
+			if err != nil {
+				return err
+			}
+			listener.SetUnlinkOnClose(false)
+			if err := listener.Close(); err != nil {
+				return err
+			}
+			return os.Symlink(target, path)
+		}},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "csi.sock")
+			err := test.create(path)
+			require.NoError(t, err)
+			before, err := os.Lstat(path)
+			require.NoError(t, err)
+
+			err = removeSocketEndpoint(path)
+
+			require.ErrorContains(t, err, "not a socket")
+			after, err := os.Lstat(path)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(before, after), "startup must preserve the existing non-socket object")
+		})
+	}
+}
+
+func TestListenGRPCEndpointAcceptsUppercaseTransportScheme(t *testing.T) {
+	for _, testCase := range []struct{ name, endpoint string }{
+		{name: "UNIX scheme", endpoint: "UNIX://" + filepath.Join(t.TempDir(), "csi.sock")},
+		{name: "TCP scheme", endpoint: "TCP://127.0.0.1:0"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			listener, err := listenGRPCEndpoint(t.Context(), testCase.endpoint)
+
+			require.NoError(t, err)
+			require.NoError(t, listener.Close())
+		})
+	}
 }
 
 func TestRunGRPCServerServeError(t *testing.T) {

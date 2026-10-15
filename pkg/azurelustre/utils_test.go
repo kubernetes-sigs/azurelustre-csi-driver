@@ -41,10 +41,10 @@ func TestParseEndpoint(t *testing.T) {
 	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "/fakedir/fakedir/fake.sock", addr)
 
-	// Valid unix domain socket with uppercase
+	// Normalize the uppercase transport scheme without changing the socket address.
 	sockType, addr, err = ParseEndpoint("UNIX://fake.sock")
 	require.NoError(t, err)
-	assert.Equal(t, "UNIX", sockType)
+	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "fake.sock", addr)
 
 	// Valid TCP endpoint with ip
@@ -53,10 +53,10 @@ func TestParseEndpoint(t *testing.T) {
 	assert.Equal(t, "tcp", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
-	// Valid TCP endpoint with uppercase
+	// Normalize the uppercase transport scheme without changing the TCP address.
 	sockType, addr, err = ParseEndpoint("TCP://127.0.0.1:80")
 	require.NoError(t, err)
-	assert.Equal(t, "TCP", sockType)
+	assert.Equal(t, "tcp", sockType)
 	assert.Equal(t, "127.0.0.1:80", addr)
 
 	// Valid TCP endpoint with hostname
