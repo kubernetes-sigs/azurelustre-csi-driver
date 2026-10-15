@@ -42,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
@@ -70,7 +71,7 @@ func NewFakeDriver(t *testing.T) *Driver {
 		EnableAzureLustreMockMount:   false,
 		EnableAzureLustreMockDynProv: true,
 	}
-	driver, err := NewDriver(&driverOptions)
+	driver, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	driver.Version = vendorVersion
 	driver.cloud = &azure.Cloud{}
@@ -195,7 +196,7 @@ func TestNewDriver(t *testing.T) {
 		RemoveNotReadyTaint:          true,
 		AllowUnadvertisedZones:       true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.NotNil(t, d.cloud)
@@ -246,7 +247,7 @@ func TestNewDriverIdentityModes(t *testing.T) {
 				DriverName:                   fakeDriverName,
 				EnableAzureLustreMockDynProv: true,
 			}
-			driver, err := NewDriver(&driverOptions)
+			driver, err := NewDriver(t.Context(), &driverOptions)
 
 			require.NoError(t, err)
 			require.NotNil(t, driver)
@@ -316,6 +317,21 @@ func TestGetAzureClientOptionsForClouds(t *testing.T) {
 	}
 }
 
+func TestNewDriverPingCacheError(t *testing.T) {
+	t.Setenv(DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing.json"))
+	expectedErr := errors.New("cache initialization failed")
+	options := DriverOptions{DriverName: fakeDriverName, EnableAzureLustreMockDynProv: true}
+	newPingCache := func(util.CommandRunnerInterface) (*clusterPingCache, error) {
+		return nil, expectedErr
+	}
+
+	driver, err := newDriver(t.Context(), &options, newPingCache)
+
+	require.ErrorIs(t, err, expectedErr)
+	require.ErrorContains(t, err, "failed to initialize ping cache")
+	assert.Nil(t, driver, "cache initialization failure must not return a driver")
+}
+
 func writeFakeManagedIdentityCloudConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "azure.json")
@@ -365,7 +381,7 @@ func TestNewDriverKubeletIdentityFallback(t *testing.T) {
 				DriverName:                   fakeDriverName,
 				EnableAzureLustreMockDynProv: true,
 			}
-			_, err := NewDriver(&driverOptions)
+			_, err := NewDriver(t.Context(), &driverOptions)
 
 			require.NoError(t, err)
 			assert.Equal(t, test.expectedClientID, os.Getenv("AZURE_CLIENT_ID"), test.reason)
@@ -380,7 +396,7 @@ func TestControllerRPCsRejectedWithoutDynamicProvisioner(t *testing.T) {
 		NodeID:     fakeNodeID,
 		DriverName: fakeDriverName,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	require.Nil(t, d.dynamicProvisioner, "node pods must not build Azure clients")
 
@@ -408,7 +424,7 @@ func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
@@ -439,7 +455,7 @@ func TestNewDriverInvalidConfigFileContents(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
@@ -463,7 +479,7 @@ func TestNewDriverNoCloudConfigReturnsError(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.Error(t, err, "NewDriver should return an error when no cloud config is provided and mock dynamic provisioning is disabled")
 	assert.Nil(t, d, "driver should be nil when NewDriver fails")
 }

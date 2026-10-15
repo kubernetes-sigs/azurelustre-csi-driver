@@ -17,14 +17,23 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 func TestInitKlogFlags(t *testing.T) {
@@ -192,4 +201,85 @@ func TestRunPreDeleteCheckDeadline(t *testing.T) {
 	err := runPreDeleteCheck(time.Millisecond, "test.csi.example.com", check)
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestHandleFailure(t *testing.T) {
+	t.Setenv(azurelustre.DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing.json"))
+	originalMock := *enableAzureLustreMockDynProv
+	originalEndpoint := *endpoint
+	t.Cleanup(func() {
+		*enableAzureLustreMockDynProv = originalMock
+		*endpoint = originalEndpoint
+	})
+	*enableAzureLustreMockDynProv = false
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := handle(ctx)
+	require.ErrorIs(t, err, errDriverInitFailed)
+	*enableAzureLustreMockDynProv = true
+	*endpoint = "invalid"
+	err = handle(t.Context())
+	require.ErrorContains(t, err, "invalid endpoint")
+}
+
+func TestRunSignalProcess(t *testing.T) {
+	if os.Getenv("CSI_LIFECYCLE_CHILD") != "1" {
+		return
+	}
+	os.Args = []string{
+		os.Args[0],
+		"--endpoint=" + os.Getenv("CSI_LIFECYCLE_ENDPOINT"),
+		"--enable-azurelustre-mock-dyn-prov=true",
+		"--enable-azurelustre-mock-mount=true",
+	}
+	err := run()
+	require.NoError(t, err)
+}
+
+func TestRunSignals(t *testing.T) {
+	for _, signal := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
+		t.Run(signal.String(), func(t *testing.T) {
+			testRunSignal(t, signal)
+		})
+	}
+}
+
+func testRunSignal(t *testing.T, signal os.Signal) {
+	t.Helper()
+	testDir := t.TempDir()
+	t.Setenv(azurelustre.DefaultAzureConfigFileEnv, filepath.Join(testDir, "missing.json"))
+	t.Setenv("CSI_LIFECYCLE_CHILD", "1")
+	t.Setenv("CSI_LIFECYCLE_ENDPOINT", "unix://"+filepath.Join(testDir, "csi.sock"))
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestRunSignalProcess$") //nolint:gosec // Runs only the current test binary from os.Executable.
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err = command.Start()
+	require.NoError(t, err)
+	finished := make(chan struct{})
+	var waitErr error
+	go func() {
+		defer close(finished)
+		waitErr = command.Wait()
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-finished
+		assert.NoError(t, waitErr, "%s", output.String())
+	})
+	connection, err := grpc.NewClient(os.Getenv("CSI_LIFECYCLE_ENDPOINT"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := connection.Close()
+		require.NoError(t, err)
+	})
+	_, err = csi.NewIdentityClient(connection).Probe(ctx, &csi.ProbeRequest{}, grpc.WaitForReady(true))
+	require.NoError(t, err)
+	err = command.Process.Signal(signal)
+	require.NoError(t, err)
+	<-finished
+	require.NoError(t, waitErr, "%s", output.String())
 }

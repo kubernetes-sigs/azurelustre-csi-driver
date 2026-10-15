@@ -187,7 +187,11 @@ type Driver struct {
 
 // NewDriver creates a new Driver. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
-func NewDriver(options *DriverOptions) (*Driver, error) {
+func NewDriver(ctx context.Context, options *DriverOptions) (*Driver, error) {
+	return newDriver(ctx, options, newClusterPingCache)
+}
+
+func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(util.CommandRunnerInterface) (*clusterPingCache, error)) (*Driver, error) {
 	d := Driver{
 		volumeLocks:                  newVolumeLocks(),
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
@@ -204,8 +208,6 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 	if d.NodeID != "" {
 		d.podRole = nodePod
 	}
-
-	ctx := context.Background()
 
 	az := &azure.Cloud{}
 
@@ -264,8 +266,8 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		}
 	}
 
-	if d.pingChecker, err = newClusterPingCache(&util.DefaultCommandRunner{}); err != nil {
-		klog.Fatalf("%v", err)
+	if d.pingChecker, err = newPingCache(&util.DefaultCommandRunner{}); err != nil {
+		return nil, fmt.Errorf("failed to initialize ping cache: %w", err)
 	}
 
 	return &d, nil
@@ -395,8 +397,8 @@ func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProper
 	return subnetProperties
 }
 
-// Run driver initialization
-func (d *Driver) Run(endpoint string, testBool bool) error {
+// Run initializes the driver and serves CSI requests until shutdown.
+func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	versionMeta, err := GetVersionYAML(d.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get driver version: %w", err)
@@ -424,11 +426,7 @@ func (d *Driver) Run(endpoint string, testBool bool) error {
 
 	d.removeNotReadyTaintIfNeeded()
 
-	s := NewNonBlockingGRPCServer()
-	s.Start(endpoint, d, d, d, testBool)
-	s.Wait()
-
-	return nil
+	return RunGRPCServer(ctx, endpoint, d, d, d)
 }
 
 // selectForceUnmounter returns the force-unmount capable view of the given

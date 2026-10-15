@@ -65,7 +65,7 @@ Additional lint checks cover these conventions:
 | `dupword` | Detect accidentally repeated words in comments and strings. |
 | `errname` | Give sentinel errors and error types recognizable names. |
 | `exptostd` | Prefer standard-library equivalents of experimental APIs. |
-| `forbidigo` | Prefer logging and error returns to printing, panic, or os.Exit. |
+| `forbidigo` | Use klog and return errors; only main may terminate the process. |
 | `goconst` | Detect repeated production strings; preserve literal test fixtures. |
 | `gocritic` | Check suspicious constructs with its default stable rules. |
 | `godoclint` | Keep Go documentation consistent with the symbols it describes. |
@@ -85,6 +85,13 @@ General Go checks remain enabled to catch mistakes when a construct is first
 introduced, even when the current code has no examples, parallel tests, or iota
 declarations. SQL, span-lifecycle, and zerolog checks are not enabled because the
 driver does not use those APIs directly; add their checks with the APIs if needed.
+
+The blocking `RunGRPCServer(ctx, ...)` API owns endpoint setup, serving, and
+shutdown. `Driver.Run(ctx, endpoint)` returns lifecycle errors to the executable;
+completed cancellation-driven shutdown returns `nil`.
+Driver and test-client constructors return errors to their callers rather than
+terminating the process. Canonical unit tests include the Azure client helper's
+synthetic constructor tests; they do not authenticate or contact Azure.
 
 &nbsp;
 

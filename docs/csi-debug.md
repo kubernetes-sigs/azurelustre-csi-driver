@@ -23,7 +23,8 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
 > | `node-driver-registrar` | registers the driver socket with the kubelet | `startupProbe` + `livenessProbe` = `/healthz` (port 29764; registration socket responds) | kubelet registration |
 >
 > A node pod is `Ready` (`4/4`) only when the `lustre-loader` sidecar reports
-> LNet healthy **and** the `azurelustre` driver socket is serving. LNet and
+> LNet healthy **and** the `azurelustre` driver passes its socket-file readiness
+> check. Socket existence alone does not verify a successful CSI RPC. LNet and
 > kernel-module troubleshooting targets `-c lustre-loader`; mount and CSI driver
 > troubleshooting targets `-c azurelustre`.
 
@@ -129,11 +130,12 @@ the client install is larger). If the install cannot be completed the container
 exits rather than opening the socket, so the kubelet restarts it and the node is
 never advertised as able to serve mounts it would fail.
 
-`Startup probe failed` events alone indicate only that the install has not yet
-completed: the liveness check is suppressed until the startup probe succeeds, so
-the container is not restarted while the install is in progress. An increasing
-`RESTARTS` count indicates the container is being terminated and recreated,
-which means the install is failing or exceeding the startup probe's budget.
+`Startup probe failed` events alone do not identify the cause. Liveness checks
+are suppressed until the startup probe succeeds, but the startup probe can
+itself restart the container when its failure budget is exhausted. Increasing
+`RESTARTS` can also result from driver initialization or serving errors,
+cleanup timeouts, or OOM kills. Inspect the termination details and logs using
+the [driver lifecycle troubleshooting steps](#driver-startup-and-shutdown-failures).
 
 ```sh
 # Driver startup + install logs; look for "Listening for connections"
@@ -142,8 +144,8 @@ kubectl logs -n kube-system <pod-name> -c azurelustre --tail=100
 # Logs from the previous attempt if the container is restarting
 kubectl logs -n kube-system <pod-name> -c azurelustre --previous --tail=100
 
-# Confirm the socket exists (Ready) or not (NotReady)
-kubectl exec -n kube-system <pod-name> -c azurelustre -- test -S /csi/csi.sock && echo serving || echo "not serving"
+# Check socket-file readiness; this alone does not establish gRPC health
+kubectl exec -n kube-system <pod-name> -c azurelustre -- test -S /csi/csi.sock
 
 # Confirm the userspace tools installed (these come from the driver's utils install)
 kubectl exec -n kube-system <pod-name> -c azurelustre -- sh -c 'command -v mount.lustre lnetctl'
@@ -158,6 +160,52 @@ cannot reach the package feed, or the requested Lustre version
 > Kernel modules are **not** installed by the driver container — the
 > `lustre-loader` sidecar already loaded them into the shared host kernel. The
 > driver container only installs the kernel-agnostic userspace tools.
+
+### Driver startup and shutdown failures
+
+This section applies to the `azurelustre` container in both controller and node
+pods. The loader's kernel-module cleanup is a separate
+[teardown step](#teardown-behavior-sigterm-and-termination).
+
+For the running gRPC server, a completed SIGTERM/SIGINT shutdown exits
+successfully. Startup or serving failures and cleanup timeouts exit with an
+error. The [shutdown contract](../README.md#driver-shutdown) describes the
+ten-second cleanup deadline and the work that can continue in Azure afterward.
+This deadline is separate from both pod termination grace and the provisioning
+request timeout.
+
+Capture the affected container's logs and the pod's termination details before
+restarting it:
+
+```sh
+kubectl describe pod <pod-name> -n <driver-namespace>
+kubectl logs <pod-name> -n <driver-namespace> -c azurelustre --timestamps --tail=200
+
+# Use this when a previous instance of the container exists in this pod
+kubectl logs <pod-name> -n <driver-namespace> -c azurelustre --previous --timestamps --tail=200
+```
+
+In `describe`, inspect the `azurelustre` container's `State`, `Last State`,
+termination reason, exit code, and timestamps, along with the pod events.
+Correlate these with rollout, drain, probe-failure, and OOM events; a restart
+count or socket file alone does not establish the cause. `--previous` retrieves
+the prior container instance in the same pod, not a deleted pod. Use cluster
+log aggregation for pods that have already been removed.
+
+For controller provisioning failures, also capture the client's view:
+
+```sh
+kubectl logs <controller-pod-name> -n <driver-namespace> -c csi-provisioner --timestamps --tail=200
+```
+
+Use the [lifecycle error reference](errors.md#driver-lifecycle-errors) to
+distinguish initialization failures, rejected or canceled requests, and cleanup
+timeouts. Do not treat a ten-second shutdown timeout as the longer-running
+[AMLFS creation timeout](errors.md#error-amlfs-cluster-creation-timed-out).
+Before an intentional restart, follow the workload and provisioning
+precautions in the [shutdown contract](../README.md#driver-shutdown). Neither
+successful shutdown nor a cancellation error proves that an Azure operation
+has finished; check its resource state before taking further action.
 
 ### Loader sidecar restarting (`lustre-loader` CrashLoopBackOff / RESTARTS climbing)
 
@@ -1224,6 +1272,12 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
 
 1. **Restart CSI Driver Pods**
 
+   Diagnose the failure first. Before an intentional restart, follow the
+   [shutdown precautions](../README.md#driver-shutdown): stop new provisioning
+   and let in-flight volume operations finish. For node pods, stop the affected
+   workloads and confirm their volumes are unmounted before restarting the
+   driver; see [teardown behavior](#teardown-behavior-sigterm-and-termination).
+
    ```bash
    kubectl rollout restart -n kube-system deployment/csi-azurelustre-controller
    kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-jammy
@@ -1231,12 +1285,15 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
    kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-azurelinux3
    ```
 
-2. **Force PVC Recreation**
+2. **PVC Recreation Is Destructive**
 
-   ```bash
-   kubectl delete pvc <pvc-name>
-   kubectl apply -f <pvc-file>.yaml
-   ```
+   Do not delete and recreate a PVC to address a canceled request, temporary
+   driver unavailability, or a shutdown cleanup timeout. With a `Delete`
+   reclaim policy, PVC deletion can also delete the PV, Azure filesystem,
+   and its data. If deletion is intentional, verify ownership and data
+   retention requirements and follow the
+   [safe teardown procedure](../charts/README.md#safe-teardown-procedure) and
+   [volume deletion guidance](dynamic-provisioning.md#delete-the-volume).
 
 3. **Check Kubernetes Resource Quotas**
 

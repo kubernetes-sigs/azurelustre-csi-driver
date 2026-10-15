@@ -23,6 +23,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/go-autorest/autorest/azure"
@@ -41,9 +42,9 @@ func GetClient(cloud, subscriptionID, clientID, tenantID, clientSecret string) (
 	}
 	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	return getClient(env, subscriptionID, credential), nil
+	return getClient(env, subscriptionID, credential, nil)
 }
 
 func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (*armresources.ResourceGroup, error) {
@@ -92,10 +93,10 @@ func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) err
 	return nil
 }
 
-func getClient(env azure.Environment, subscriptionID string, credential *azidentity.ClientSecretCredential) *Client {
-	groupsClientFactory, err := armresources.NewClientFactory(subscriptionID, credential, nil)
+func getClient(env azure.Environment, subscriptionID string, credential *azidentity.ClientSecretCredential, options *arm.ClientOptions) (*Client, error) {
+	groupsClientFactory, err := armresources.NewClientFactory(subscriptionID, credential, options)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create resource groups client: %w", err)
 	}
 	c := &Client{
 		environment:    env,
@@ -103,5 +104,5 @@ func getClient(env azure.Environment, subscriptionID string, credential *azident
 		groupsClient:   groupsClientFactory.NewResourceGroupsClient(),
 	}
 
-	return c
+	return c, nil
 }

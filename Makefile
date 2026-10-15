@@ -97,7 +97,7 @@ verify: unit-test
 
 .PHONY: unit-test
 unit-test:
-	go test -covermode=count -coverprofile=profile.cov ./pkg/... ./test/utils/credentials
+	go test -covermode=count -coverprofile=profile.cov ./pkg/... ./test/utils/credentials ./test/utils/azure
 
 .PHONY: sanity-test
 sanity-test: azurelustre

@@ -18,6 +18,8 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -25,96 +27,172 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
 )
 
-// NonBlockingGRPCServer defines the lifecycle of a nonblocking gRPC server.
-type NonBlockingGRPCServer interface {
-	// Start services at the endpoint
-	Start(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer, testMode bool)
-	// Waits for the service to stop
-	Wait()
-	// Stops the service gracefully
-	Stop()
-	// Stops the service forcefully
-	ForceStop()
+const (
+	grpcShutdownTimeout = 10 * time.Second
+)
+
+var errGRPCShutdownTimeout = errors.New("timed out shutting down gRPC server")
+
+// grpcRequestTracker coordinates request admission with shutdown. It counts
+// running CSI handlers, not connections or responses still being written.
+type grpcRequestTracker struct {
+	stateMutex         sync.Mutex
+	activeHandlerCount int
+	shuttingDown       bool
+	handlersFinished   chan struct{}
 }
 
-func NewNonBlockingGRPCServer() NonBlockingGRPCServer {
-	return &nonBlockingGRPCServer{}
-}
-
-// NonBlocking server
-type nonBlockingGRPCServer struct {
-	wg     sync.WaitGroup
-	server *grpc.Server
-}
-
-func (s *nonBlockingGRPCServer) Start(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer, testMode bool) {
-	s.wg.Add(1)
-	go s.serve(endpoint, ids, cs, ns, testMode)
-}
-
-func (s *nonBlockingGRPCServer) Wait() {
-	s.wg.Wait()
-}
-
-func (s *nonBlockingGRPCServer) Stop() {
-	s.server.GracefulStop()
-}
-
-func (s *nonBlockingGRPCServer) ForceStop() {
-	s.server.Stop()
-}
-
-func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer, testMode bool) {
-	proto, addr, err := ParseEndpoint(endpoint)
+// RunGRPCServer serves CSI requests until cancellation or a serving failure.
+func RunGRPCServer(ctx context.Context, endpoint string, identityService csi.IdentityServer, controllerService csi.ControllerServer, nodeService csi.NodeServer) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+	listener, err := listenGRPCEndpoint(ctx, endpoint)
 	if err != nil {
-		klog.Fatal(err.Error())
+		return err
+	}
+	return runGRPCServerOnListener(ctx, listener, identityService, controllerService, nodeService)
+}
+
+func runGRPCServerOnListener(ctx context.Context, listener net.Listener, identityService csi.IdentityServer, controllerService csi.ControllerServer, nodeService csi.NodeServer) error {
+	serverContext, cancelRequests := context.WithCancel(ctx)
+	defer cancelRequests()
+	requestTracker := &grpcRequestTracker{handlersFinished: make(chan struct{})}
+	server := grpc.NewServer(
+		grpc.MaxConcurrentStreams(200),
+		grpc.ChainUnaryInterceptor(requestTracker.trackAndCancelRequests(serverContext), logGRPC),
+	)
+	if identityService != nil {
+		csi.RegisterIdentityServer(server, identityService)
+	}
+	if controllerService != nil {
+		csi.RegisterControllerServer(server, controllerService)
+	}
+	if nodeService != nil {
+		csi.RegisterNodeServer(server, nodeService)
+	}
+	return serveUntilShutdown(serverContext, cancelRequests, server, listener, requestTracker)
+}
+
+func serveUntilShutdown(serverContext context.Context, cancelRequests context.CancelFunc, server *grpc.Server, listener net.Listener, requestTracker *grpcRequestTracker) error {
+	serveStopped := make(chan struct{})
+	var serveErr error
+	go func() {
+		defer close(serveStopped)
+		klog.Infof("Listening for connections on address: %#v", listener.Addr())
+		serveErr = server.Serve(listener)
+	}()
+	// A shutdown request and a listener failure both require active RPC cleanup.
+	select {
+	case <-serverContext.Done():
+	case <-serveStopped:
+	}
+	cancelRequests()
+	shutdownErr := stopGRPCServer(server, requestTracker)
+	// Join Serve before reading its error; cancellation must not hide a failure.
+	<-serveStopped
+	if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+		return errors.Join(fmt.Errorf("failed to serve on %s: %w", listener.Addr(), serveErr), shutdownErr)
+	}
+	return shutdownErr
+}
+
+func stopGRPCServer(server *grpc.Server, requestTracker *grpcRequestTracker) error {
+	requestTracker.beginShutdown()
+	shutdownWorkerFinished := make(chan struct{})
+	stopWaitingForHandlers := make(chan struct{})
+	// GracefulStop can hold gRPC's internal lock while waiting for handlers,
+	// blocking a concurrent Stop. Wait for our handlers first so Stop stays usable.
+	go func() {
+		defer close(shutdownWorkerFinished)
+		select {
+		case <-requestTracker.handlersFinished:
+			server.GracefulStop()
+		case <-stopWaitingForHandlers:
+		}
+	}()
+	cleanupTimer := time.NewTimer(grpcShutdownTimeout)
+	defer cleanupTimer.Stop()
+	select {
+	case <-shutdownWorkerFinished:
+		return nil
+	case <-cleanupTimer.C:
+		close(stopWaitingForHandlers)
+		// Close connections, but do not wait for code that ignores cancellation.
+		server.Stop()
+		<-shutdownWorkerFinished
+		return errGRPCShutdownTimeout
+	}
+}
+
+// trackAndCancelRequests returns a gRPC interceptor: a wrapper around each CSI
+// handler that rejects new requests during shutdown and cancels active ones.
+func (requests *grpcRequestTracker) trackAndCancelRequests(serverContext context.Context) grpc.UnaryServerInterceptor {
+	return func(requestContext context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		// Admission and counting share a lock so shutdown cannot miss a new handler.
+		requests.stateMutex.Lock()
+		if requests.shuttingDown || serverContext.Err() != nil {
+			requests.stateMutex.Unlock()
+			return nil, status.Error(codes.Unavailable, "gRPC server is shutting down")
+		}
+		requests.activeHandlerCount++
+		requests.stateMutex.Unlock()
+		defer requests.handlerFinished()
+
+		// Cancel the handler without closing its connection, so it can still reply.
+		requestContext, cancelRequest := context.WithCancel(requestContext)
+		defer cancelRequest()
+		detachShutdownCancellation := context.AfterFunc(serverContext, cancelRequest)
+		defer detachShutdownCancellation()
+		return handler(requestContext, request)
+	}
+}
+
+func (requests *grpcRequestTracker) handlerFinished() {
+	requests.stateMutex.Lock()
+	defer requests.stateMutex.Unlock()
+	requests.activeHandlerCount--
+	if requests.shuttingDown && requests.activeHandlerCount == 0 {
+		close(requests.handlersFinished)
+	}
+}
+
+// beginShutdown closes admission. handlersFinished closes once all admitted
+// handlers return; gRPC may still need to finish writing their responses.
+func (requests *grpcRequestTracker) beginShutdown() {
+	requests.stateMutex.Lock()
+	defer requests.stateMutex.Unlock()
+	requests.shuttingDown = true
+	if requests.activeHandlerCount == 0 {
+		close(requests.handlersFinished)
+	}
+}
+
+func listenGRPCEndpoint(ctx context.Context, endpoint string) (net.Listener, error) {
+	network, address, err := ParseEndpoint(endpoint)
+	if err != nil {
+		return nil, err
 	}
 
-	if proto == "unix" {
-		addr = "/" + addr
-		if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
-			klog.Fatalf("Failed to remove %s, error: %s", addr, err.Error())
+	if network == "unix" {
+		// Unix socket paths can outlive the process that created them.
+		address = "/" + address
+		if err := os.Remove(address); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to remove %s: %w", address, err)
 		}
 	}
 
-	lc := &net.ListenConfig{}
-	listener, err := lc.Listen(context.Background(), proto, addr)
+	listenConfig := &net.ListenConfig{}
+	listener, err := listenConfig.Listen(ctx, network, address)
 	if err != nil {
-		klog.Fatalf("Failed to listen: %v", err)
+		return nil, fmt.Errorf("failed to listen: %w", err)
 	}
-
-	opts := []grpc.ServerOption{
-		grpc.MaxConcurrentStreams(200),
-		grpc.UnaryInterceptor(logGRPC),
-	}
-	server := grpc.NewServer(opts...)
-	s.server = server
-
-	if ids != nil {
-		csi.RegisterIdentityServer(server, ids)
-	}
-	if cs != nil {
-		csi.RegisterControllerServer(server, cs)
-	}
-	if ns != nil {
-		csi.RegisterNodeServer(server, ns)
-	}
-
-	// Used to stop the server while running tests
-	if testMode {
-		s.wg.Done()
-		go func() {
-			// make sure Serve() is called
-			s.wg.Wait()
-			time.Sleep(time.Millisecond * 1000 * 10)
-			s.server.GracefulStop()
-		}()
-	}
-	klog.Infof("Listening for connections on address: %#v", listener.Addr())
-	if err := server.Serve(listener); err != nil {
-		klog.Errorf("Listening for connections on address: %#v, error: %v", listener.Addr(), err)
-	}
+	return listener, nil
 }
