@@ -27,6 +27,7 @@ import (
 
 func TestSanity(t *testing.T) {
 	testDir := t.TempDir()
+	t.Setenv(azurelustre.DefaultAzureConfigFileEnv, filepath.Join(testDir, "missing-azure.json"))
 	socketEndpoint := filepath.Join(testDir, "csi.sock")
 	targetPath := filepath.Join(testDir, "targetPath")
 	stagingPath := filepath.Join(testDir, "stagingPath")
