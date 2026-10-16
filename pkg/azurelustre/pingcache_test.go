@@ -22,7 +22,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -106,6 +109,80 @@ func TestClusterPingCacheProbe(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClusterPingCacheUsesTheNewProbeResultAtTTLExpiry(t *testing.T) {
+	for _, testCase := range []struct {
+		name                            string
+		initialReachable, nextReachable bool
+		initialCode, nextCode           codes.Code
+	}{
+		{name: "cached success becomes unreachable", initialReachable: true, nextReachable: false, initialCode: codes.OK, nextCode: codes.FailedPrecondition},
+		{name: "cached failure becomes reachable", initialReachable: false, nextReachable: true, initialCode: codes.FailedPrecondition, nextCode: codes.OK},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				probes := 0
+				reachable := testCase.initialReachable
+				cache, err := azcache.NewTimedCache(clusterPingCacheTTL, func(context.Context, string) (any, error) {
+					probes++
+					return reachable, nil
+				}, false)
+				require.NoError(t, err)
+				checker := &clusterPingCache{cache: cache}
+				assert.Equal(t, testCase.initialCode, status.Code(checker.EnsureReachable("10.0.0.4")))
+				reachable = testCase.nextReachable
+				time.Sleep(clusterPingCacheTTL - time.Nanosecond)
+				assert.Equal(t, testCase.initialCode, status.Code(checker.EnsureReachable("10.0.0.4")), "the cached result must remain in use before expiry")
+				assert.Equal(t, 1, probes)
+				time.Sleep(time.Nanosecond)
+				assert.Equal(t, testCase.nextCode, status.Code(checker.EnsureReachable("10.0.0.4")), "the result at expiry must come from the new probe, not the old cached value")
+				assert.Equal(t, 2, probes)
+			})
+		})
+	}
+}
+
+func TestClusterPingCacheDoesNotSerializeDifferentMGS(t *testing.T) {
+	var probes atomic.Int32
+	release := make(chan struct{})
+	releaseProbes := sync.OnceFunc(func() { close(release) })
+	entered := make(chan string, 2)
+	cache, err := azcache.NewTimedCache(time.Hour, func(_ context.Context, address string) (any, error) {
+		probes.Add(1)
+		entered <- address
+		<-release
+		return true, nil
+	}, false)
+	require.NoError(t, err)
+	checker := &clusterPingCache{cache: cache}
+	results := make(chan error, 2)
+	t.Cleanup(func() {
+		releaseProbes()
+		for range 2 {
+			select {
+			case result := <-results:
+				assert.NoError(t, result)
+			case <-time.After(30 * time.Second):
+				t.Error("probe caller did not finish after its release channel was closed")
+				return
+			}
+		}
+	})
+	go func() { results <- checker.EnsureReachable("10.0.0.4") }()
+	go func() { results <- checker.EnsureReachable("10.0.0.5") }()
+	var started []string
+	for range 2 {
+		select {
+		case address := <-entered:
+			started = append(started, address)
+		case <-time.After(30 * time.Second):
+			t.Fatalf("both different-MGS probes must start while neither is released; started: %v", started)
+		}
+	}
+	assert.ElementsMatch(t, []string{"10.0.0.4", "10.0.0.5"}, started)
+	assert.Equal(t, int32(2), probes.Load(), "an unrelated MGS must not wait behind a slow probe")
+	releaseProbes()
 }
 
 func TestClusterPingCacheAcceptorPort(t *testing.T) {
