@@ -18,8 +18,10 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,6 +171,54 @@ func TestConvertTagsToMap(t *testing.T) {
 			require.EqualError(t, err, test.expectedError.Error(), test.desc)
 		}
 	}
+}
+
+func TestTagCountBoundary(t *testing.T) {
+	tags := make([]string, MaxAzureResourceTags)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("key%d=value", i)
+	}
+	encoded := strings.Join(tags, ",")
+	t.Run("50 unique tags are accepted", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded)
+
+		require.NoError(t, err)
+		require.Len(t, result, MaxAzureResourceTags)
+	})
+	t.Run("51 unique tags are rejected", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded + ",overflow=value")
+
+		require.ErrorContains(t, err, "maximum of 50")
+		require.Nil(t, result)
+	})
+	t.Run("case-insensitive replacement does not consume another tag slot", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded + ",KEY0=replaced")
+
+		require.NoError(t, err)
+		require.Len(t, result, MaxAzureResourceTags)
+		require.Equal(t, "replaced", result["key0"])
+	})
+}
+
+func TestTagPairSyntaxAndDuplicateNames(t *testing.T) {
+	t.Run("an extra equals sign is not part of a tag value", func(t *testing.T) {
+		result, err := ConvertTagsToMap("key=a=b")
+
+		require.Error(t, err)
+		require.Nil(t, result)
+	})
+	t.Run("last value wins while original tag-name spelling is retained", func(t *testing.T) {
+		result, err := ConvertTagsToMap("MixedCase=first,mixedcase=second")
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"MixedCase": "second"}, result)
+	})
+	t.Run("an empty tag value is allowed", func(t *testing.T) {
+		result, err := ConvertTagsToMap("empty=")
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"empty": ""}, result)
+	})
 }
 
 func TestSetKeyValueInMap(t *testing.T) {

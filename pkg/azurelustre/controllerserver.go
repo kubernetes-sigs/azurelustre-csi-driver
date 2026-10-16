@@ -145,7 +145,8 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 			}
 			if len(tags) > 0 {
 				for tag, value := range tags {
-					if tag == pvcNameTag || tag == pvcNamespaceTag || tag == pvNameTag || tag == createdByTag {
+					if strings.EqualFold(tag, pvcNameTag) || strings.EqualFold(tag, pvcNamespaceTag) ||
+						strings.EqualFold(tag, pvNameTag) || strings.EqualFold(tag, createdByTag) {
 						return nil, status.Errorf(codes.InvalidArgument, "CreateVolume Parameter %s must not contain %s as a tag", VolumeContextTags, tag)
 					}
 					amlFilesystemProperties.Tags[tag] = value
@@ -179,6 +180,11 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 	}
 
 	if shouldCreateAmlfsCluster {
+		if len(amlFilesystemProperties.Tags) > util.MaxAzureResourceTags {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"CreateVolume permits at most %d Azure tags including driver metadata; received %d",
+				util.MaxAzureResourceTags, len(amlFilesystemProperties.Tags))
+		}
 		if len(amlFilesystemProperties.MaintenanceDayOfWeek) == 0 {
 			return nil, status.Errorf(codes.InvalidArgument,
 				"CreateVolume %s must be provided for dynamically provisioned AMLFS",

@@ -30,6 +30,7 @@ const (
 	TiB                  = 1024 * GiB
 	tagsDelimiter        = ","
 	tagKeyValueDelimiter = "="
+	MaxAzureResourceTags = 50
 )
 
 // RoundUpBytes rounds up the volume size in bytes up to multiplications of GiB
@@ -114,7 +115,7 @@ func ConvertTagsToMap(tags string) (map[string]string, error) {
 	}
 	s := strings.SplitSeq(tags, tagsDelimiter)
 	for tag := range s {
-		kv := strings.Split(tag, tagKeyValueDelimiter)
+		kv := strings.SplitN(tag, tagKeyValueDelimiter, 3)
 		if len(kv) != 2 {
 			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
@@ -123,7 +124,10 @@ func ConvertTagsToMap(tags string) (map[string]string, error) {
 			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
 		value := strings.TrimSpace(kv[1])
-		m[key] = value
+		SetKeyValueInMap(m, key, value)
+		if len(m) > MaxAzureResourceTags {
+			return nil, fmt.Errorf("tags exceed Azure's maximum of %d name-value pairs", MaxAzureResourceTags)
+		}
 	}
 	return m, nil
 }
