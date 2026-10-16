@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
@@ -36,32 +38,39 @@ import (
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
 
-type ClusterState string
-
 const (
-	ClusterStateExists            ClusterState = "Exists"
-	ClusterStateNotFound          ClusterState = "Not found"
-	ClusterStateDeleting          ClusterState = "Deleting"
-	ClusterStateFailed            ClusterState = "Failed"
-	AmlfsSkuResourceType                       = "amlFilesystems"
-	AmlfsSkuCapacityIncrementName              = "OSS capacity increment (TiB)"
-	AmlfsSkuCapacityMaximumName                = "default maximum capacity (TiB)"
-	authFailureHintFormat                      = "error occurred calling API: %v; verify the identity has the required RBAC role assignments (for workload identity, confirm its federated credential is configured)"
+	AmlfsSkuResourceType          = "amlFilesystems"
+	AmlfsSkuCapacityIncrementName = "OSS capacity increment (TiB)"
+	AmlfsSkuCapacityMaximumName   = "default maximum capacity (TiB)"
+	authFailureHintFormat         = "error occurred calling API: %v; verify the identity has the required RBAC role assignments (for workload identity, confirm its federated credential is configured)"
 )
 
+type AmlFilesystemResult struct {
+	MGSAddress    string
+	CapacityBytes int64
+}
+
 type DynamicProvisionerInterface interface {
+	ValidateSubnetCapacity(ctx context.Context, properties *AmlFilesystemProperties) error
 	DeleteAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) error
-	CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error)
+	CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (*AmlFilesystemResult, error)
+	GetAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (*AmlFilesystemResult, error)
 	GetSkuValuesForLocation(ctx context.Context, location string) (map[string]*LustreSkuValue, error)
 }
 
 type DynamicProvisioner struct {
 	DynamicProvisionerInterface
+	subscriptionID       string
 	amlFilesystemsClient *armstoragecache.AmlFilesystemsClient
 	mgmtClient           *armstoragecache.ManagementClient
 	skusClient           *armstoragecache.SKUsClient
 	vnetClient           *armnetwork.VirtualNetworksClient
 	pollFrequency        time.Duration
+}
+
+func amlFilesystemResourceID(subscriptionID, resourceGroupName, amlFilesystemName string) string {
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.StorageCache/amlFilesystems/%s",
+		subscriptionID, resourceGroupName, amlFilesystemName)
 }
 
 func convertHTTPResponseErrorToGrpcCodeError(err error) error {
@@ -125,7 +134,7 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		case http.StatusGatewayTimeout:
 			grpcErrorCode = codes.DeadlineExceeded
 		default:
-			// Prefer to default to Unknown rather than Internal so provisioner will retry
+			// Unknown preserves an unmapped status; it is not a retryability guarantee.
 			grpcErrorCode = codes.Unknown
 		}
 	case strings.Contains(httpError.ErrorCode, "Error") ||
@@ -138,33 +147,49 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 	return status.Errorf(grpcErrorCode, "error occurred calling API: %v", httpError)
 }
 
-func (d *DynamicProvisioner) currentClusterState(ctx context.Context, resourceGroupName, amlFilesystemName string) (ClusterState, error) {
+func (d *DynamicProvisioner) readAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) (*armstoragecache.AmlFilesystem, error) {
 	if d.amlFilesystemsClient == nil {
-		return "", status.Error(codes.Internal, "aml filesystem client is nil")
+		return nil, status.Error(codes.Internal, "aml filesystem client is nil")
+	}
+	if d.subscriptionID == "" {
+		return nil, status.Error(codes.Internal, "AMLFS subscription ID is not configured")
+	}
+	if resourceGroupName == "" || amlFilesystemName == "" {
+		return nil, status.Error(codes.InvalidArgument, "AMLFS resource group and filesystem name must be provided")
 	}
 
+	resourceID := amlFilesystemResourceID(d.subscriptionID, resourceGroupName, amlFilesystemName)
 	resp, err := d.amlFilesystemsClient.Get(ctx, resourceGroupName, amlFilesystemName, nil)
 	if err != nil {
 		var responseError *azcore.ResponseError
 		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound && responseError.ErrorCode == "ResourceNotFound" {
-			klog.V(2).Infof("Cluster %s not found!", amlFilesystemName)
-			return ClusterStateNotFound, nil
+			return nil, nil
 		}
 
-		klog.Warningf("error when retrieving the aml filesystem: %v", err)
-		return "", convertHTTPResponseErrorToGrpcCodeError(err)
+		st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
+		return nil, status.Errorf(st.Code(), "could not observe AMLFS %s: %s", resourceID, st.Message())
 	}
 
-	if resp.Properties != nil && resp.Properties.ProvisioningState != nil {
-		switch *resp.Properties.ProvisioningState { //nolint:exhaustive // We are only trying to react to these states
-		case armstoragecache.AmlFilesystemProvisioningStateTypeDeleting:
-			return ClusterStateDeleting, nil
-		case armstoragecache.AmlFilesystemProvisioningStateTypeFailed:
-			return ClusterStateFailed, nil
-		}
+	if err := validateAmlFilesystemIdentity(&resp.AmlFilesystem, resourceID); err != nil {
+		return nil, err
 	}
+	return &resp.AmlFilesystem, nil
+}
 
-	return ClusterStateExists, nil
+// GetAmlFilesystem returns nil, nil only after ARM verifies ResourceNotFound.
+func (d *DynamicProvisioner) GetAmlFilesystem(ctx context.Context, properties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	if properties == nil {
+		return nil, status.Error(codes.InvalidArgument, "AMLFS properties must be provided")
+	}
+	if properties.RequiredBytes < 0 || properties.LimitBytes < 0 ||
+		(properties.LimitBytes != 0 && properties.RequiredBytes > properties.LimitBytes) {
+		return nil, status.Error(codes.InvalidArgument, "invalid AMLFS capacity range")
+	}
+	filesystem, err := d.readAmlFilesystem(ctx, properties.ResourceGroupName, properties.AmlFilesystemName)
+	if err != nil || filesystem == nil {
+		return nil, err
+	}
+	return d.amlFilesystemResult(filesystem, properties)
 }
 
 func (d *DynamicProvisioner) DeleteAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) error {
@@ -191,12 +216,18 @@ func (d *DynamicProvisioner) DeleteAmlFilesystem(ctx context.Context, resourceGr
 	return nil
 }
 
-func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error) {
-	if d.amlFilesystemsClient == nil {
-		return "", status.Error(codes.Internal, "aml filesystem client is nil")
+func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	result, err := d.GetAmlFilesystem(ctx, amlFilesystemProperties)
+	if errors.Is(err, errAmlFilesystemFailed) {
+		return nil, d.tryDeleteBeforeRetry(ctx, amlFilesystemProperties)
 	}
-	if amlFilesystemProperties.SubnetInfo.SubnetID == "" || amlFilesystemProperties.SubnetInfo.SubnetName == "" || amlFilesystemProperties.SubnetInfo.VnetName == "" || amlFilesystemProperties.SubnetInfo.VnetResourceGroup == "" {
-		return "", status.Error(codes.InvalidArgument, "invalid subnet info, must have valid subnet ID, subnet name, vnet name, and vnet resource group")
+	if err != nil || result != nil {
+		return result, err
+	}
+
+	// Only verified absence permits a PUT. Reuse is never an update operation.
+	if err := d.ValidateSubnetCapacity(ctx, amlFilesystemProperties); err != nil {
+		return nil, err
 	}
 
 	tags := make(map[string]*string, len(amlFilesystemProperties.Tags))
@@ -231,51 +262,19 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 		}
 	}
 
-	currentClusterState, err := d.currentClusterState(ctx, amlFilesystemProperties.ResourceGroupName, amlFilesystemProperties.AmlFilesystemName)
-	if err != nil {
-		return "", convertHTTPResponseErrorToGrpcCodeError(err)
-	}
-
-	switch currentClusterState {
-	case ClusterStateNotFound:
-		hasSufficientCapacity, err := d.CheckSubnetCapacity(ctx, amlFilesystemProperties.SubnetInfo, amlFilesystemProperties.SKUName, amlFilesystemProperties.StorageCapacityTiB)
-		if err != nil {
-			return "", convertHTTPResponseErrorToGrpcCodeError(err)
-		}
-		if !hasSufficientCapacity {
-			return "", status.Errorf(
-				codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
-				amlFilesystemProperties.AmlFilesystemName,
-				amlFilesystemProperties.SubnetInfo.SubnetID,
-			)
-		}
-	case ClusterStateDeleting:
-		return "", status.Errorf(codes.Aborted, "AMLFS cluster %s creation did not complete correctly, waiting for deletion to complete before retrying cluster creation",
-			amlFilesystemProperties.AmlFilesystemName)
-	case ClusterStateFailed:
-		klog.V(2).Infof("AMLFS cluster %s is in a failed state, will attempt to correct on new creation", amlFilesystemProperties.AmlFilesystemName)
-	case ClusterStateExists:
-		// TODO: if we allow reusing AMLFS clusters, we should check  the existing cluster's properties
-		klog.V(2).Infof("AMLFS cluster %s already exists, will attempt update request", amlFilesystemProperties.AmlFilesystemName)
-	}
-
 	klog.V(2).Infof("creating AMLFS cluster: %#v", amlFilesystemProperties)
+	// A lost PUT response must return to the CSI GET-before-create path, not be
+	// retried blindly against a resource that Azure may already have created.
+	createContext := policy.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
 	poller, err := d.amlFilesystemsClient.BeginCreateOrUpdate(
-		ctx,
+		createContext,
 		amlFilesystemProperties.ResourceGroupName,
 		amlFilesystemProperties.AmlFilesystemName,
 		amlFilesystem,
 		nil,
 	)
 	if err != nil {
-		retry, retryErr := d.checkErrorForRetry(ctx, err, amlFilesystemProperties)
-		if retryErr != nil {
-			return "", convertHTTPResponseErrorToGrpcCodeError(retryErr)
-		}
-		if retry {
-			return "", d.tryDeleteBeforeRetry(ctx, amlFilesystemProperties)
-		}
-		return "", convertHTTPResponseErrorToGrpcCodeError(err)
+		return nil, d.amlFilesystemCreateError(amlFilesystemProperties, err)
 	}
 
 	pollerOptions := &runtime.PollUntilDoneOptions{
@@ -283,27 +282,39 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 	}
 	res, err := poller.PollUntilDone(ctx, pollerOptions)
 	if err != nil {
-		retry, retryErr := d.checkErrorForRetry(ctx, err, amlFilesystemProperties)
-		if retryErr != nil {
-			return "", convertHTTPResponseErrorToGrpcCodeError(retryErr)
-		}
-		if retry {
-			return "", d.tryDeleteBeforeRetry(ctx, amlFilesystemProperties)
-		}
-		klog.Errorf("failed to poll the result: %v", err)
-		return "", convertHTTPResponseErrorToGrpcCodeError(err)
+		return nil, d.amlFilesystemCreateError(amlFilesystemProperties, err)
 	}
 
-	if res.Properties == nil || res.Properties.ClientInfo == nil || res.Properties.ClientInfo.MgsAddress == nil ||
-		strings.TrimSpace(*res.Properties.ClientInfo.MgsAddress) == "" {
-		return "", status.Errorf(codes.Unavailable,
-			"received incomplete AMLFS response for %s in resource group %s: missing MGS address",
-			amlFilesystemProperties.AmlFilesystemName, amlFilesystemProperties.ResourceGroupName)
+	result, err = d.amlFilesystemResult(&res.AmlFilesystem, amlFilesystemProperties)
+	if err != nil {
+		return nil, err
 	}
-
-	mgsAddress := *res.Properties.ClientInfo.MgsAddress
 	klog.V(2).Infof("Successfully created AML filesystem: %s", amlFilesystemProperties.AmlFilesystemName)
-	return mgsAddress, nil
+	return result, nil
+}
+
+func (d *DynamicProvisioner) amlFilesystemCreateError(properties *AmlFilesystemProperties, err error) error {
+	st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
+	return status.Errorf(st.Code(), "AMLFS %s create did not complete: %s; preserving any accepted Azure work for observation on retry",
+		amlFilesystemResourceID(d.subscriptionID, properties.ResourceGroupName, properties.AmlFilesystemName), st.Message())
+}
+
+// ValidateSubnetCapacity checks subnet inputs and available IP addresses.
+// Creation repeats the check because available capacity can change.
+func (d *DynamicProvisioner) ValidateSubnetCapacity(ctx context.Context, properties *AmlFilesystemProperties) error {
+	if properties == nil || properties.SubnetInfo.SubnetID == "" || properties.SubnetInfo.SubnetName == "" ||
+		properties.SubnetInfo.VnetName == "" || properties.SubnetInfo.VnetResourceGroup == "" {
+		return status.Error(codes.InvalidArgument, "invalid subnet info, must have valid subnet ID, subnet name, vnet name, and vnet resource group")
+	}
+	hasCapacity, err := d.CheckSubnetCapacity(ctx, properties.SubnetInfo, properties.SKUName, properties.StorageCapacityTiB)
+	if err != nil {
+		return convertHTTPResponseErrorToGrpcCodeError(err)
+	}
+	if !hasCapacity {
+		return status.Errorf(codes.ResourceExhausted, "cannot create AMLFS cluster %s in subnet %s, not enough IP addresses available",
+			properties.AmlFilesystemName, properties.SubnetInfo.SubnetID)
+	}
+	return nil
 }
 
 func (d *DynamicProvisioner) tryDeleteBeforeRetry(ctx context.Context, amlFilesystemProperties *AmlFilesystemProperties) error {
@@ -314,30 +325,8 @@ func (d *DynamicProvisioner) tryDeleteBeforeRetry(ctx context.Context, amlFilesy
 		klog.Errorf("error attempting to delete AMLFS cluster %s for creation retry: %v", amlFilesystemProperties.AmlFilesystemName, err)
 		return convertHTTPResponseErrorToGrpcCodeError(err)
 	}
-	return status.Errorf(codes.Aborted, "AMLFS cluster %s creation timed out. Deleted failed cluster, retrying cluster creation", amlFilesystemProperties.AmlFilesystemName)
-}
-
-func (d *DynamicProvisioner) checkErrorForRetry(ctx context.Context, err error, amlFilesystemProperties *AmlFilesystemProperties) (bool, error) {
-	err = convertHTTPResponseErrorToGrpcCodeError(err)
-	errCode := status.Code(err)
-
-	if errCode == codes.DeadlineExceeded && strings.Contains(err.Error(), "Timeout") {
-		klog.Warningf("AMLFS creation failed due to a creation timeout error, deleting and recreating AMLFS cluster: %v", err)
-		return true, nil
-	}
-
-	if errCode == codes.DeadlineExceeded && (strings.Contains(err.Error(), "Error") || strings.Contains(err.Error(), "Fail")) {
-		currentClusterState, err := d.currentClusterState(ctx, amlFilesystemProperties.ResourceGroupName, amlFilesystemProperties.AmlFilesystemName)
-		if err != nil {
-			klog.Errorf("error getting current cluster state for cluster %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
-			return false, err
-		}
-		if currentClusterState == ClusterStateFailed {
-			klog.Warningf("AMLFS creation failed due to a failed deployment, deleting and recreating AMLFS cluster: %v", err)
-			return true, nil
-		}
-	}
-	return false, nil
+	return status.Errorf(codes.Aborted, "AMLFS %s unfinished provisioning reported Failed; deletion completed, retry creation",
+		amlFilesystemResourceID(d.subscriptionID, resourceGroupName, amlFilesystemName))
 }
 
 // GetSkuValuesForLocation returns usable entries even when an error indicates

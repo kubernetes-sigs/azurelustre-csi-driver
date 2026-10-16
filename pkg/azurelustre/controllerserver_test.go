@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -143,6 +144,92 @@ func TestDynamicCreateVolume_Success(t *testing.T) {
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeId())
 	assert.NotZero(t, rep.GetVolume().GetCapacityBytes())
 	assert.NotEmpty(t, rep.GetVolume().GetVolumeContext())
+}
+
+type readyFilesystemProvisioner struct {
+	t       *testing.T
+	result  *AmlFilesystemResult
+	lookups []AmlFilesystemProperties
+}
+
+func (p *readyFilesystemProvisioner) GetAmlFilesystem(_ context.Context, properties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	p.lookups = append(p.lookups, *properties)
+	return p.result, nil
+}
+
+func (p *readyFilesystemProvisioner) unexpectedCall(operation string) error {
+	p.t.Helper()
+	p.t.Errorf("%s must not be called when reusing a ready filesystem", operation)
+	return status.Errorf(codes.Internal, "unexpected %s during ready-filesystem reuse", operation)
+}
+
+func (p *readyFilesystemProvisioner) GetSkuValuesForLocation(context.Context, string) (map[string]*LustreSkuValue, error) {
+	return nil, p.unexpectedCall("SKU discovery")
+}
+
+func (p *readyFilesystemProvisioner) ValidateSubnetCapacity(context.Context, *AmlFilesystemProperties) error {
+	return p.unexpectedCall("subnet admission")
+}
+
+func (p *readyFilesystemProvisioner) CreateAmlFilesystem(context.Context, *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	return nil, p.unexpectedCall("filesystem creation")
+}
+
+func (p *readyFilesystemProvisioner) DeleteAmlFilesystem(context.Context, string, string) error {
+	return p.unexpectedCall("filesystem deletion")
+}
+
+func TestDynamicCreateVolume_RetryReusesReadyFilesystemWithExpandedCapacity(t *testing.T) {
+	for _, testCase := range []struct {
+		name                  string
+		resourceGroup         string
+		expectedResourceGroup string
+	}{
+		{name: "explicit resource group", resourceGroup: "test-resource-group", expectedResourceGroup: "test-resource-group"},
+		{name: "default resource group", expectedResourceGroup: "default-filesystem-group"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			d := NewFakeDriver(t)
+			d.resourceGroup = "default-filesystem-group"
+			provisioner := &readyFilesystemProvisioner{
+				t:      t,
+				result: &AmlFilesystemResult{MGSAddress: "10.0.0.7", CapacityBytes: 72 * util.TiB},
+			}
+			d.dynamicProvisioner = provisioner
+			req := buildDynamicProvCreateVolumeRequest()
+			req.Name = "pvc-ready-reuse"
+			if testCase.resourceGroup == "" {
+				delete(req.GetParameters(), VolumeContextResourceGroupName)
+			} else {
+				req.Parameters[VolumeContextResourceGroupName] = testCase.resourceGroup
+			}
+			req.CapacityRange = &csi.CapacityRange{RequiredBytes: 48 * util.TiB, LimitBytes: 80 * util.TiB}
+			originalParameters := maps.Clone(req.GetParameters())
+
+			response, err := d.CreateVolume(t.Context(), req)
+
+			require.NoError(t, err)
+			require.NotNil(t, response.GetVolume())
+			assert.Equal(t, int64(72*util.TiB), response.GetVolume().GetCapacityBytes(),
+				"reuse must return the expanded current capacity, not the original 48-TiB request")
+			assert.Equal(t, "pvc-ready-reuse#lustrefs#10.0.0.7#testSubDir#t#"+testCase.expectedResourceGroup,
+				response.GetVolume().GetVolumeId())
+			expectedContext := maps.Clone(originalParameters)
+			expectedContext[VolumeContextResourceGroupName] = testCase.expectedResourceGroup
+			expectedContext[VolumeContextMGSIPAddress] = "10.0.0.7"
+			expectedContext[VolumeContextFSName] = "lustrefs"
+			expectedContext[VolumeContextInternalDynamicallyCreated] = "t"
+			assert.Equal(t, expectedContext, response.GetVolume().GetVolumeContext())
+			assert.Equal(t, originalParameters, req.GetParameters(), "reuse must not rewrite the caller's parameters")
+			assert.Equal(t, int64(48*util.TiB), req.GetCapacityRange().GetRequiredBytes())
+			assert.Equal(t, int64(80*util.TiB), req.GetCapacityRange().GetLimitBytes())
+			require.Len(t, provisioner.lookups, 1, "reuse must only observe the existing filesystem once")
+			assert.Equal(t, req.GetName(), provisioner.lookups[0].AmlFilesystemName)
+			assert.Equal(t, testCase.expectedResourceGroup, provisioner.lookups[0].ResourceGroupName)
+			assert.Equal(t, int64(48*util.TiB), provisioner.lookups[0].RequiredBytes)
+			assert.Equal(t, int64(80*util.TiB), provisioner.lookups[0].LimitBytes)
+		})
+	}
 }
 
 func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {

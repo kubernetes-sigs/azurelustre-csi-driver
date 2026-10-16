@@ -69,34 +69,54 @@ additional cloud setting is required in the StorageClass or Helm values.
 > **Static provisioning is not affected** — the node pod mounts Lustre filesystems directly
 > over the host network and does not require these Azure management endpoints.
 
+The filesystem's subnet must also meet the
+[AMLFS network prerequisites](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/amlfs-prerequisites#network-prerequisites),
+including outbound connectivity from that subnet. Controller connectivity alone
+does not satisfy the filesystem's networking requirements.
+
 ## Create an Azure Managed Lustre cluster bound to a Persistent Volume Claim
 
-### Use the Storage Class
+### Configure the StorageClass
 
 * Download
 [dynamic provision storage class](./examples/storageclass_dynprov_lustre.yaml)
 and [persistent volume claim file](./examples/pvc_storageclass_dynprov.yaml).
 
 > [!IMPORTANT]
-***IMPORTANT NOTE***: The example storage class is configured so that Azure Managed Lustre clusters
-will be automatically deleted when the persistent volume claim that creates them is deleted. If you
-require the Azure Managed Lustre cluster to remain after the persistent volume claim is deleted, set
-the `reclaimPolicy` in the storage class to `Retain` instead of `Delete`.
+> The example uses `reclaimPolicy: Delete`: deleting a bound claim deletes its
+> filesystem and data. To preserve it, set `reclaimPolicy: Retain` in the
+> StorageClass before creating the claim.
 
 * Edit the `SKU_NAME`, `ZONE`, `MAINTENANCE_DAY`, and `MAINTENANCE_TIME_OF_DAY` in the storage class.
-  * By default, the Azure Managed Lustre cluster will be created in the same location, resource group, and subnet
-  as the Azure Kubernetes Service cluster that is running this driver. You can choose an existing location,
+  Omit `zone` when the selected region does not support availability zones.
+  * By default, the filesystem uses the AKS location, infrastructure resource group, and subnet.
+  You can choose an existing location,
   resource group, and subnet for the cluster to be deployed into by setting the `LOCATION`, `RESOURCE_GROUP_NAME`,
   `EXISTING_VNET_RG`, `EXISTING_VNET_NAME`, and/or `EXISTING_SUBNET_NAME` values in the storage class.
   * You can optionally set user-assigned identities, tags, and/or the subdirectory template for
   pods to use by setting the `IDENTITIES`, `TAGS`, and/or the `SUBDIRECTORY` values in the storage class.
+* Set `resources.requests.storage` in the PVC to the required capacity.
 
-* Create the storage class and persistent volume claim:
+Each PVC creates a separate filesystem. The example also includes an optional
+`ResourceQuota` that limits this StorageClass to one PVC in the namespace where
+you apply it. Adjust the quota before creating more claims. Your Azure
+subscription may have a separate filesystem-count quota.
+
+### Create the claim
 
 ```shell
 kubectl create -f storageclass_dynprov_lustre.yaml
 kubectl create -f pvc_storageclass_dynprov.yaml
 ```
+
+> [!WARNING]
+> Keep the PVC and driver in place until the PVC is `Bound`. Deleting a pending
+> PVC does not cancel Azure creation and can leave a billable filesystem without
+> a PV; see [unfinished provisioning](#deleting-a-claim-before-provisioning-finishes).
+>
+> Do not use or independently modify the filesystem before the PVC is `Bound`.
+> The driver can replace a failed backend while provisioning is unfinished,
+> which would destroy any data placed there early.
 
 * The Azure Managed Lustre cluster will be created with the same name as the persistent volume it is
 associated with. In addition to any tags configured in the storage class, it will also have tags added
@@ -119,94 +139,92 @@ the last supplied value. Driver-reserved tag names cannot be supplied in any
 casing. The `tags` parameter keeps its comma-separated `key=value` format;
 commas and additional equals signs inside a pair are not escaped by this format.
 
-> [!IMPORTANT]
-This example storage class contains a `ResourceQuota` definition for testing purposes. This limits the
-number of PVCs that can be created for this storage class to a single volume. This `ResourceQuota`
-is optional, but it is recommended to set a quota to prevent the accidental creation of too many
-Azure Managed Lustre clusters, especially while learning or testing. This limit applies only to
-this storage class, so Azure Managed Lustre clusters could still be created using additional
-storage classes. Note that there may a separate quota limit in your Azure subscription for the
-total number of Azure Managed Lustre clusters as well, as described below.
+### Wait for provisioning
 
-* A single storage class can be used to create multiple persistent volume claims. Each new pvc will
-create a new Azure Managed Lustre cluster to back the new volume. If multiple cluster required with
-different configurations, any number of storage classes can be created, each for a different
-configuration for the cluster. This way, it is possible to make various clusters based on different
-SKUs, in different subnets, etc.
-  * Note that there may be a subscription-wide limit to the number of Azure Managed Lustre clusters
-  that a given identity can create. If more volumes are created than clusters that can be created,
-  those persistent volume claims will remain in a `Pending` status and report this limitation in the
-  events list until enough other clusters have been deleted or the subscription-wide quota has been
-  increased.
-
-* Wait for the Azure Managed Lustre cluster to be created, which may take ten minutes or more.
-During this time, you can check the progress of the persistent volume claim.
+Creation may take ten minutes or more. Monitor the claim's status and events:
 
 ```shell
 kubectl describe pvc pvc-lustre-dynprov
 ```
 
-* While it is creating, the `Status` will be `Pending` and you will see a message such as the
-following in the pvc events list:
-`Waiting for a volume to be created either by the external provisioner 'azurelustre.csi.azure.com'…`
+The PVC remains `Pending` while provisioning and becomes `Bound` when its volume
+is ready. The driver reports success only for a compatible filesystem with
+provisioning state `Succeeded`, health `Available`, and valid connection details.
+Retries can extend the creation time.
 
-* Once the cluster is ready, it will have a `Bound` status, and a message will appear in the event
-list such as `Successfully provisioned volume pvc-78876f95-32c2-41c4-bdfa-eb92d1eeb341`
-  * Any issues encountered during creation should appear in the events list for the pvc. If the issue
-  is not obvious from the event message, check the controller pod logs for any further relevant
-  messages. In some cases, the cluster creation must be retried by the driver, which will
-  significantly increase the volume creation time. This should be clear from the volume claim event
-  list and pod logs, and should eventually succeed. Otherwise, any terminal errors will be reported
-  to the user.
+If errors persist, use the [dynamic provisioning error reference](errors.md#dynamic-provisioning-errors).
+When events or logs do not explain a failure, check the
+[Azure Activity Log](errors.md#error-amlfs-provisioning-failed).
+Retries do not resolve a persistent configuration or service problem.
 
-&nbsp;
+### Creation retries and existing filesystems
+
+On retry, the driver checks the filesystem's current Azure state. It reuses a
+compatible, ready filesystem without changing its tags or maintenance settings,
+and reports its current capacity.
+
+For a matching `Failed` filesystem belonging to an unfinished provisioning
+request, the driver deletes it, waits for deletion to finish, and recreates it
+on retry. Recovery can resume after a controller restart while the PVC exists.
+A timeout, lost response, or health problem alone does not trigger deletion.
 
 ## Use the Volume
 
 * Download [dynamic provisioning demo pod echo date](./examples/pod_echo_date_dynprov.yaml)
 
-* Create the POD with PVC mount
+* After the PVC is `Bound`, create the pod that mounts it:
 
 ```shell
 kubectl create -f pod_echo_date_dynprov.yaml
 ```
 
-* Execute `df -h` command in the container and you can see the volume is
-mounted
+* Confirm that the volume is mounted:
 
 ```shell
-$ kubectl exec -it lustre-echo-date-dynprov -- df -h
-
-Filesystem                Size      Used     Available Use% Mounted on
-...
-${ip}@tcp:/${fs}          976.6G    154.7G    821.9G   16%  /mnt/lustre
-...
+kubectl exec lustre-echo-date-dynprov -- df -h /mnt/lustre
 ```
 
 &nbsp;
 
 ## Delete the Volume
 
-* Delete the persistent volume claim. If you had the storage class's `reclaimPolicy` set to `Delete`,
-this will also delete the persistent volume and Azure Managed Lustre cluster that was created for the
-volume. If you had the `reclaimPolicy` set to `Retain`, you will have to delete the Azure Managed
-Lustre cluster manually when you no longer need it.
+The following steps apply to a provisioned volume. For a claim that is still
+`Pending`, read [Deleting a claim before provisioning finishes](#deleting-a-claim-before-provisioning-finishes).
 
-```shell
-kubectl delete pvc pvc-lustre-dynprov
-```
+1. Stop workloads using the volume and wait for their mounts to be removed.
+   Keep the driver running until cleanup finishes.
+2. Find the PV and check its reclaim policy:
 
-* Wait for the Azure Managed Lustre cluster to be deleted, which may take ten minutes or more. During
-this time, you can check the progress of the persistent volume (the persistent volume claim will be
-deleted at this point):
+   ```shell
+   kubectl get pvc pvc-lustre-dynprov -o wide
+   kubectl get pv <pv-name>
+   ```
 
-```shell
-kubectl describe pv <unique-volume-name-from-pvc>
-```
+   The **existing PV's** policy controls reclamation. To preserve the filesystem,
+   [set that PV to `Retain`](https://kubernetes.io/docs/tasks/administer-cluster/change-pv-reclaim-policy/)
+   before deleting the claim. Changing the StorageClass alone does not update it.
 
-* Any issues encountered during creation should appear in the events list for the persistent volume.
-If the issue is not obvious from the event message, check the controller pod logs for any further
-relevant messages.
+3. Delete the claim once you have confirmed the intended policy:
+
+   ```shell
+   kubectl delete pvc pvc-lustre-dynprov
+   ```
+
+4. With `Delete`, wait for the Azure filesystem and PV to be deleted; this may
+   take ten minutes or more. With `Retain`, the filesystem remains and continues
+   to incur charges. Save its identity for later management or
+   [reattachment](static-provisioning.md#option-2-use-pv).
+
+If cleanup stalls, inspect PV events and controller logs with the driver still
+running. Do not remove PV finalizers to force progress.
+
+### Deleting a claim before provisioning finishes
+
+Deleting a pending PVC, including through namespace deletion, does not cancel
+Azure creation. The filesystem can remain billable without a PV if the unfinished
+request is lost. After an interrupted or deleted request, follow
+[Deleted pending PVC or untracked filesystem](errors.md#deleted-pending-pvc-or-untracked-filesystem)
+to check for storage that still needs attention.
 
 ## Troubleshooting
 

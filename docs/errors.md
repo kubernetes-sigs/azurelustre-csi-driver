@@ -19,6 +19,8 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
     - [Error: Lease access is forbidden](#error-lease-access-is-forbidden)
     - [Error: Incomplete Azure API response](#error-incomplete-azure-api-response)
     - [Error: AMLFS cluster creation timed out](#error-amlfs-cluster-creation-timed-out)
+    - [Error: AMLFS provisioning failed](#error-amlfs-provisioning-failed)
+    - [Deleted pending PVC or untracked filesystem](#deleted-pending-pvc-or-untracked-filesystem)
     - [Error: Resource not found](#error-resource-not-found)
     - [Error: Cannot create AMLFS cluster, not enough IP addresses available](#error-cannot-create-amlfs-cluster-not-enough-ip-addresses-available)
     - [Error: Reached Azure Subscription Quota Limit for AMLFS Clusters](#error-reached-azure-subscription-quota-limit-for-amlfs-clusters)
@@ -172,53 +174,85 @@ delete the PVC or filesystem solely because of this error.
 
 #### Error: AMLFS cluster creation timed out
 
-**Symptoms:**
+A `DeadlineExceeded` or `create did not complete` message does not prove that
+Azure stopped creating the filesystem. Creation can take longer than one
+request, and the driver checks Azure state again on retry.
 
-- PVC remains in `Pending` status for extended period (>20 minutes)
-- Controller logs show messages such as:
-  - `AMLFS cluster myapp-lustre-cluster creation timed out. Deleted failed cluster, retrying cluster creation`
-  - `AMLFS cluster myapp-lustre-cluster creation did not complete correctly, waiting for deletion to complete before retrying cluster creation`
+1. Keep the pending PVC and driver in place. Check
+   [PVC events and controller logs](csi-debug.md#dynamic-provisioning-amlfs-cluster-creation).
+2. Check the filesystem in Azure. If it is still `Creating`, allow provisioning
+   to continue. If it is `Failed` or repeatedly recreated, follow
+   [AMLFS provisioning failed](#error-amlfs-provisioning-failed).
+3. Correct any reported connectivity, permission, or service issue. A timeout
+   alone is not a reason to delete the PVC or filesystem, or to start another
+   request in a different region.
 
-**Possible Causes:**
+---
 
-- Temporary Azure service issues
-- Network connectivity problems during cluster creation
-- Insufficient resources in the specified region/zone
+#### Error: AMLFS provisioning failed
 
-**Debugging Steps:**
+During unfinished provisioning, the driver replaces a matching `Failed`
+filesystem after its deletion completes. Recovery can repeat if the underlying
+problem persists; retries do not repair network configuration or service issues.
 
-```bash
-# Check controller logs for timeout details
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i 'creation timed out'
+PVC events and controller logs may show only `Failed` or a generic health
+message rather than the original service failure, particularly after a timeout
+or controller restart. To investigate:
 
-# This error should be resolved by the automatic cluster creation retry, if given time to complete. If this issue repeats
-# multiple times, or other errors are present, try the following steps:
+1. Note the filesystem name/resource ID and the failure time from the controller
+   logs or PVC events.
+2. Open the filesystem's resource group in the Azure portal and select
+   **Activity log**. Set the time range to include the attempt and find the
+   failed create/update event for that filesystem.
+3. Read the event's JSON, including `statusMessage`, for the service error code
+   and details. The resource-group log also covers a filesystem that the driver
+   has already deleted or recreated. See
+   [View and retrieve the activity log](https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/activity-log#view-and-retrieve-the-activity-log).
+4. Address the reported cause. For networking failures, check
+   [AMLFS network prerequisites](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/amlfs-prerequisites#network-prerequisites),
+   including outbound access from the filesystem subnet. For other failures, use
+   [AMLFS deployment troubleshooting](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+   or contact Azure support with the resource ID, time, and correlation ID.
 
-# Verify Azure service health in your region
-# Check Azure portal Service Health dashboard
-# Check Azure portal for failed AMLFS cluster resources
-# Navigate to: Resource Groups → [your-rg] → Look for failed deployments
+Keep the claim and driver in place while correcting the problem. Do not use the
+unfinished filesystem for data: recovery may replace it.
 
-# Check for quota limitations
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i quota
+---
 
-# Check controller logs for detailed error messages
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "amlfs\|creation"
-```
+#### Deleted pending PVC or untracked filesystem
 
-**Resolution:**
+Deleting a pending PVC or its namespace does not cancel an Azure creation
+request. The provisioner may still finish creating a PV and apply its reclaim
+policy, but this is not guaranteed. If the claim is gone and the controller loses
+the unfinished request before the PV is saved, a filesystem can remain billable
+without a Kubernetes volume. A controller restart while the PVC still exists
+can resume provisioning; deleting the claim and also losing the unfinished
+request is the case which can leave behind an untracked cluster.
 
-- Wait for automatic cleanup and retry
-- Before considering manual deletion, confirm that the AMLFS operation has
-  actually failed, verify resource ownership, and establish whether its data
-  must be retained. A canceled request or driver shutdown timeout alone is not
-  evidence of a failed Azure operation. Follow the
-  [safe teardown procedure](../charts/README.md#safe-teardown-procedure) for
-  intentional deletion.
-- Verify network and permissions configuration
-- Wait for Azure service issues to resolve if applicable
-- Try creating the volume in a different zone or region
-- Contact Azure support if timeouts persist
+After an interrupted provisioning attempt whose claim was deleted:
+
+1. Keep the driver available and inspect controller logs and the Azure Activity
+   Log. Use the StorageClass's `resource-group-name`, or the AKS infrastructure
+   resource group when that parameter was omitted, to inventory filesystems:
+
+   ```shell
+   az amlfs list --subscription <subscription-id> --resource-group <filesystem-resource-group> --output json
+   kubectl get pv -o json
+   kubectl get pvc --all-namespaces -o json
+   ```
+
+2. Compare full filesystem resource IDs with PV mappings and PVC UIDs. With the
+   default provisioner settings, the filesystem name is `pvc-<PVC-UID>`.
+   Azure tags such as `kubernetes.io-created-for-pvc-name` help identify a request,
+   but a newly created PVC with the same name has a different UID.
+3. Treat an unmatched filesystem as a candidate for investigation, not automatic
+   deletion. Confirm ownership, current Azure operation state, any deliberate
+   `Retain` decision, and use by other clusters or static mounts. Preserve data
+   that is still needed. Missing Kubernetes objects or matching tags alone do
+   not establish that deletion is safe.
+
+Keep the driver installed until tracked provisioning and deletion have finished.
+Do not remove PV finalizers to force cleanup.
 
 ---
 

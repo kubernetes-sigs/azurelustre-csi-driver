@@ -18,8 +18,10 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -81,6 +83,8 @@ type AmlFilesystemProperties struct {
 	MaintenanceDayOfWeek armstoragecache.MaintenanceDayOfWeekType
 	TimeOfDayUTC         string
 	StorageCapacityTiB   float32
+	RequiredBytes        int64
+	LimitBytes           int64
 	SKUName              string
 	Zone                 string
 }
@@ -317,6 +321,13 @@ func (d *Driver) CreateVolume(
 	}()
 
 	capacityRange := req.GetCapacityRange()
+	if capacityRange.GetRequiredBytes() < 0 || capacityRange.GetLimitBytes() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "CreateVolume capacity must not be negative")
+	}
+	if capacityRange.GetLimitBytes() > 0 && capacityRange.GetRequiredBytes() > capacityRange.GetLimitBytes() {
+		return nil, status.Error(codes.InvalidArgument, "CreateVolume required capacity is greater than capacity limit")
+	}
+
 	capacityInBytes := capacityRange.GetRequiredBytes()
 	if capacityInBytes == 0 {
 		capacityInBytes = defaultSizeInBytes
@@ -330,9 +341,18 @@ func (d *Driver) CreateVolume(
 
 	availableZones := []string{}
 	var lustreSkuValue *LustreSkuValue
+	var filesystem *AmlFilesystemResult
+	var failedCreate bool
 
 	if shouldCreateAmlfsCluster {
 		createdByDynamicProvisioningStringValue = "t"
+		if !isValidVolumeName(volName) {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"CreateVolume invalid volume name %s, cannot create valid AMLFS name. Check length and characters", volName)
+		}
+		amlFilesystemProperties.AmlFilesystemName = volName
+		amlFilesystemProperties.RequiredBytes = capacityRange.GetRequiredBytes()
+		amlFilesystemProperties.LimitBytes = capacityRange.GetLimitBytes()
 
 		if len(amlFilesystemProperties.Location) == 0 {
 			amlFilesystemProperties.Location = d.location
@@ -340,22 +360,33 @@ func (d *Driver) CreateVolume(
 
 		amlFilesystemProperties.SubnetInfo = d.populateSubnetPropertiesFromCloudConfig(amlFilesystemProperties.SubnetInfo)
 
-		klog.V(2).Infof("finding capacity based on SKU %s for location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
-		lustreSkuValue, err = d.getSkuValuesForLocation(ctx, amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
-		if err != nil {
+		filesystem, err = d.dynamicProvisioner.GetAmlFilesystem(ctx, amlFilesystemProperties)
+		failedCreate = errors.Is(err, errAmlFilesystemFailed)
+		if err != nil && !failedCreate {
 			return nil, err
 		}
-		if lustreSkuValue != nil {
-			blockSizeInBytes = lustreSkuValue.IncrementInTib * util.TiB
-			maxCapacityInBytes = lustreSkuValue.MaximumInTib * util.TiB
-			availableZones = lustreSkuValue.AvailableZones
+		if filesystem == nil {
+			klog.V(2).Infof("finding capacity based on SKU %s for location %s", amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
+			lustreSkuValue, err = d.getSkuValuesForLocation(ctx, amlFilesystemProperties.SKUName, amlFilesystemProperties.Location)
+			if err != nil {
+				return nil, err
+			}
+			if lustreSkuValue != nil {
+				blockSizeInBytes = lustreSkuValue.IncrementInTib * util.TiB
+				maxCapacityInBytes = lustreSkuValue.MaximumInTib * util.TiB
+				availableZones = lustreSkuValue.AvailableZones
+			}
+		} else {
+			capacityInBytes = filesystem.CapacityBytes
 		}
 	}
 
-	capacityInBytes, err = d.roundToAmlfsBlockSize(capacityInBytes, blockSizeInBytes, maxCapacityInBytes)
-	if err != nil {
-		klog.Errorf("failed to round capacity: %v", err)
-		return nil, err
+	if filesystem == nil {
+		capacityInBytes, err = d.roundToAmlfsBlockSize(capacityInBytes, blockSizeInBytes, maxCapacityInBytes)
+		if err != nil {
+			klog.Errorf("failed to round capacity: %v", err)
+			return nil, err
+		}
 	}
 	klog.V(2).Infof("capacity (in bytes) after rounding to next cluster increment: %#v", capacityInBytes)
 
@@ -369,7 +400,7 @@ func (d *Driver) CreateVolume(
 			capacityInBytes, capacityRange.GetLimitBytes())
 	}
 
-	if shouldCreateAmlfsCluster {
+	if shouldCreateAmlfsCluster && filesystem == nil {
 		amlFilesystemProperties.StorageCapacityTiB = storageCapacityTib
 
 		if len(availableZones) > 0 {
@@ -401,29 +432,33 @@ func (d *Driver) CreateVolume(
 			}
 		}
 
-		if !isValidVolumeName(volName) {
-			return nil, status.Errorf(codes.InvalidArgument,
-				"CreateVolume invalid volume name %s, cannot create valid AMLFS name. Check length and characters",
-				volName)
-		}
-		amlFilesystemProperties.AmlFilesystemName = volName
-
-		klog.V(2).Infof(
-			"beginning to create AMLFS cluster (%s): %#v", amlFilesystemProperties.AmlFilesystemName,
-			amlFilesystemProperties,
-		)
-
-		mgsIPAddress, err = d.dynamicProvisioner.CreateAmlFilesystem(ctx, amlFilesystemProperties)
-		if err != nil {
-			errCode := status.Code(err)
-			if errCode == codes.Unknown {
-				klog.Errorf("unknown error occurred when creating AMLFS %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
-				return nil, status.Error(codes.Unknown, err.Error())
+		if !failedCreate {
+			if err := d.dynamicProvisioner.ValidateSubnetCapacity(ctx, amlFilesystemProperties); err != nil {
+				return nil, err
 			}
-			klog.Errorf("error when creating AMLFS %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
-			return nil, status.Errorf(errCode, "CreateVolume error when creating AMLFS %s: %v", amlFilesystemProperties.AmlFilesystemName, err)
 		}
+	}
 
+	if shouldCreateAmlfsCluster {
+		if filesystem == nil {
+			klog.V(2).Infof("beginning to create AMLFS cluster (%s)", volName)
+			filesystem, err = d.dynamicProvisioner.CreateAmlFilesystem(ctx, amlFilesystemProperties)
+			if err != nil {
+				klog.Errorf("error when creating AMLFS %s: %v", volName, err)
+				return nil, status.Errorf(status.Code(err), "CreateVolume error when creating AMLFS %s: %v", volName, err)
+			}
+		}
+		if filesystem == nil {
+			return nil, status.Error(codes.Unavailable, "AMLFS returned no filesystem")
+		}
+		address, addressErr := netip.ParseAddr(filesystem.MGSAddress)
+		if addressErr != nil || !address.Is4() || filesystem.CapacityBytes <= 0 ||
+			filesystem.CapacityBytes < capacityRange.GetRequiredBytes() ||
+			(capacityRange.GetLimitBytes() > 0 && filesystem.CapacityBytes > capacityRange.GetLimitBytes()) {
+			return nil, status.Error(codes.Unavailable, "AMLFS returned invalid MGS address or capacity")
+		}
+		mgsIPAddress = address.String()
+		capacityInBytes = filesystem.CapacityBytes
 		util.SetKeyValueInMap(parameters, VolumeContextResourceGroupName, amlFilesystemProperties.ResourceGroupName)
 		util.SetKeyValueInMap(parameters, VolumeContextMGSIPAddress, mgsIPAddress)
 		util.SetKeyValueInMap(parameters, VolumeContextFSName, DefaultLustreFsName)
@@ -437,9 +472,7 @@ func (d *Driver) CreateVolume(
 	}
 
 	klog.V(2).Infof("created volumeID(%s) successfully", volumeID)
-
 	isOperationSucceeded = true
-
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeID,
