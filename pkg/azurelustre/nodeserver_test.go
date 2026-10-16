@@ -19,6 +19,7 @@ package azurelustre
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -748,6 +749,74 @@ func TestNodePublishReusesExistingMountWithoutProbingOrRemounting(t *testing.T) 
 	assert.False(t, probeCalled, "idempotent publish of an existing mount must not depend on a new network probe")
 	assert.Empty(t, mounter.GetLog(), "the existing mount must not be remounted")
 	assert.Equal(t, []mount.MountPoint{existing}, mounter.MountPoints)
+}
+
+func TestNodePublishVolumeUsesContextWhenIDDiffers(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		id   string
+	}{
+		{name: "ID has no subdirectory", id: "volume#lustrefs#127.0.0.1##f#context-group"},
+		{name: "ID has a different subdirectory", id: "volume#lustrefs#127.0.0.1#old/path#f#context-group"},
+		{name: "ID has a different MGS address", id: "volume#lustrefs#127.0.0.2#context/path#f#context-group"},
+		{name: "ID has different deletion metadata", id: "volume#lustrefs#127.0.0.1#context/path#t#stored-group"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			driver, mounter, backingDirectory := newNodeMountTestDriver(t)
+			target := filepath.Join(t.TempDir(), "target")
+			parameters := map[string]string{
+				VolumeContextMGSIPAddress:               "127.0.0.1",
+				VolumeContextSubDir:                     "context/path",
+				VolumeContextResourceGroupName:          "context-group",
+				VolumeContextInternalDynamicallyCreated: "f",
+			}
+			request := &csi.NodePublishVolumeRequest{
+				VolumeId:      testCase.id,
+				TargetPath:    target,
+				VolumeContext: maps.Clone(parameters),
+				VolumeCapability: &csi.VolumeCapability{
+					AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+					AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+				},
+			}
+
+			volume, err := getVolume(request.GetVolumeId(), request.GetVolumeContext())
+
+			require.NoError(t, err)
+			assert.Equal(t, &lustreVolume{
+				id:                testCase.id,
+				name:              "volume",
+				azureLustreName:   DefaultLustreFsName,
+				mgsIPAddress:      "127.0.0.1",
+				subDir:            "context/path",
+				resourceGroupName: "context-group",
+			}, volume, "context controls the mount without rewriting the opaque volume ID")
+
+			response, err := driver.NodePublishVolume(t.Context(), request)
+
+			require.NoError(t, err)
+			assert.NotNil(t, response)
+			internalTarget, err := getInternalMountPath(driver.workingMountDir, target)
+			require.NoError(t, err)
+			assert.Equal(t, []mount.FakeAction{
+				{Action: "mount", Target: internalTarget, Source: "127.0.0.1@tcp:/lustrefs", FSType: "lustre"},
+				{Action: "unmount", Target: internalTarget},
+				{Action: "mount", Target: target, Source: "127.0.0.1@tcp:/lustrefs/context/path", FSType: "lustre"},
+			}, mounter.GetLog())
+			require.Len(t, mounter.MountPoints, 1)
+			assert.Equal(t, "127.0.0.1@tcp:/lustrefs/context/path", mounter.MountPoints[0].Device)
+			assert.DirExists(t, filepath.Join(backingDirectory, "0", "context", "path"))
+			assert.NoDirExists(t, filepath.Join(backingDirectory, "0", "old"))
+			assert.Equal(t, testCase.id, request.GetVolumeId())
+			assert.Equal(t, parameters, request.GetVolumeContext())
+
+			_, err = driver.NodeUnpublishVolume(t.Context(), &csi.NodeUnpublishVolumeRequest{VolumeId: testCase.id, TargetPath: target})
+
+			require.NoError(t, err)
+			assert.Empty(t, mounter.MountPoints)
+			assert.DirExists(t, filepath.Join(backingDirectory, "0", "context", "path"), "unpublishing must preserve the created directory")
+		})
+	}
 }
 
 func TestNodePublishVolume(t *testing.T) {

@@ -252,8 +252,14 @@ func getVolume(volumeID string, context map[string]string) (*lustreVolume, error
 		return nil, err
 	}
 
-	if volFromID != nil && *volFromID != *vol {
-		klog.Warningf("volume context does not match values in volume ID for volumeID %v", volumeID)
+	if volFromID != nil {
+		identityFromID := *volFromID
+		if identityFromID.subDir == "" {
+			identityFromID.subDir = vol.subDir
+		}
+		if identityFromID != *vol {
+			klog.Warningf("volume context does not match identity in volume ID for volumeID %v", volumeID)
+		}
 	}
 
 	return vol, nil

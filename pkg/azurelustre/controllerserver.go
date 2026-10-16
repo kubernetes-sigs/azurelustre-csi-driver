@@ -272,10 +272,13 @@ func (d *Driver) CreateVolume(
 		return nil, err
 	}
 
-	parameters := req.GetParameters()
+	parameters := maps.Clone(req.GetParameters())
 	if parameters == nil {
 		return nil, status.Error(codes.InvalidArgument,
 			"CreateVolume Parameters must be provided")
+	}
+	if _, err := createVolumeIDFromParams(volName, parameters); err != nil {
+		return nil, err
 	}
 
 	shouldCreateAmlfsCluster := false
@@ -296,6 +299,9 @@ func (d *Driver) CreateVolume(
 		if len(amlFilesystemProperties.ResourceGroupName) == 0 {
 			amlFilesystemProperties.ResourceGroupName = d.resourceGroup
 		}
+		if err := validateVolumeIDField(VolumeContextResourceGroupName, amlFilesystemProperties.ResourceGroupName); err != nil {
+			return nil, err
+		}
 		lockKey = amlFilesystemLockKey(d.cloud.SubscriptionID, amlFilesystemProperties.ResourceGroupName, volName)
 	}
 	if acquired := d.volumeLocks.TryAcquire(lockKey); !acquired {
@@ -311,7 +317,6 @@ func (d *Driver) CreateVolume(
 	}()
 
 	capacityRange := req.GetCapacityRange()
-
 	capacityInBytes := capacityRange.GetRequiredBytes()
 	if capacityInBytes == 0 {
 		capacityInBytes = defaultSizeInBytes
@@ -645,13 +650,29 @@ func (d *Driver) ControllerGetCapabilities(
 	}, nil
 }
 
+func validateVolumeIDField(name, value string) error {
+	if strings.ContainsAny(value, separator+"\x00") {
+		return status.Errorf(codes.InvalidArgument, "CreateVolume %s contains a reserved volume ID character", name)
+	}
+	return nil
+}
+
 // Convert VolumeCreate parameters to a volume id
 func createVolumeIDFromParams(volName string, params map[string]string) (string, error) {
+	if err := validateVolumeIDField("name", volName); err != nil {
+		return "", err
+	}
 	var mgsIPAddress, createdByDynamicProvisioningStringValue, resourceGroupName, subDir string
 
 	// validate parameters (case-insensitive).
 	for k, v := range params {
-		switch strings.ToLower(k) {
+		key := strings.ToLower(k)
+		if key == VolumeContextMGSIPAddress || key == VolumeContextResourceGroupName {
+			if err := validateVolumeIDField(key, v); err != nil {
+				return "", err
+			}
+		}
+		switch key {
 		case VolumeContextMGSIPAddress:
 			mgsIPAddress = v
 		case VolumeContextInternalDynamicallyCreated:
@@ -659,14 +680,15 @@ func createVolumeIDFromParams(volName string, params map[string]string) (string,
 		case VolumeContextResourceGroupName:
 			resourceGroupName = v
 		case VolumeContextSubDir:
-			subDir = v
-			subDir = strings.Trim(subDir, "/")
-
+			subDir = strings.Trim(v, "/")
 			if len(subDir) == 0 {
 				return "", status.Error(
 					codes.InvalidArgument,
 					"CreateVolume Parameter sub-dir must not be empty if provided",
 				)
+			}
+			if strings.Contains(subDir, separator) {
+				return "", status.Error(codes.InvalidArgument, "CreateVolume Parameter sub-dir must not contain '#'")
 			}
 		}
 	}
