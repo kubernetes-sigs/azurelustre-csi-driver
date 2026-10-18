@@ -48,9 +48,9 @@ func TestControllerGetCapabilities(t *testing.T) {
 		capabilitiesSupported = append(capabilitiesSupported, capabilitySupported.GetRpc().GetType())
 	}
 	slices.Sort(capabilitiesSupported)
-	capabilitiesWanted := controllerServiceCapabilities
-	slices.Sort(capabilitiesWanted)
-	assert.Equal(t, capabilitiesWanted, capabilitiesSupported)
+	expectedCapabilities := controllerServiceCapabilities
+	slices.Sort(expectedCapabilities)
+	assert.Equal(t, expectedCapabilities, capabilitiesSupported)
 }
 
 func buildCreateVolumeRequest() *csi.CreateVolumeRequest {

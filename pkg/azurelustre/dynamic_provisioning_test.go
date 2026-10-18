@@ -47,12 +47,17 @@ type mockAmlfsRecorder struct {
 	recordedAmlfsConfigurations map[string]armstoragecache.AmlFilesystem
 	failureBehaviors            []string
 	fakeCallCount               []string
+	subnetUsageError            error
 	createResponse              *armstoragecache.AmlFilesystem
 	subnetUsageResponse         *armnetwork.VirtualNetworkListUsageResult
 	skuResponse                 *armstoragecache.ResourceSKUsResult
 	getError                    error
 	deleteError                 error
 	deletePollingError          *azcore.ResponseError
+	skuError                    error
+	subnetSizeError             error
+	createError                 error
+	createPollingError          *azcore.ResponseError
 }
 
 const (
@@ -242,6 +247,10 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 	fakeSkusServer.NewListPager = func(_ *armstoragecache.SKUsClientListOptions) azfake.PagerResponder[armstoragecache.SKUsClientListResponse] {
 		recorder.recordFakeCall()
 		resp := azfake.PagerResponder[armstoragecache.SKUsClientListResponse]{}
+		if recorder.skuError != nil {
+			resp.AddError(recorder.skuError)
+			return resp
+		}
 		if recorder.skuResponse != nil {
 			resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
 				ResourceSKUsResult: *recorder.skuResponse,
@@ -369,11 +378,18 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 
 func newFakeVnetClient(t *testing.T, recorder *mockAmlfsRecorder) *armnetwork.VirtualNetworksClient {
 	t.Helper()
+	transport := networkfake.NewVirtualNetworksServerTransport(newFakeVnetServer(t, recorder))
 	vnetClientFactory, err := armnetwork.NewClientFactory(
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
-				Transport: networkfake.NewVirtualNetworksServerTransport(newFakeVnetServer(t, recorder)),
+				Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+					if recorder.subnetUsageError != nil {
+						// Pager errors are consumed; repeat the configured failure on each new request.
+						return networkfake.NewVirtualNetworksServerTransport(newFakeVnetServer(t, recorder)).Do(request)
+					}
+					return transport.Do(request)
+				}),
 			},
 		},
 	)
@@ -392,6 +408,11 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 	fakeVnetServer.NewListUsagePager = func(_, vnetName string, _ *armnetwork.VirtualNetworksClientListUsageOptions) azfake.PagerResponder[armnetwork.VirtualNetworksClientListUsageResponse] {
 		recorder.recordFakeCall()
 		resp := azfake.PagerResponder[armnetwork.VirtualNetworksClientListUsageResponse]{}
+
+		if recorder.subnetUsageError != nil {
+			resp.AddError(recorder.subnetUsageError)
+			return resp
+		}
 
 		if recorder.subnetUsageResponse != nil {
 			resp.AddPage(http.StatusOK, armnetwork.VirtualNetworksClientListUsageResponse{
@@ -491,6 +512,10 @@ func newFakeManagementServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.Ma
 		recorder.recordFakeCall()
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.Responder[armstoragecache.ManagementClientGetRequiredAmlFSSubnetsSizeResponse]{}
+		if recorder.subnetSizeError != nil {
+			errResp.SetError(recorder.subnetSizeError)
+			return resp, errResp
+		}
 		if *options.RequiredAMLFilesystemSubnetsSizeInfo.SKU.Name == invalidSku {
 			errResp.SetError(errors.New("fake invalid sku error"))
 			return resp, errResp
@@ -627,6 +652,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.PollerResponder[armstoragecache.AmlFilesystemsClientCreateOrUpdateResponse]{}
+		if recorder.createError != nil {
+			errResp.SetError(recorder.createError)
+			return resp, errResp
+		}
 		if amlFilesystemName == immediateCreateFailureName {
 			errResp.SetError(&azcore.ResponseError{StatusCode: http.StatusBadGateway})
 			return resp, errResp
@@ -650,6 +679,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		resp.AddNonTerminalResponse(http.StatusCreated, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
+		if recorder.createPollingError != nil {
+			resp.SetTerminalError(recorder.createPollingError.StatusCode, recorder.createPollingError.ErrorCode)
+			return resp, errResp
+		}
 		if amlFilesystemName == eventualCreateFailureName {
 			resp.SetTerminalError(http.StatusRequestTimeout, eventualCreateFailureName)
 			return resp, errResp

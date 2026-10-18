@@ -18,9 +18,15 @@ package azurelustre
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azfake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -162,4 +168,329 @@ func TestCreateVolume_SKUDiscoveryFailurePreservesCreateError(t *testing.T) {
 	assert.Nil(t, response)
 	assert.Equal(t, map[string]int{"GetSkuValuesForLocation": 1, "CreateAmlFilesystem": 1}, provisioner.fakeCallCount)
 	assert.Empty(t, provisioner.Filesystems)
+}
+
+func TestCreateVolume_OptionalMetadataPermissionCombinationsReachARM(t *testing.T) {
+	tests := []struct {
+		name          string
+		skuAllowed    bool
+		sizingAllowed bool
+		usageAllowed  bool
+	}{
+		{name: "no optional permissions"},
+		{name: "only SKU lookup allowed", skuAllowed: true},
+		{name: "only subnet sizing allowed", sizingAllowed: true},
+		{name: "only subnet usage allowed", usageAllowed: true},
+		{name: "SKU and sizing allowed but usage denied", skuAllowed: true, sizingAllowed: true},
+		{name: "SKU and usage allowed but sizing denied", skuAllowed: true, usageAllowed: true},
+		{name: "sizing and usage allowed but SKU denied", sizingAllowed: true, usageAllowed: true},
+		{name: "all optional permissions", skuAllowed: true, sizingAllowed: true, usageAllowed: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			if !tc.skuAllowed {
+				recorder.skuError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+			}
+			if !tc.sizingAllowed {
+				recorder.subnetSizeError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+			}
+			if !tc.usageAllowed {
+				recorder.subnetUsageError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+			}
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{Value: []*armnetwork.VirtualNetworkUsage{{
+				ID:           new("/subscriptions/fake-subscription-id/resourceGroups/fake-resource-group/providers/Microsoft.Network/virtualNetworks/fake-vnet/subnets/fake-subnet-name"),
+				CurrentValue: new(float64(expectedUsedIPCount)),
+				Limit:        new(float64(expectedTotalIPCount)),
+			}}}
+			driver := NewFakeDriver(t)
+			driver.cloud.SubscriptionID = "fake-subscription-id"
+			driver.dynamicProvisioner = newTestDynamicProvisioner(t, recorder)
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Name = expectedAmlFilesystemName
+			request.Parameters[VolumeContextResourceGroupName] = expectedResourceGroupName
+			request.Parameters[VolumeContextLocation] = expectedLocation
+			request.Parameters[VolumeContextSkuName] = expectedSku
+			request.Parameters[VolumeContextVnetResourceGroup] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetName] = expectedVnetName
+			request.Parameters[VolumeContextSubnetName] = expectedAmlFilesystemSubnetName
+			request.Parameters[VolumeContextZone] = "zone1"
+			request.CapacityRange = &csi.CapacityRange{RequiredBytes: 48 * util.TiB}
+
+			response, err := driver.CreateVolume(t.Context(), request)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(48*util.TiB), response.GetVolume().GetCapacityBytes())
+			assert.Equal(t, expectedMgsAddress, response.GetVolume().GetVolumeContext()[VolumeContextMGSIPAddress])
+			require.Len(t, recorder.recordedAmlfsConfigurations, 1)
+			require.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName)
+			created := recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName]
+			require.NotNil(t, created.SKU)
+			require.NotNil(t, created.SKU.Name)
+			assert.Equal(t, expectedSku, *created.SKU.Name)
+			require.Len(t, created.Zones, 1)
+			assert.Equal(t, "zone1", *created.Zones[0])
+			require.NotNil(t, created.Properties)
+			require.NotNil(t, created.Properties.StorageCapacityTiB)
+			assert.InDelta(t, 48, *created.Properties.StorageCapacityTiB, 0)
+			assert.Contains(t, recorder.fakeCallCount, "SKUsServerTransport.NewListPager")
+			assert.Contains(t, recorder.fakeCallCount, "ManagementServerTransport.GetRequiredAmlFSSubnetsSize")
+			assert.Contains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginCreateOrUpdate")
+			if tc.sizingAllowed {
+				assert.Contains(t, recorder.fakeCallCount, "VirtualNetworksServerTransport.NewListUsagePager")
+			} else {
+				assert.NotContains(t, recorder.fakeCallCount, "VirtualNetworksServerTransport.NewListUsagePager")
+			}
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginDelete")
+		})
+	}
+}
+
+func TestDynamicProvisioner_SubnetUsagePermissionFallbackOnRepeatedChecks(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	recorder.subnetUsageError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	for check := range 2 {
+		allowed, err := provisioner.CheckSubnetCapacity(t.Context(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+
+		require.NoError(t, err, "subnet capacity check %d", check+1)
+		assert.True(t, allowed, "subnet capacity check %d", check+1)
+	}
+	assert.Equal(t, []string{
+		"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+		"VirtualNetworksServerTransport.NewListUsagePager",
+		"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+		"VirtualNetworksServerTransport.NewListUsagePager",
+	}, recorder.fakeCallCount)
+}
+
+func TestDynamicProvisioner_SubnetPermissionFallbackPreservesCreateErrors(t *testing.T) {
+	tests := []struct {
+		name            string
+		createError     error
+		pollingError    *azcore.ResponseError
+		expectedCode    codes.Code
+		expectedMessage string
+	}{
+		{
+			name:            "ARM rejects an unavailable SKU during submission",
+			createError:     &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "SkuNotAvailable"},
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "SkuNotAvailable",
+		},
+		{
+			name:            "ARM rejects capacity while polling the accepted creation",
+			pollingError:    &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "InvalidStorageCapacity"},
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "InvalidStorageCapacity",
+		},
+		{
+			name:            "missing resource group creation permission is still an error",
+			createError:     &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"},
+			expectedCode:    codes.PermissionDenied,
+			expectedMessage: "required RBAC role assignments",
+		},
+	}
+	for _, tc := range tests {
+		for _, deniedCheck := range []string{"sizing", "usage"} {
+			t.Run(tc.name+"/"+deniedCheck+" permission denied", func(t *testing.T) {
+				recorder := newMockAmlfsRecorder(nil)
+				expectedCalls := []string{
+					"AmlFilesystemsServerTransport.Get",
+					"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+				}
+				if deniedCheck == "sizing" {
+					recorder.subnetSizeError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+				} else {
+					recorder.subnetUsageError = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}
+					expectedCalls = append(expectedCalls, "VirtualNetworksServerTransport.NewListUsagePager")
+				}
+				recorder.createError = tc.createError
+				recorder.createPollingError = tc.pollingError
+				provisioner := newTestDynamicProvisioner(t, recorder)
+				properties := &AmlFilesystemProperties{
+					ResourceGroupName:    expectedResourceGroupName,
+					AmlFilesystemName:    expectedAmlFilesystemName,
+					Location:             expectedLocation,
+					SKUName:              expectedSku,
+					StorageCapacityTiB:   expectedClusterSize,
+					SubnetInfo:           buildExpectedSubnetInfo(),
+					MaintenanceDayOfWeek: "Saturday",
+					TimeOfDayUTC:         "12:00",
+				}
+
+				result, err := provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+				require.ErrorContains(t, err, tc.expectedMessage)
+				assert.Equal(t, tc.expectedCode, status.Code(err))
+				assert.Empty(t, result)
+				expectedCalls = append(expectedCalls, "AmlFilesystemsServerTransport.BeginCreateOrUpdate")
+				assert.Equal(t, expectedCalls, recorder.fakeCallCount,
+					"a service rejection must not cause a delete or an automatic second create")
+			})
+		}
+	}
+}
+
+func TestCreateVolume_SubnetCapacityFailuresStillBlockCreation(t *testing.T) {
+	tests := []struct {
+		name         string
+		usageError   error
+		usedIPs      float64
+		expectedCode codes.Code
+	}{
+		{
+			name:         "usage service unavailable",
+			usageError:   &azcore.ResponseError{StatusCode: http.StatusServiceUnavailable, ErrorCode: "ServiceUnavailable"},
+			expectedCode: codes.Unavailable,
+		},
+		{
+			name:         "usage authentication failure",
+			usageError:   &azcore.ResponseError{StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed"},
+			expectedCode: codes.Unauthenticated,
+		},
+		{
+			name:         "usage request rejected",
+			usageError:   &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "InvalidRequest"},
+			expectedCode: codes.InvalidArgument,
+		},
+		{
+			name:         "known insufficient subnet capacity",
+			usedIPs:      expectedTotalIPCount,
+			expectedCode: codes.ResourceExhausted,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.subnetUsageError = tc.usageError
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{Value: []*armnetwork.VirtualNetworkUsage{{
+				ID:           new("/subscriptions/fake-subscription-id/resourceGroups/fake-resource-group/providers/Microsoft.Network/virtualNetworks/fake-vnet/subnets/fake-subnet-name"),
+				CurrentValue: new(tc.usedIPs),
+				Limit:        new(float64(expectedTotalIPCount)),
+			}}}
+			driver := NewFakeDriver(t)
+			driver.cloud.SubscriptionID = "fake-subscription-id"
+			driver.dynamicProvisioner = newTestDynamicProvisioner(t, recorder)
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Name = expectedAmlFilesystemName
+			request.Parameters[VolumeContextResourceGroupName] = expectedResourceGroupName
+			request.Parameters[VolumeContextLocation] = expectedLocation
+			request.Parameters[VolumeContextSkuName] = expectedSku
+			request.Parameters[VolumeContextVnetResourceGroup] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetName] = expectedVnetName
+			request.Parameters[VolumeContextSubnetName] = expectedAmlFilesystemSubnetName
+			request.Parameters[VolumeContextZone] = "zone1"
+			request.CapacityRange = &csi.CapacityRange{RequiredBytes: 48 * util.TiB}
+
+			response, err := driver.CreateVolume(t.Context(), request)
+
+			require.Error(t, err)
+			assert.Equal(t, tc.expectedCode, status.Code(err))
+			assert.Nil(t, response)
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.Contains(t, recorder.fakeCallCount, "ManagementServerTransport.GetRequiredAmlFSSubnetsSize")
+			assert.Contains(t, recorder.fakeCallCount, "VirtualNetworksServerTransport.NewListUsagePager")
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginCreateOrUpdate")
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginDelete")
+		})
+	}
+}
+
+func TestDynamicProvisioner_SubnetSizingOnlySkipsPermissionDenial(t *testing.T) {
+	tests := []struct {
+		name         string
+		apiError     *azcore.ResponseError
+		expectedCode codes.Code
+	}{
+		{
+			name:         "sizing API rejects the SKU",
+			apiError:     &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "InvalidSku"},
+			expectedCode: codes.InvalidArgument,
+		},
+		{
+			name:         "sizing service is temporarily unavailable",
+			apiError:     &azcore.ResponseError{StatusCode: http.StatusServiceUnavailable, ErrorCode: "ServiceUnavailable"},
+			expectedCode: codes.Unavailable,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.subnetSizeError = tc.apiError
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			allowed, err := provisioner.CheckSubnetCapacity(t.Context(), buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+
+			require.ErrorContains(t, err, tc.apiError.ErrorCode)
+			assert.Equal(t, tc.expectedCode, status.Code(err))
+			assert.False(t, allowed)
+			assert.Equal(t, []string{"ManagementServerTransport.GetRequiredAmlFSSubnetsSize"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+type subnetCapacityTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f subnetCapacityTransportFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestDynamicProvisioner_SubnetSizingHonorsCancellationDuringRequest(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	provisioner := newTestDynamicProvisioner(t, recorder)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	requests := 0
+	clientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+				requests++
+				assert.Contains(t, request.URL.Path, "/getRequiredAmlFSSubnetsSize")
+				cancel()
+				return nil, request.Context().Err()
+			}),
+		},
+	})
+	require.NoError(t, err)
+	provisioner.mgmtClient = clientFactory.NewManagementClient()
+
+	allowed, err := provisioner.CheckSubnetCapacity(ctx, buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+
+	require.Error(t, err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	assert.Equal(t, codes.Canceled, status.Code(err))
+	assert.False(t, allowed)
+	assert.Equal(t, 1, requests, "the caller cancels during the sizing request, before any subnet-usage request")
+	assert.NotContains(t, recorder.fakeCallCount, "VirtualNetworksServerTransport.NewListUsagePager")
+}
+
+func TestDynamicProvisioner_SubnetUsageHonorsCancellationDuringRequest(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	provisioner := newTestDynamicProvisioner(t, recorder)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	requests := 0
+	clientFactory, err := armnetwork.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+				requests++
+				assert.Contains(t, request.URL.Path, "/usages")
+				cancel()
+				return nil, request.Context().Err()
+			}),
+		},
+	})
+	require.NoError(t, err)
+	provisioner.vnetClient = clientFactory.NewVirtualNetworksClient()
+
+	allowed, err := provisioner.CheckSubnetCapacity(ctx, buildExpectedSubnetInfo(), expectedSku, expectedClusterSize)
+
+	require.Error(t, err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	assert.Equal(t, codes.Canceled, status.Code(err))
+	assert.False(t, allowed)
+	assert.Equal(t, 1, requests, "cancellation during the usage request must not take the permission fallback")
+	assert.Equal(t, []string{"ManagementServerTransport.GetRequiredAmlFSSubnetsSize"}, recorder.fakeCallCount)
 }

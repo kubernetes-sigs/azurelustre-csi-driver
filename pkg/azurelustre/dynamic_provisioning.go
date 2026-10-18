@@ -479,7 +479,6 @@ func (d *DynamicProvisioner) getAmlfsSubnetSize(ctx context.Context, sku string,
 		},
 	})
 	if err != nil {
-		klog.Errorf("failed to get required AMLFS subnet size for SKU: %s, cluster size: %f, error: %v", sku, clusterSize, err)
 		return 0, convertHTTPResponseErrorToGrpcCodeError(err)
 	}
 	if reqSize.FilesystemSubnetSize == nil {
@@ -498,7 +497,6 @@ func (d *DynamicProvisioner) checkSubnetAddresses(ctx context.Context, vnetResou
 	for usagesPager.More() {
 		page, err := usagesPager.NextPage(ctx)
 		if err != nil {
-			klog.Errorf("error getting next page: %v", err)
 			return 0, convertHTTPResponseErrorToGrpcCodeError(err)
 		}
 
@@ -530,14 +528,20 @@ func (d *DynamicProvisioner) checkSubnetAddresses(ctx context.Context, vnetResou
 
 func (d *DynamicProvisioner) CheckSubnetCapacity(ctx context.Context, subnetInfo SubnetProperties, sku string, clusterSize float32) (bool, error) {
 	requiredSubnetIPSize, err := d.getAmlfsSubnetSize(ctx, sku, clusterSize)
-	if err != nil {
-		klog.Errorf("error getting required subnet size: %v", err)
-		return false, convertHTTPResponseErrorToGrpcCodeError(err)
+	var availableIPs int
+	if err == nil {
+		availableIPs, err = d.checkSubnetAddresses(ctx, subnetInfo.VnetResourceGroup, subnetInfo.VnetName, subnetInfo.SubnetID)
 	}
-
-	availableIPs, err := d.checkSubnetAddresses(ctx, subnetInfo.VnetResourceGroup, subnetInfo.VnetName, subnetInfo.SubnetID)
 	if err != nil {
-		klog.Errorf("error getting available IPs: %v", err)
+		if ctx.Err() != nil {
+			return false, status.FromContextError(ctx.Err()).Err()
+		}
+		// ARM also validates subnet capacity during creation.
+		if status.Code(err) == codes.PermissionDenied {
+			klog.Warningf("cannot check subnet capacity for %s: %v; continuing creation and deferring subnet capacity validation to ARM", subnetInfo.SubnetID, err)
+			return true, nil
+		}
+		klog.Errorf("error checking subnet capacity for %s: %v", subnetInfo.SubnetID, err)
 		return false, convertHTTPResponseErrorToGrpcCodeError(err)
 	}
 

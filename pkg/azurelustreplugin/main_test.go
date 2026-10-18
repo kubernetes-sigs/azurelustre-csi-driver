@@ -53,10 +53,10 @@ func TestInitKlogFlags(t *testing.T) {
 		"stderrthreshold": "0",
 	}
 
-	for name, want := range expectedFlags {
+	for name, expectedFlag := range expectedFlags {
 		f := fs.Lookup(name)
 		require.NotNilf(t, f, "flag %q not found", name)
-		assert.Equalf(t, want, f.Value.String(), "flag %q", name)
+		assert.Equalf(t, expectedFlag, f.Value.String(), "flag %q", name)
 	}
 }
 
