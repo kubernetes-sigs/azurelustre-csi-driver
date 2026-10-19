@@ -211,14 +211,7 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 
 	az := &azure.Cloud{}
 
-	credFile, ok := os.LookupEnv(DefaultAzureConfigFileEnv)
-	if ok && strings.TrimSpace(credFile) != "" {
-		klog.V(2).Infof("%s env var set as %v", DefaultAzureConfigFileEnv, credFile)
-	} else {
-		credFile = DefaultConfigFilePathLinux
-		klog.V(2).Infof("use default %s env var: %v", DefaultAzureConfigFileEnv, credFile)
-	}
-
+	credFile := azureConfigFilePath()
 	config, err := configloader.Load[azureconfig.Config](ctx, nil, &configloader.FileLoaderConfig{
 		FilePath: credFile,
 	})
@@ -271,6 +264,17 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 	}
 
 	return &d, nil
+}
+
+func azureConfigFilePath() string {
+	credFile, ok := os.LookupEnv(DefaultAzureConfigFileEnv)
+	if ok && strings.TrimSpace(credFile) != "" {
+		klog.V(2).Infof("%s env var set as %v", DefaultAzureConfigFileEnv, credFile)
+	} else {
+		credFile = DefaultConfigFilePathLinux
+		klog.V(2).Infof("use default %s env var: %v", DefaultAzureConfigFileEnv, credFile)
+	}
+	return credFile
 }
 
 // resolveControllerIdentity settles which identity the ARM clients authenticate with.

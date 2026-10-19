@@ -65,6 +65,7 @@ const (
 
 func NewFakeDriver(t *testing.T) *Driver {
 	t.Helper()
+	t.Setenv(DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing-azure.json"))
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
 		DriverName:                   fakeDriverName,
@@ -182,6 +183,29 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 		"AMLFS-Durable-Premium-250": {IncrementInTib: 8, MaximumInTib: 128, AvailableZones: []string{"zone1", "zone2", "zone3"}},
 		"AMLFS-Durable-Premium-500": {IncrementInTib: 4, MaximumInTib: 128, AvailableZones: []string{"zone1", "zone2", "zone3"}},
 	}, nil
+}
+
+func TestAzureConfigFilePath(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		value        string
+		unset        bool
+		expectedPath string
+	}{
+		{name: "unset uses default", unset: true, expectedPath: DefaultConfigFilePathLinux},
+		{name: "empty uses default", value: "", expectedPath: DefaultConfigFilePathLinux},
+		{name: "whitespace only uses default", value: " \t\n ", expectedPath: DefaultConfigFilePathLinux},
+		{name: "explicit path is selected", value: "/test/custom-azure.json", expectedPath: "/test/custom-azure.json"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(DefaultAzureConfigFileEnv, test.value)
+			if test.unset {
+				require.NoError(t, os.Unsetenv(DefaultAzureConfigFileEnv))
+			}
+
+			assert.Equal(t, test.expectedPath, azureConfigFilePath())
+		})
+	}
 }
 
 func TestNewDriver(t *testing.T) {
