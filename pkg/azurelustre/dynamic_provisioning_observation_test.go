@@ -412,15 +412,18 @@ func TestDynamicProvisioner_GetAmlFilesystem_LookupErrorsAreNotAbsence(t *testin
 		err  error
 		code codes.Code
 	}{
-		{name: "untyped", err: errors.New("404 ResourceNotFound"), code: codes.Unknown},
-		{name: "untyped status", err: status.Error(codes.NotFound, "ResourceNotFound"), code: codes.NotFound},
+		{name: "untyped", err: errors.New("404 ResourceNotFound"), code: codes.Unavailable},
+		{name: "untyped status", err: status.Error(codes.NotFound, "ResourceNotFound"), code: codes.Unavailable},
 		{name: "wrong HTTP status", err: &azcore.ResponseError{StatusCode: http.StatusServiceUnavailable, ErrorCode: "ResourceNotFound"}, code: codes.Unavailable},
-		{name: "different 404", err: &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound"}, code: codes.NotFound},
-		{name: "empty code", err: &azcore.ResponseError{StatusCode: http.StatusNotFound}, code: codes.NotFound},
-		{name: "wrong case", err: &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "resourceNotFound"}, code: codes.NotFound},
+		{name: "different 404", err: &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound"}, code: codes.Unavailable},
+		{name: "empty code", err: &azcore.ResponseError{StatusCode: http.StatusNotFound}, code: codes.Unavailable},
+		{name: "wrong case", err: &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "resourceNotFound"}, code: codes.Unavailable},
+		{name: "expired authentication", err: &azcore.ResponseError{StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed"}, code: codes.Unavailable},
+		{name: "lost read permission", err: &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"}, code: codes.Unavailable},
+		{name: "conflicting operation prevents observation", err: &azcore.ResponseError{StatusCode: http.StatusConflict, ErrorCode: "OperationInProgress"}, code: codes.Unavailable},
 		{name: "canceled", err: fmt.Errorf("wrapped: %w", context.Canceled), code: codes.Canceled},
 		{name: "deadline", err: fmt.Errorf("wrapped: %w", context.DeadlineExceeded), code: codes.DeadlineExceeded},
-		{name: "transport", err: errors.New("connection reset"), code: codes.Unknown},
+		{name: "transport", err: errors.New("connection reset"), code: codes.Unavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := newMockAmlfsRecorder(nil)
@@ -429,8 +432,12 @@ func TestDynamicProvisioner_GetAmlFilesystem_LookupErrorsAreNotAbsence(t *testin
 			result, err := provisioner.GetAmlFilesystem(t.Context(), buildExpectedAmlFilesystemProperties(expectedAmlFilesystemName))
 			assert.Nil(t, result)
 			require.Error(t, err, "this error must not become the nil,nil absence result")
-			assert.Equal(t, test.code, status.Code(err), "lookup must retain %s; got %v", test.code, err)
+			assert.Equal(t, test.code, status.Code(err), "failed observation must remain retryable as %s; got %v", test.code, err)
 			require.ErrorContains(t, err, amlfsTestResourceID())
+			var responseError *azcore.ResponseError
+			if errors.As(test.err, &responseError) && responseError.ErrorCode != "" {
+				require.ErrorContains(t, err, responseError.ErrorCode, "the ARM diagnostic must survive retry classification")
+			}
 			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount)
 		})
 	}

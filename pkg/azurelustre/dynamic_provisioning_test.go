@@ -1435,7 +1435,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_RetryMustObserveAfterUncertainCr
 			require.Error(t, err)
 			grpcStatus, ok := status.FromError(err)
 			require.True(t, ok)
-			assert.Equal(t, codes.Internal, grpcStatus.Code())
+			assert.Equal(t, codes.Unavailable, grpcStatus.Code())
 			require.ErrorContains(t, err, "RetryLookupFailed")
 			expectedCreateCalls := []string{
 				"AmlFilesystemsServerTransport.Get",
@@ -1492,6 +1492,69 @@ func TestDynamicProvisioner_CreateAmlFilesystem_ReportsTheFailingAzureStage(t *t
 			submitError:     &azcore.ResponseError{StatusCode: http.StatusBadGateway, ErrorCode: "PutRejected"},
 			expectedCode:    codes.Unavailable,
 			expectedMessage: "PutRejected",
+			submitted:       true,
+		},
+		{
+			name:            "PUT submission returns HTTP RequestTimeout",
+			submitError:     &azcore.ResponseError{StatusCode: http.StatusRequestTimeout, ErrorCode: "RequestTimeout"},
+			expectedCode:    codes.DeadlineExceeded,
+			expectedMessage: "RequestTimeout",
+			submitted:       true,
+		},
+		{
+			name:            "fresh PUT definitively rejects the SKU",
+			submitError:     &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "SkuNotAvailable"},
+			expectedCode:    codes.InvalidArgument,
+			expectedMessage: "SkuNotAvailable",
+			submitted:       true,
+		},
+		{
+			name:            "fresh PUT definitively rejects authentication",
+			submitError:     &azcore.ResponseError{StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed"},
+			expectedCode:    codes.Unauthenticated,
+			expectedMessage: "AuthenticationFailed",
+			submitted:       true,
+		},
+		{
+			name:            "fresh PUT definitively denies creation permission",
+			submitError:     &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"},
+			expectedCode:    codes.PermissionDenied,
+			expectedMessage: "AuthorizationFailed",
+			submitted:       true,
+		},
+		{
+			name:            "accepted create poll loses authentication",
+			pollError:       &azcore.ResponseError{StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed"},
+			expectedCode:    codes.Unavailable,
+			expectedMessage: "AuthenticationFailed",
+			submitted:       true,
+		},
+		{
+			name:            "accepted create poll loses permission",
+			pollError:       &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed"},
+			expectedCode:    codes.Unavailable,
+			expectedMessage: "AuthorizationFailed",
+			submitted:       true,
+		},
+		{
+			name:            "accepted create poll reports a conflict",
+			pollError:       &azcore.ResponseError{StatusCode: http.StatusConflict, ErrorCode: "OperationInProgress"},
+			expectedCode:    codes.Unavailable,
+			expectedMessage: "OperationInProgress",
+			submitted:       true,
+		},
+		{
+			name:            "accepted create reports a terminal service rejection that still needs observation",
+			pollError:       &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "AllocationRejected"},
+			expectedCode:    codes.Unavailable,
+			expectedMessage: "AllocationRejected",
+			submitted:       true,
+		},
+		{
+			name:            "operation poll returns HTTP RequestTimeout",
+			pollError:       &azcore.ResponseError{StatusCode: http.StatusRequestTimeout, ErrorCode: "PollTimedOut"},
+			expectedCode:    codes.DeadlineExceeded,
+			expectedMessage: "PollTimedOut",
 			submitted:       true,
 		},
 	}
@@ -1881,9 +1944,9 @@ func TestDynamicProvisioner_CreateAmlFilesystem_RetryObservationErrors(t *testin
 		code       codes.Code
 	}{
 		{name: "verified absence", status: http.StatusNotFound, body: `{"error":{"code":"ResourceNotFound"}}`, code: codes.OK},
-		{name: "wrong 404", status: http.StatusNotFound, body: `{"error":{"code":"ResourceGroupNotFound"}}`, code: codes.NotFound},
-		{name: "forbidden", status: http.StatusForbidden, body: `{"error":{"code":"AuthorizationFailed"}}`, code: codes.PermissionDenied},
-		{name: "transport", err: errors.New("connection reset"), code: codes.Unknown},
+		{name: "wrong 404", status: http.StatusNotFound, body: `{"error":{"code":"ResourceGroupNotFound"}}`, code: codes.Unavailable},
+		{name: "forbidden", status: http.StatusForbidden, body: `{"error":{"code":"AuthorizationFailed"}}`, code: codes.Unavailable},
+		{name: "transport", err: errors.New("connection reset"), code: codes.Unavailable},
 		{name: "canceled", err: context.Canceled, code: codes.Canceled},
 		{name: "deadline", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
 	} {
@@ -1957,7 +2020,8 @@ func TestDynamicProvisioner_CreateAmlFilesystem_FailedDeletionNeverRecreates(t *
 	result, err = scenario.provisioner(t).CreateAmlFilesystem(t.Context(), buildExpectedAmlFilesystemProperties(expectedAmlFilesystemName))
 
 	assert.Nil(t, result)
-	assert.Equal(t, codes.NotFound, status.Code(err), "a missing delete operation is not confirmed backend deletion")
+	assert.Equal(t, codes.Unavailable, status.Code(err), "a missing delete operation leaves recovery unfinished")
+	require.ErrorContains(t, err, "ResourceNotFound")
 	assert.Len(t, scenario.calls, 6)
 
 	result, err = scenario.provisioner(t).CreateAmlFilesystem(t.Context(), buildExpectedAmlFilesystemProperties(expectedAmlFilesystemName))
@@ -2114,11 +2178,11 @@ func TestDynamicProvisioner_CreateAmlFilesystem_PollErrorsNeverAuthorizeDeletion
 	}{
 		{name: "poll transport reports cancellation", err: context.Canceled, code: codes.Canceled},
 		{name: "poll transport reports deadline exceeded", err: context.DeadlineExceeded, code: codes.DeadlineExceeded},
-		{name: "timeout message", err: errors.New("CreateTimeout: delete and try again"), code: codes.Unknown},
-		{name: "HTTP error with Failed text", status: http.StatusInternalServerError, body: `{"status":"Failed","error":{"code":"CreateTimeout"}}`, code: codes.Internal},
-		{name: "missing operation", status: http.StatusNotFound, body: `{"error":{"code":"ResourceNotFound"}}`, code: codes.NotFound},
-		{name: "canceled operation", status: http.StatusOK, body: `{"status":"Canceled","error":{"code":"Canceled"}}`, code: codes.Unknown},
-		{name: "malformed operation response", status: http.StatusOK, body: `{"status":`, code: codes.Unknown},
+		{name: "timeout message", err: errors.New("CreateTimeout: delete and try again"), code: codes.Unavailable},
+		{name: "HTTP error with Failed text", status: http.StatusInternalServerError, body: `{"status":"Failed","error":{"code":"CreateTimeout"}}`, code: codes.Unavailable},
+		{name: "missing operation", status: http.StatusNotFound, body: `{"error":{"code":"ResourceNotFound"}}`, code: codes.Unavailable},
+		{name: "canceled operation", status: http.StatusOK, body: `{"status":"Canceled","error":{"code":"Canceled"}}`, code: codes.Unavailable},
+		{name: "malformed operation response", status: http.StatusOK, body: `{"status":`, code: codes.Unavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			creating := readyTestAmlFilesystem(expectedAmlFilesystemName)
@@ -2150,6 +2214,56 @@ func countAMLFSCall(calls []string, expected string) int {
 		}
 	}
 	return count
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_FailedRecoveryRemainsRetryable(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		statusCode   int
+		errorCode    string
+		expectedCode codes.Code
+	}{
+		{name: "delete permission lost", statusCode: http.StatusForbidden, errorCode: "AuthorizationFailed", expectedCode: codes.Unavailable},
+		{name: "delete authentication expired", statusCode: http.StatusUnauthorized, errorCode: "AuthenticationFailed", expectedCode: codes.Unavailable},
+		{name: "another operation conflicts with deletion", statusCode: http.StatusConflict, errorCode: "OperationInProgress", expectedCode: codes.Unavailable},
+		{name: "delete request timed out", statusCode: http.StatusRequestTimeout, errorCode: "RequestTimeout", expectedCode: codes.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failed := readyTestAmlFilesystem(expectedAmlFilesystemName)
+			failed.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeFailed)
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName] = failed
+			recorder.deleteError = &azcore.ResponseError{StatusCode: tc.statusCode, ErrorCode: tc.errorCode}
+			provisioner := newTestDynamicProvisioner(t, recorder)
+			properties := buildExpectedAmlFilesystemProperties(expectedAmlFilesystemName)
+
+			result, err := provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.ErrorContains(t, err, tc.errorCode)
+			require.ErrorContains(t, err, "Failed provisioning recovery did not finish")
+			require.ErrorContains(t, err, amlFilesystemResourceID(expectedSubscriptionID, expectedResourceGroupName, expectedAmlFilesystemName))
+			assert.Equal(t, tc.expectedCode, status.Code(err))
+			assert.Nil(t, result)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get", "AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
+			assert.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName)
+
+			recorder.deleteError = nil
+			result, err = provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			assert.Nil(t, result)
+			require.ErrorContains(t, err, "deletion completed, retry creation")
+			assert.Equal(t, codes.Aborted, status.Code(err))
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+				"recreation must wait for a new invocation that observes verified absence")
+
+			result, err = provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, expectedMgsAddress, result.MGSAddress)
+		})
+	}
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_MissingOperationDoesNotProveBackendDeletion(t *testing.T) {
@@ -2280,29 +2394,29 @@ func TestDynamicProvisioner_CreateAmlFilesystem_DoesNotMutateWhenLookupFails(t *
 		getError     error
 		expectedCode codes.Code
 	}{
-		{name: "untyped message", getError: errors.New("ResourceNotFound"), expectedCode: codes.Unknown},
-		{name: "synthetic gRPC status lacks ARM absence evidence", getError: status.Error(codes.NotFound, "ResourceNotFound"), expectedCode: codes.NotFound},
+		{name: "untyped message", getError: errors.New("ResourceNotFound"), expectedCode: codes.Unavailable},
+		{name: "synthetic gRPC status lacks ARM absence evidence", getError: status.Error(codes.NotFound, "ResourceNotFound"), expectedCode: codes.Unavailable},
 		{name: "missing resource group", getError: &azcore.ResponseError{
 			StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound",
-		}, expectedCode: codes.NotFound},
+		}, expectedCode: codes.Unavailable},
 		{name: "missing operation", getError: &azcore.ResponseError{
 			StatusCode: http.StatusNotFound, ErrorCode: "OperationNotFound",
-		}, expectedCode: codes.NotFound},
+		}, expectedCode: codes.Unavailable},
 		{name: "missing error code", getError: &azcore.ResponseError{
 			StatusCode: http.StatusNotFound,
-		}, expectedCode: codes.NotFound},
+		}, expectedCode: codes.Unavailable},
 		{name: "missing status code", getError: &azcore.ResponseError{
 			ErrorCode: "ResourceNotFound",
-		}, expectedCode: codes.Unknown},
+		}, expectedCode: codes.Unavailable},
 		{name: "permission failure mentioning absence", getError: fmt.Errorf("ResourceNotFound text: %w", &azcore.ResponseError{
 			StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
-		}), expectedCode: codes.PermissionDenied},
+		}), expectedCode: codes.Unavailable},
 		{name: "wrong status with absence code", getError: &azcore.ResponseError{
 			StatusCode: http.StatusServiceUnavailable, ErrorCode: "ResourceNotFound",
 		}, expectedCode: codes.Unavailable},
 		{name: "unauthenticated", getError: &azcore.ResponseError{
 			StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed",
-		}, expectedCode: codes.Unauthenticated},
+		}, expectedCode: codes.Unavailable},
 		{name: "throttled", getError: &azcore.ResponseError{
 			StatusCode: http.StatusTooManyRequests, ErrorCode: "TooManyRequests",
 		}, expectedCode: codes.Unavailable},
@@ -2563,6 +2677,11 @@ func TestConvertStatusCodeErrorToGrpcCodeError(t *testing.T) {
 			name:         "BadRequest",
 			inputError:   &azcore.ResponseError{StatusCode: http.StatusBadRequest},
 			expectedCode: codes.InvalidArgument,
+		},
+		{
+			name:         "RequestTimeout",
+			inputError:   &azcore.ResponseError{StatusCode: http.StatusRequestTimeout},
+			expectedCode: codes.DeadlineExceeded,
 		},
 		{
 			name:         "Conflict with quota limit exceeded",

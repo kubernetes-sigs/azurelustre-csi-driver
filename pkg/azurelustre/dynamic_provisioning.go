@@ -106,6 +106,8 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 		switch statusCode {
 		case http.StatusBadRequest:
 			grpcErrorCode = codes.InvalidArgument
+		case http.StatusRequestTimeout:
+			grpcErrorCode = codes.DeadlineExceeded
 		case http.StatusConflict:
 			if strings.Contains(err.Error(), "Operation results in exceeding quota limits of resource type AmlFilesystem") {
 				grpcErrorCode = codes.ResourceExhausted
@@ -147,6 +149,17 @@ func convertHTTPResponseErrorToGrpcCodeError(err error) error {
 	return status.Errorf(grpcErrorCode, "error occurred calling API: %v", httpError)
 }
 
+// Use only when observation failed or accepted work still needs recovery, not for
+// request validation, incompatible resources, or a rejected fresh submission.
+func unresolvedAmlFilesystemError(err error) error {
+	err = convertHTTPResponseErrorToGrpcCodeError(err)
+	code := status.Code(err)
+	if code == codes.Aborted || code == codes.Canceled || code == codes.DeadlineExceeded || code == codes.Unavailable {
+		return err
+	}
+	return status.Errorf(codes.Unavailable, "AMLFS operation outcome is unresolved: %v", err)
+}
+
 func (d *DynamicProvisioner) readAmlFilesystem(ctx context.Context, resourceGroupName, amlFilesystemName string) (*armstoragecache.AmlFilesystem, error) {
 	if d.amlFilesystemsClient == nil {
 		return nil, status.Error(codes.Internal, "aml filesystem client is nil")
@@ -166,7 +179,7 @@ func (d *DynamicProvisioner) readAmlFilesystem(ctx context.Context, resourceGrou
 			return nil, nil
 		}
 
-		st := status.Convert(convertHTTPResponseErrorToGrpcCodeError(err))
+		st := status.Convert(unresolvedAmlFilesystemError(err))
 		return nil, status.Errorf(st.Code(), "could not observe AMLFS %s: %s", resourceID, st.Message())
 	}
 
@@ -282,7 +295,7 @@ func (d *DynamicProvisioner) CreateAmlFilesystem(ctx context.Context, amlFilesys
 	}
 	res, err := poller.PollUntilDone(ctx, pollerOptions)
 	if err != nil {
-		return nil, d.amlFilesystemCreateError(amlFilesystemProperties, err)
+		return nil, d.amlFilesystemCreateError(amlFilesystemProperties, unresolvedAmlFilesystemError(err))
 	}
 
 	result, err = d.amlFilesystemResult(&res.AmlFilesystem, amlFilesystemProperties)
@@ -323,7 +336,9 @@ func (d *DynamicProvisioner) tryDeleteBeforeRetry(ctx context.Context, amlFilesy
 	err := d.DeleteAmlFilesystem(ctx, resourceGroupName, amlFilesystemName)
 	if err != nil {
 		klog.Errorf("error attempting to delete AMLFS cluster %s for creation retry: %v", amlFilesystemProperties.AmlFilesystemName, err)
-		return convertHTTPResponseErrorToGrpcCodeError(err)
+		st := status.Convert(unresolvedAmlFilesystemError(err))
+		return status.Errorf(st.Code(), "AMLFS %s Failed provisioning recovery did not finish: %s",
+			amlFilesystemResourceID(d.subscriptionID, resourceGroupName, amlFilesystemName), st.Message())
 	}
 	return status.Errorf(codes.Aborted, "AMLFS %s unfinished provisioning reported Failed; deletion completed, retry creation",
 		amlFilesystemResourceID(d.subscriptionID, resourceGroupName, amlFilesystemName))

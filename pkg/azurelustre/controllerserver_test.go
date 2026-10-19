@@ -1168,9 +1168,9 @@ func TestControllerVolumeLockReleasesAfterErrorOrCancellation(test *testing.T) {
 		cancelRequest bool
 		expectedCode  codes.Code
 	}{
-		{name: "create backend reports Internal", operation: "create", backendError: status.Error(codes.Internal, "backend create failed"), expectedCode: codes.Internal},
+		{name: "create backend reports Internal", operation: "create", backendError: status.Error(codes.Internal, "backend create failed"), expectedCode: codes.Unavailable},
 		{name: "delete backend reports Internal", operation: "delete", backendError: status.Error(codes.Internal, "backend delete failed"), expectedCode: codes.Internal},
-		{name: "create backend reports Unknown", operation: "create", backendError: status.Error(codes.Unknown, "backend create failed"), expectedCode: codes.Unknown},
+		{name: "create backend reports Unknown", operation: "create", backendError: status.Error(codes.Unknown, "backend create failed"), expectedCode: codes.Unavailable},
 		{name: "delete backend reports Unknown", operation: "delete", backendError: status.Error(codes.Unknown, "backend delete failed"), expectedCode: codes.Unknown},
 		{name: "caller cancels a blocked create", operation: "create", cancelRequest: true, expectedCode: codes.Canceled},
 		{name: "caller cancels a blocked delete", operation: "delete", cancelRequest: true, expectedCode: codes.Canceled},

@@ -18,6 +18,7 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
     - [Authentication and Authorization Errors](#authentication-and-authorization-errors)
     - [Error: Lease access is forbidden](#error-lease-access-is-forbidden)
     - [Error: Incomplete Azure API response](#error-incomplete-azure-api-response)
+    - [Error: Uncertain Azure creation outcome](#error-uncertain-azure-creation-outcome)
     - [Error: AMLFS cluster creation timed out](#error-amlfs-cluster-creation-timed-out)
     - [Error: AMLFS provisioning failed](#error-amlfs-provisioning-failed)
     - [Deleted pending PVC or untracked filesystem](#deleted-pending-pvc-or-untracked-filesystem)
@@ -172,6 +173,33 @@ delete the PVC or filesystem solely because of this error.
 
 ---
 
+#### Error: Uncertain Azure creation outcome
+
+`Unavailable` can mean the driver could not determine the outcome of Azure
+work, including a failed status lookup, an error polling accepted creation, or
+blocked recovery of a matching `Failed` filesystem. Messages include:
+
+- `AMLFS operation outcome is unresolved`
+- `Failed recovery is blocked by admission`
+- `AMLFS creation outcome is uncertain`
+
+Keep the pending PVC and driver in place while retries check Azure state.
+Correct the reported problem: for example, a 401/403 while checking an existing
+filesystem requires restoring authentication or the controller's required
+permissions. Retrying does not grant access, and a failed status check does not
+prove that Azure creation or deletion stopped.
+
+The error includes details from the current failed attempt when available. It
+does not guarantee that an earlier service failure remains visible after a
+timeout or restart. Use the [Azure Activity Log](#error-amlfs-provisioning-failed)
+when the original cause is missing.
+
+Definitive rejection of a new creation request is still reported as an error.
+A confirmed incompatible filesystem returns `AlreadyExists` and is left
+unchanged; retries do not overwrite it.
+
+---
+
 #### Error: AMLFS cluster creation timed out
 
 A `DeadlineExceeded` or `create did not complete` message does not prove that
@@ -260,8 +288,8 @@ Do not remove PV finalizers to force cleanup.
 
 Check the Azure error code and affected resource, not just words in the message.
 A failed lookup of a configured resource group or network is not evidence that
-an AMLFS filesystem is absent. Authorization failures and unavailable responses
-also stop provisioning; address the underlying error before expecting creation.
+an AMLFS filesystem is absent. Address the reported configuration or permission
+error rather than assuming no Azure work remains.
 
 **Symptoms:**
 
@@ -269,9 +297,14 @@ also stop provisioning; address the underlying error before expecting creation.
   - `Resource group 'myapp-rg/myapp-vnet-rg' could not be found.`
   - `The Resource '.../myapp-vnet' under resource group 'myapp-rg' was not found.`
   - `subnet ../myapp-subnet not found in vnet myapp-vnet, resource group myapp-rg. Ensure permissions are correct for configuration`
-- Status: `NotFound` for ARM 404 responses or `FailedPrecondition` when the
-  requested subnet is absent from the returned usage inventory. Permission errors
-  are reported separately as `PermissionDenied` or `Unauthenticated`.
+- The status depends on the operation:
+  - Failed filesystem observation or polling after accepted creation remains
+    retryable, normally as `Unavailable`. See
+    [Uncertain Azure creation outcome](#error-uncertain-azure-creation-outcome).
+  - New-create or subnet-check errors can report `NotFound`, `PermissionDenied`,
+    or `Unauthenticated`.
+  - `FailedPrecondition` means the requested subnet is absent from the returned
+    usage inventory.
 
 **Possible Causes:**
 
