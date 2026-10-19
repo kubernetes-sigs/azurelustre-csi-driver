@@ -63,6 +63,31 @@ csi-azurelustre-node-sa
 {{- end -}}
 
 {{/*
+Keep the configured identity authoritative while accepting matching legacy flags.
+*/}}
+{{- define "azurelustre.driverArgs" -}}
+{{- $name := required "csidriver.name must be set" .name -}}
+{{- $message := printf "drivername in %s must match csidriver.name; configure identity through csidriver.name" .source -}}
+{{- $needsValue := false -}}
+{{- range .args -}}
+  {{- $arg := toString . -}}
+  {{- if $needsValue -}}
+    {{- if ne $arg $name -}}{{ fail $message }}{{- end -}}
+    {{- $needsValue = false -}}
+  {{- else if or (eq $arg "--drivername") (eq $arg "-drivername") -}}
+    {{- $needsValue = true -}}
+  {{- else if or (hasPrefix "--drivername=" $arg) (hasPrefix "-drivername=" $arg) -}}
+    {{- if ne (regexReplaceAll "^--?drivername=" $arg "") $name -}}{{ fail $message }}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- if $needsValue -}}{{ fail $message }}{{- end }}
+- {{ printf "--drivername=%s" $name | quote }}
+{{- range .args }}
+- {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Image pull secrets.
 */}}
 {{- define "azurelustre.imagePullSecrets" -}}

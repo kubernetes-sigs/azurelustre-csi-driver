@@ -407,6 +407,101 @@ check_source_version_metadata() {
   return 0
 }
 
+check_driver_identity_render() {
+  local version=${1} case_name=${2} driver_name=${3}
+  shift 3
+  local rendered driver_object first_args guard_arg registrations sockets
+  local flavors driver_args registration_paths socket_paths
+  read -r -a flavors <<<"${ALL_FLAVORS}"
+
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-identity \
+    "./charts/${version}/azurelustre-csi-driver" "$@" 2>&1); then
+    echo "ERROR: ${case_name}: helm template failed:"
+    echo "${rendered}"
+    return 1
+  fi
+  if ! driver_object=$(yq -r -N 'select(.kind == "CSIDriver") | .metadata.name' <<<"${rendered}") ||
+     ! first_args=$(yq -r -N 'select(.kind == "Deployment" or .kind == "DaemonSet")
+       | .spec.template.spec.containers[] | select(.name == "azurelustre") | .args[0]' <<<"${rendered}") ||
+     ! guard_arg=$(yq -r -N 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "predelete-guard")
+       | .spec.template.spec.containers[].args[] | select(test("^--drivername="))' <<<"${rendered}") ||
+     ! registrations=$(yq -r -N 'select(.kind == "DaemonSet")
+       | .spec.template.spec.containers[] | select(.name == "node-driver-registrar")
+       | .env[] | select(.name == "DRIVER_REG_SOCK_PATH") | .value' <<<"${rendered}") ||
+     ! sockets=$(yq -r -N 'select(.kind == "DaemonSet")
+       | .spec.template.spec.volumes[] | select(.name == "socket-dir") | .hostPath.path' <<<"${rendered}"); then
+    echo "ERROR: ${case_name}: could not inspect rendered driver identities"
+    return 1
+  fi
+
+  mapfile -t driver_args <<<"${first_args}"
+  mapfile -t registration_paths <<<"${registrations}"
+  mapfile -t socket_paths <<<"${sockets}"
+  if [[ "${driver_object}" != "${driver_name}" ||
+        "${guard_arg}" != "--drivername=${driver_name}" ||
+        "${#driver_args[@]}" -ne $((${#flavors[@]} + 1)) ||
+        "${#registration_paths[@]}" -ne "${#flavors[@]}" ||
+        "${#socket_paths[@]}" -ne "${#flavors[@]}" ]]; then
+    echo "ERROR: ${case_name}: expected one CSIDriver/guard, one controller and every node flavor using ${driver_name}"
+    printf 'CSIDriver=%s\nguard=%s\ndriver args=%s\nregistration paths=%s\nsocket paths=%s\n' \
+      "${driver_object}" "${guard_arg}" "${first_args}" "${registrations}" "${sockets}"
+    return 1
+  fi
+  local argument index
+  for argument in "${driver_args[@]}"; do
+    if [[ "${argument}" != "--drivername=${driver_name}" ]]; then
+      echo "ERROR: ${case_name}: expected --drivername=${driver_name}, got ${argument}"
+      return 1
+    fi
+  done
+  for ((index = 0; index < ${#socket_paths[@]}; index++)); do
+    if [[ "${socket_paths[index]}" != */plugins/"${driver_name}" ||
+          "${registration_paths[index]}" != "${socket_paths[index]}/csi.sock" ]]; then
+      echo "ERROR: ${case_name}: registration and socket paths disagree for ${driver_name}"
+      printf 'registration=%s\nsocket=%s\n' "${registration_paths[index]}" "${socket_paths[index]}"
+      return 1
+    fi
+  done
+  echo "PASS: ${case_name}"
+}
+
+check_driver_identity() {
+  local version=${1}
+  local driver_name=test.csi.example.com
+  local component flag arguments output
+  echo "== Checking consistent driver identity for version: ${version} =="
+
+  check_driver_identity_render "${version}" "default driver identity" azurelustre.csi.azure.com || return 1
+  check_driver_identity_render "${version}" "configured driver identity" "${driver_name}" \
+    --set-string "csidriver.name=${driver_name}" || return 1
+
+  for component in controller node; do
+    for flag in --drivername -drivername; do
+      for arguments in "[\"${flag}=${driver_name}\"]" "[\"${flag}\",\"${driver_name}\"]"; do
+        check_driver_identity_render "${version}" "matching ${component}.extraArgs ${arguments}" "${driver_name}" \
+          --set-string "csidriver.name=${driver_name}" \
+          --set-json "${component}.extraArgs=${arguments}" || return 1
+      done
+      for arguments in "[\"${flag}=other.csi.example.com\"]" "[\"${flag}\",\"other.csi.example.com\"]" "[\"${flag}\"]"; do
+        if output=$(helm template --kube-version "${KUBE_VERSION}" \
+          --namespace kube-system chart-identity "./charts/${version}/azurelustre-csi-driver" \
+          --set-string "csidriver.name=${driver_name}" \
+          --set-json "${component}.extraArgs=${arguments}" 2>&1); then
+          echo "ERROR: conflicting/incomplete ${component}.extraArgs ${arguments} unexpectedly rendered"
+          return 1
+        fi
+        if [[ "${output}" != *"drivername in ${component}.extraArgs must match csidriver.name"* ]]; then
+          echo "ERROR: ${component}.extraArgs ${arguments} failed for an unexpected reason:"
+          echo "${output}"
+          return 1
+        fi
+        echo "PASS: rejected ${component}.extraArgs ${arguments}"
+      done
+    done
+  done
+}
+
 check_conditional_blocks() {
   # podAnnotations, podLabels and imagePullSecrets are empty by default, so a
   # mis-indented `{{- with .Values.podAnnotations }}` block only breaks when the
@@ -728,6 +823,11 @@ else
   if ! check_service_account_names "${version}"; then
     issues_found=true
     failures+=("ServiceAccount name check (version: ${version})")
+  fi
+
+  if ! check_driver_identity "${version}"; then
+    issues_found=true
+    failures+=("Driver identity consistency check (version: ${version})")
   fi
 
   if ! check_conditional_blocks "${version}"; then

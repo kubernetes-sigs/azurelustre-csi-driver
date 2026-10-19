@@ -214,6 +214,7 @@ spec:
           image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy
           imagePullPolicy: Always
           args:
+            - --drivername=azurelustre.csi.azure.com
             - -v=5
             - --endpoint=$(CSI_ENDPOINT)
             - --nodeid=$(KUBE_NODE_NAME)
