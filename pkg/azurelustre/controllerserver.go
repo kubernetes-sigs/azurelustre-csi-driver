@@ -99,7 +99,7 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 		case VolumeContextResourceGroupName:
 			amlFilesystemProperties.ResourceGroupName = propertyValue
 		case VolumeContextMGSIPAddress:
-			shouldCreateAmlfsCluster = false
+			shouldCreateAmlfsCluster = propertyValue == ""
 		case VolumeContextLocation:
 			amlFilesystemProperties.Location = propertyValue
 		case VolumeContextVnetName:
