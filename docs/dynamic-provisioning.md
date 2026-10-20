@@ -95,6 +95,13 @@ portal. The following is an example of these values:
     kubernetes.io-created-for-pvc-namespace: default
     ```
 
+Azure permits [at most 50 tags per resource](https://learn.microsoft.com/azure/azure-resource-manager/management/tag-resources#limitations).
+Driver-added tags count toward that limit; the usual four metadata tags leave
+room for 46 custom tags. Tag names are case-insensitive, and repeated names use
+the last supplied value. Driver-reserved tag names cannot be supplied in any
+casing. The `tags` parameter keeps its comma-separated `key=value` format;
+commas and additional equals signs inside a pair are not escaped by this format.
+
 > [!IMPORTANT]
 This example storage class contains a `ResourceQuota` definition for testing purposes. This limits the
 number of PVCs that can be created for this storage class to a single volume. This `ResourceQuota`

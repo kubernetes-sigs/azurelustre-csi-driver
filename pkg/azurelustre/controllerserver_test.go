@@ -1354,6 +1354,47 @@ func TestParseAmlfilesystemProperties_Err_InvalidTags(t *testing.T) {
 	require.ErrorContains(t, err, "are invalid, the format should be: 'key1=value1,key2=value2")
 }
 
+func TestDynamicTagBudgetIncludesDriverMetadata(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		customCount  int
+		expectedCode codes.Code
+	}{
+		{name: "46 custom plus four driver tags fits the 50-tag limit", customCount: 46, expectedCode: codes.OK},
+		{name: "47 custom plus four driver tags exceeds the limit", customCount: 47, expectedCode: codes.InvalidArgument},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Parameters["csi.storage.k8s.io/pvc/name"] = "claim"
+			request.Parameters["csi.storage.k8s.io/pvc/namespace"] = "workload"
+			request.Parameters["csi.storage.k8s.io/pv/name"] = "volume"
+			tags := make([]string, testCase.customCount)
+			for i := range tags {
+				tags[i] = fmt.Sprintf("custom%d=value", i)
+			}
+			request.Parameters[VolumeContextTags] = strings.Join(tags, ",")
+			properties, err := parseAmlFilesystemProperties(request.GetParameters())
+			if testCase.expectedCode == codes.OK {
+				require.NoError(t, err)
+				require.Len(t, properties.Tags, util.MaxAzureResourceTags)
+				assert.Equal(t, "claim", properties.Tags[pvcNameTag])
+				assert.Equal(t, "workload", properties.Tags[pvcNamespaceTag])
+				assert.Equal(t, "volume", properties.Tags[pvNameTag])
+				assert.Equal(t, azureLustreDriverTag, properties.Tags[createdByTag])
+				return
+			}
+			require.Equal(t, testCase.expectedCode, status.Code(err))
+			require.ErrorContains(t, err, "including driver metadata")
+			d := NewFakeDriver(t)
+			provisioner := &FakeDynamicProvisioner{}
+			d.dynamicProvisioner = provisioner
+			_, err = d.CreateVolume(t.Context(), request)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			assert.Empty(t, provisioner.fakeCallCount, "invalid creation inputs must fail before Azure work")
+		})
+	}
+}
+
 func TestParseAmlfilesystemProperties_Err_ReservedTags(t *testing.T) {
 	testCases := []struct {
 		reservedTag string
@@ -1370,6 +1411,10 @@ func TestParseAmlfilesystemProperties_Err_ReservedTags(t *testing.T) {
 		{
 			reservedTag: pvcNamespaceTag,
 		},
+		{reservedTag: strings.ToUpper(createdByTag)},
+		{reservedTag: strings.ToUpper(pvNameTag)},
+		{reservedTag: strings.ToUpper(pvcNameTag)},
+		{reservedTag: strings.ToUpper(pvcNamespaceTag)},
 	}
 	for _, tC := range testCases {
 		properties := map[string]string{
