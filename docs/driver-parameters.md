@@ -29,6 +29,14 @@ This mechanism prevents pods requiring Azure Lustre storage from being scheduled
 
 ## Dynamic Provisioning (Create an AMLFS Cluster through AKS)
 
+Dynamic provisioning creates an Azure Managed Lustre filesystem for a
+PersistentVolumeClaim (PVC). Configure the filesystem's SKU, network and
+maintenance settings in the StorageClass, and request its capacity in the PVC.
+The driver obtains the filesystem's connection details automatically.
+
+See the [dynamic provisioning guide](dynamic-provisioning.md) for the complete
+setup and lifecycle instructions.
+
 ### Permissions For Kubelet Identity
 
 See [Use a managed identity in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity) for information about configuring your kubelet identity.
@@ -118,6 +126,10 @@ region's SKU metadata is known to be incorrect, and remove it after the RP
 metadata is fixed.
 
 ## Static Provisioning (Bring your own AMLFS Cluster through AKS)
+
+Static provisioning connects workloads to an existing filesystem. Supply its MGS
+IP address using `mgs-ip-address`; dynamic provisioning obtains this information
+automatically.
 
 Name | Meaning | Available Value | Mandatory | Default value
 --- | --- | --- | --- | ---

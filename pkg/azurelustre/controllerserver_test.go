@@ -1216,24 +1216,57 @@ func TestParseAmlfilesystemProperties_Err_InvalidParameters(t *testing.T) {
 	require.ErrorContains(t, err, "invalid-param")
 }
 
-func TestParseAmlfilesystemProperties_Err_MissingMaintenanceDayOfWeek(t *testing.T) {
-	properties := map[string]string{
-		"resource-group-name":         "test-resource-group",
-		"location":                    "test-location",
-		"vnet-resource-group":         "test-vnet-rg",
-		"vnet-name":                   "test-vnet-name",
-		"subnet-name":                 "test-subnet-name",
-		"maintenance-time-of-day-utc": "12:00",
-		"sku-name":                    "AMLFS-Durable-Premium-40",
-		"zone":                        "zone1",
-	}
+func TestCreateVolumeRequiresDynamicFieldsWithoutMGS(t *testing.T) {
+	for _, missingField := range []string{
+		VolumeContextMaintenanceDayOfWeek,
+		VolumeContextMaintenanceTimeOfDayUtc,
+		VolumeContextSkuName,
+	} {
+		t.Run(missingField, func(t *testing.T) {
+			for _, test := range []struct {
+				name            string
+				includeEmptyMGS bool
+			}{
+				{name: "MGS parameter omitted"},
+				{name: "MGS parameter empty", includeEmptyMGS: true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					driver := NewFakeDriver(t)
+					provisioner := &FakeDynamicProvisioner{}
+					driver.dynamicProvisioner = provisioner
+					request := buildDynamicProvCreateVolumeRequest()
+					delete(request.GetParameters(), missingField)
+					if test.includeEmptyMGS {
+						request.Parameters[VolumeContextMGSIPAddress] = ""
+					}
 
-	_, err := parseAmlFilesystemProperties(properties)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "maintenance-day-of-week must be provided")
+					response, err := driver.CreateVolume(t.Context(), request)
+
+					require.ErrorContains(t, err, missingField+" must be provided")
+					assert.Equal(t, codes.InvalidArgument, status.Code(err))
+					assert.Nil(t, response)
+					assert.Empty(t, provisioner.fakeCallCount, "required fields must be checked before SKU lookup or creation")
+					assert.Empty(t, provisioner.Filesystems)
+				})
+			}
+		})
+	}
+}
+
+func TestCreateVolumeWithEmptyMGSUsesDynamicProvisioning(t *testing.T) {
+	driver := NewFakeDriver(t)
+	provisioner := &FakeDynamicProvisioner{}
+	driver.dynamicProvisioner = provisioner
+	request := buildDynamicProvCreateVolumeRequest()
+	request.Parameters[VolumeContextMGSIPAddress] = ""
+
+	response, err := driver.CreateVolume(t.Context(), request)
+
+	require.NoError(t, err)
+	require.Len(t, provisioner.Filesystems, 1)
+	assert.Equal(t, request.GetName(), provisioner.Filesystems[0].AmlFilesystemName)
+	assert.Equal(t, "t", response.GetVolume().GetVolumeContext()[VolumeContextInternalDynamicallyCreated])
+	assert.Equal(t, "127.0.0.2", response.GetVolume().GetVolumeContext()[VolumeContextMGSIPAddress])
 }
 
 func TestParseAmlfilesystemProperties_Err_EmptyMaintenanceDayOfWeek(t *testing.T) {
@@ -1276,46 +1309,6 @@ func TestParseAmlfilesystemProperties_Err_InvalidMaintenanceDayOfWeek(t *testing
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
 	require.ErrorContains(t, err, "maintenance-day-of-week must be one of")
-}
-
-func TestParseAmlfilesystemProperties_Err_MissingTimeOfDay(t *testing.T) {
-	properties := map[string]string{
-		"resource-group-name":     "test-resource-group",
-		"location":                "test-location",
-		"vnet-resource-group":     "test-vnet-rg",
-		"vnet-name":               "test-vnet-name",
-		"subnet-name":             "test-subnet-name",
-		"maintenance-day-of-week": "Monday",
-		"sku-name":                "AMLFS-Durable-Premium-40",
-		"zone":                    "zone1",
-	}
-
-	_, err := parseAmlFilesystemProperties(properties)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "maintenance-time-of-day-utc must be provided")
-}
-
-func TestParseAmlfilesystemProperties_Err_MissingSku(t *testing.T) {
-	properties := map[string]string{
-		"resource-group-name":         "test-resource-group",
-		"location":                    "test-location",
-		"vnet-resource-group":         "test-vnet-rg",
-		"vnet-name":                   "test-vnet-name",
-		"subnet-name":                 "test-subnet-name",
-		"maintenance-day-of-week":     "Monday",
-		"maintenance-time-of-day-utc": "12:00",
-		"zone":                        "zone1",
-	}
-
-	_, err := parseAmlFilesystemProperties(properties)
-	require.Error(t, err)
-	grpcStatus, ok := status.FromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, codes.InvalidArgument, grpcStatus.Code())
-	require.ErrorContains(t, err, "sku-name must be provided")
 }
 
 func TestParseAmlfilesystemProperties_Err_InvalidTimeOfDay(t *testing.T) {
