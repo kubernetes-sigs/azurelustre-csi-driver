@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -43,12 +42,6 @@ func (f *fakeMounter) Mount(source, target, fstype string, options []string) err
 	if f.mountError != nil {
 		return f.mountError
 	}
-	if strings.Contains(source, "ut-container") {
-		return errors.New("fake Mount: source error")
-	} else if strings.Contains(target, "error_mount") {
-		return errors.New("fake Mount: target error")
-	}
-
 	return f.FakeMounter.Mount(source, target, fstype, options)
 }
 
@@ -57,12 +50,6 @@ func (f *fakeMounter) MountSensitive(source, target, fstype string, options, sen
 	if f.mountError != nil {
 		return f.mountError
 	}
-	if strings.Contains(source, "ut-container-sens") {
-		return errors.New("fake MountSensitive: source error")
-	} else if strings.Contains(target, "error_mount_sens") {
-		return errors.New("fake MountSensitive: target error")
-	}
-
 	return f.FakeMounter.MountSensitive(source, target, fstype, options, sensitiveOptions)
 }
 
@@ -71,12 +58,6 @@ func (f *fakeMounter) MountSensitiveWithoutSystemdWithMountFlags(source, target,
 	if f.mountError != nil {
 		return f.mountError
 	}
-	if strings.Contains(source, "ut-container-sens-mountflags") {
-		return errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: source error")
-	} else if strings.Contains(target, "error_mount_sens_mountflags") {
-		return errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: target error")
-	}
-
 	return f.FakeMounter.MountSensitiveWithoutSystemdWithMountFlags(source, target, fstype, options, sensitiveOptions, mountFlags)
 }
 
@@ -87,13 +68,7 @@ func (f *fakeMounter) IsLikelyNotMountPoint(file string) (bool, error) {
 	if f.notMountPoint != nil {
 		return *f.notMountPoint, nil
 	}
-	if strings.Contains(file, "error_is_likely") {
-		return false, errors.New("fake IsLikelyNotMountPoint: fake error")
-	}
-	if strings.Contains(file, "false_is_likely") {
-		return false, nil
-	}
-	return true, nil
+	return f.FakeMounter.IsLikelyNotMountPoint(file)
 }
 
 func (f *fakeMounter) Unmount(target string) error {
@@ -136,172 +111,81 @@ func newNodeMountTestDriver(t *testing.T) (*Driver, *fakeMounter, string) {
 	return driver, mounter, backingDirectory
 }
 
-func TestMount(t *testing.T) {
-	tests := []struct {
-		desc        string
-		source      string
-		target      string
-		expectedErr error
+func TestFakeMounterMountEntryPoints(t *testing.T) {
+	const source = "127.0.0.1@tcp:/lustrefs"
+	options := []string{"ro"}
+	for _, operation := range []struct {
+		name string
+		run  func(*fakeMounter, string) error
 	}{
-		{
-			desc:        "[Error] Mocked source error",
-			source:      "ut-container",
-			target:      targetTest,
-			expectedErr: errors.New("fake Mount: source error"),
-		},
-		{
-			desc:        "[Error] Mocked target error",
-			source:      "container",
-			target:      "error_mount",
-			expectedErr: errors.New("fake Mount: target error"),
-		},
-		{
-			desc:        "[Success] Successful run",
-			source:      "container",
-			target:      "valid_mount",
-			expectedErr: nil,
-		},
-	}
+		{name: "Mount", run: func(mounter *fakeMounter, target string) error {
+			return mounter.Mount(source, target, "lustre", options)
+		}},
+		{name: "MountSensitive", run: func(mounter *fakeMounter, target string) error {
+			return mounter.MountSensitive(source, target, "lustre", options, nil)
+		}},
+		{name: "MountSensitiveWithoutSystemdWithMountFlags", run: func(mounter *fakeMounter, target string) error {
+			return mounter.MountSensitiveWithoutSystemdWithMountFlags(source, target, "lustre", options, nil, []string{"--no-mtab"})
+		}},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name       string
+				mountError error
+			}{
+				{name: "records a successful mount"},
+				{name: "returns the injected error without recording a mount", mountError: errors.New("mount failed")},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					target := t.TempDir()
+					mounter := &fakeMounter{mountError: test.mountError}
 
-	d := NewFakeDriver(t)
-	fakeMounter := &fakeMounter{}
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: fakeMounter,
-	}
-	for _, test := range tests {
-		err := d.mounter.Mount(test.source, test.target, "", nil)
-		if test.expectedErr == nil {
-			require.NoError(t, err, test.desc)
-		} else {
-			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
-		}
+					err := operation.run(mounter, target)
+
+					if test.mountError != nil {
+						require.ErrorIs(t, err, test.mountError)
+						assert.Empty(t, mounter.MountPoints)
+						assert.Empty(t, mounter.GetLog())
+					} else {
+						require.NoError(t, err)
+						assert.Equal(t, []mount.MountPoint{{Device: source, Path: target, Type: "lustre", Opts: options}}, mounter.MountPoints)
+						assert.Equal(t, []mount.FakeAction{{Action: "mount", Target: target, Source: source, FSType: "lustre"}}, mounter.GetLog())
+					}
+				})
+			}
+		})
 	}
 }
 
-func TestMountSensitive(t *testing.T) {
-	tests := []struct {
-		desc        string
-		source      string
-		target      string
-		expectedErr error
+func TestFakeMounterMountPointResults(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		recordedMount         bool
+		notMountPoint         *bool
+		mountCheckError       error
+		expectedNotMountPoint bool
 	}{
-		{
-			desc:        "[Error] Mocked source error",
-			source:      "ut-container-sens",
-			target:      targetTest,
-			expectedErr: errors.New("fake MountSensitive: source error"),
-		},
-		{
-			desc:        "[Error] Mocked target error",
-			source:      "container",
-			target:      "error_mount_sens",
-			expectedErr: errors.New("fake MountSensitive: target error"),
-		},
-		{
-			desc:        "[Success] Successful run",
-			source:      "container",
-			target:      "valid_mount",
-			expectedErr: nil,
-		},
-	}
+		{name: "unmounted directory", expectedNotMountPoint: true},
+		{name: "recorded mount", recordedMount: true},
+		{name: "explicit unmounted result", recordedMount: true, notMountPoint: new(true), expectedNotMountPoint: true},
+		{name: "explicit mounted result", notMountPoint: new(false)},
+		{name: "lookup failure overrides a mount result", notMountPoint: new(false), mountCheckError: errors.New("mount lookup failed"), expectedNotMountPoint: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target := t.TempDir()
+			mounter := &fakeMounter{notMountPoint: test.notMountPoint, mountCheckError: test.mountCheckError}
+			if test.recordedMount {
+				mounter.MountPoints = []mount.MountPoint{{Path: target}}
+			}
 
-	d := NewFakeDriver(t)
-	fakeMounter := &fakeMounter{}
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: fakeMounter,
-	}
-	for _, test := range tests {
-		err := d.mounter.MountSensitive(test.source, test.target, "", nil, nil)
-		if test.expectedErr == nil {
-			require.NoError(t, err, test.desc)
-		} else {
-			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
-		}
-	}
-}
+			actual, err := mounter.IsLikelyNotMountPoint(target)
 
-func TestMountSensitiveWithoutSystemdWithMountFlags(t *testing.T) {
-	tests := []struct {
-		desc                string
-		source              string
-		target              string
-		expectedErr         error
-		expectedMountpoints []mount.MountPoint
-	}{
-		{
-			desc:        "[Error] Mocked source error",
-			source:      "ut-container-sens-mountflags",
-			target:      targetTest,
-			expectedErr: errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: source error"),
-		},
-		{
-			desc:        "[Error] Mocked target error",
-			source:      "container",
-			target:      "error_mount_sens_mountflags",
-			expectedErr: errors.New("fake MountSensitiveWithoutSystemdWithMountFlags: target error"),
-		},
-		{
-			desc:                "[Success] Successful run",
-			source:              "container",
-			target:              "valid_mount",
-			expectedErr:         nil,
-			expectedMountpoints: []mount.MountPoint{{Device: "container", Path: "valid_mount", Type: "", Opts: []string{}}},
-		},
-	}
-
-	d := NewFakeDriver(t)
-	fakeMounter := &fakeMounter{}
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: fakeMounter,
-	}
-	for _, test := range tests {
-		err := d.mounter.MountSensitiveWithoutSystemdWithMountFlags(test.source, test.target, "", nil, nil, nil)
-		if test.expectedErr == nil {
-			require.NoError(t, err, test.desc)
-		} else {
-			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
-		}
-
-		mountPoints, err := d.mounter.List()
-		require.NoError(t, err)
-		assert.Equal(t, test.expectedMountpoints, mountPoints)
-	}
-}
-
-func TestIsLikelyNotMountPoint(t *testing.T) {
-	tests := []struct {
-		desc        string
-		file        string
-		expectedErr error
-	}{
-		{
-			desc:        "[Error] Mocked file error",
-			file:        "./error_is_likely_target",
-			expectedErr: errors.New("fake IsLikelyNotMountPoint: fake error"),
-		},
-		{
-			desc:        "[Success] Successful run",
-			file:        targetTest,
-			expectedErr: nil,
-		},
-		{
-			desc:        "[Success] Successful run not a mount",
-			file:        "./false_is_likely_target",
-			expectedErr: nil,
-		},
-	}
-
-	d := NewFakeDriver(t)
-	fakeMounter := &fakeMounter{}
-	d.mounter = &mount.SafeFormatAndMount{
-		Interface: fakeMounter,
-	}
-	for _, test := range tests {
-		_, err := d.mounter.IsLikelyNotMountPoint(test.file)
-		if test.expectedErr == nil {
-			require.NoError(t, err, test.desc)
-		} else {
-			require.EqualError(t, err, test.expectedErr.Error(), test.desc)
-		}
+			if test.mountCheckError != nil {
+				require.ErrorIs(t, err, test.mountCheckError)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, test.expectedNotMountPoint, actual)
+		})
 	}
 }
