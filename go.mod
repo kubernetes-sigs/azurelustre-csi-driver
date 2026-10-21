@@ -2,8 +2,6 @@ module sigs.k8s.io/azurelustre-csi-driver
 
 go 1.26.0
 
-toolchain go1.26.9
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0

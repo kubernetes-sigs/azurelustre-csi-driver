@@ -177,6 +177,7 @@ Cross-downloading is not native ARM64 execution coverage. Run the affected
 verifiers on an ARM64 host before claiming that coverage. For Node/native-tool
 checks, use `node:20-bookworm-slim` with the same mounts and install `git`,
 `curl`, `xz-utils`, and `ca-certificates` inside it. Helm chart verification also
-requires `make`; misspell and golangci-lint require the Go toolchain declared in
-[go.mod](../go.mod), which the Node image does not provide. Run the corresponding
+requires `make`; misspell and golangci-lint require a compatible Go compiler,
+which the Node image does not provide. Follow the
+[Go version guidance](csi-dev.md#clone-repo-and-build-locally). Run the corresponding
 verifiers twice, removing npm or disabling downloads before the warm run.
