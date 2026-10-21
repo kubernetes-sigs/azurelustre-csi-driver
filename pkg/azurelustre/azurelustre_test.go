@@ -121,10 +121,14 @@ func (f *FakeCommandRunner) RunWithTimeout(_ context.Context, _ time.Duration, c
 }
 
 type fakePingChecker struct {
-	err error
+	err     error
+	onCheck func(string)
 }
 
-func (f *fakePingChecker) EnsureReachable(_ string) error {
+func (f *fakePingChecker) EnsureReachable(address string) error {
+	if f.onCheck != nil {
+		f.onCheck(address)
+	}
 	return f.err
 }
 

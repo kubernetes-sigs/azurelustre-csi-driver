@@ -58,7 +58,8 @@ to collect current and previous logs, termination details, and events.
 | Message or gRPC status | Meaning | What to check |
 | ---------------------- | ------- | ------------- |
 | `failed to initialize Azure Lustre CSI driver` | Driver construction failed. | Read the accompanying error for the specific configuration, identity, or local initialization failure. |
-| `invalid endpoint`, `failed to remove <path>`, or `failed to listen` | The CSI endpoint could not be prepared. | Check `--endpoint`, the underlying OS error, socket-directory mounts and permissions, and address conflicts. Do not remove a socket belonging to a running driver. |
+| `invalid endpoint`, `failed to prepare Unix socket <path>`, or `failed to listen` | The CSI endpoint could not be prepared. | Check `--endpoint`, the underlying OS error, socket-directory mounts and permissions, and address conflicts. Do not remove a socket belonging to a running driver. |
+| `refusing to remove endpoint that is not a socket` | A file, directory, or symlink occupies the configured Unix endpoint. Startup leaves it untouched. | Correct the endpoint or resolve the unexpected object after establishing its ownership. The driver only removes socket objects; scheme names are case-insensitive. |
 | `failed to serve on <address>` | gRPC serving failed. | Inspect the underlying listener error and correlate it with container restarts or pod termination. |
 | `timed out shutting down gRPC server` | The driver's ten-second cleanup deadline expired. Remaining gRPC connections are closed and the process exits with an error. | Capture the driver logs and in-flight request details. This is not an Azure filesystem provisioning timeout; extending the pod termination grace period does not change this driver deadline. |
 | `Unavailable` with `gRPC server is shutting down` | A new request was rejected during shutdown. | Check whether termination was planned and whether a replacement driver is healthy. Other `Unavailable` messages can have different causes. |
@@ -385,6 +386,36 @@ kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i
 ### Node Mount Errors
 
 #### Error: Could not mount target
+
+`node mount services are not initialized on this driver instance` returns
+`Unavailable` without mounting or unmounting. Check that kubelet is connected to
+the node plugin and inspect its startup logs; the controller does not initialize
+host mount services.
+
+`node path ... must be an absolute, non-root path without NUL characters` returns
+`InvalidArgument` before publish or unpublish filesystem work. CSI
+callers must provide a valid absolute target. Custom kubelet root directories are
+supported; this validation does not impose a fixed host directory allowlist.
+
+If the driver cannot determine whether a target is mounted, cannot unmount an
+existing target, or cannot remove a target after a failed mount, it returns
+`Unavailable`. Kubelet keeps the mount state uncertain so it can retry or clean up
+the volume when the Pod is removed. This error is not proof that the volume is
+unmounted. A failed mount whose target is confirmed removed or absent can return
+`Internal` instead.
+
+Keep the driver running, inspect the node logs for the original mount error and
+any cleanup error, and correct the reported node or filesystem problem. Do not
+remove kubelet volume metadata or force-delete storage objects to hide the error.
+
+For `temporary mount cleanup incomplete`, the driver could not finish removing
+the temporary mount used to create a subdirectory. The publish call does not
+report success. A later publish retries that cleanup before target preparation or
+the MGS probe, and unpublishing also checks for a leftover temporary mount. This
+keeps a later probe or preparation failure from hiding unfinished cleanup. An
+already-mounted public target still does not require an MGS probe.
+The message includes both errors if subdirectory creation and cleanup failed.
+Unmounting preserves the filesystem's data; it does not delete the subdirectory.
 
 **Symptoms:**
 
