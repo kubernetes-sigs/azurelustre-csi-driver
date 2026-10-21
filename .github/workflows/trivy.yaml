@@ -31,9 +31,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - name: Read Go release series
+        id: go-version
+        shell: bash
+        run: |
+          version=$(hack/ci-go-version.sh)
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
-          go-version-file: 'go.mod'
+          go-version: ${{ steps.go-version.outputs.version }}
           check-latest: true
 
       - name: Build an image from Dockerfile

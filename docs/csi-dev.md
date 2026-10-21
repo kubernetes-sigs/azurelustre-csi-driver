@@ -34,8 +34,8 @@ Verification tools are pinned and installed under
 `_output/tools/<tool>/<version>` in the repository, not into system directories.
 Keep this directory between local runs to reuse the installations. Release
 downloads are checked against pinned SHA-256 checksums before installation.
-The Go toolchain declared in [go.mod](../go.mod), Python 3.8 or later available
-as `python3`, and Node.js 20 or later remain prerequisites.
+A Go compiler meeting the minimum in [go.mod](../go.mod), Python 3.8 or later
+available as `python3`, and Node.js 20 or later remain prerequisites.
 Installing uncached Python tools requires pip, and installing
 uncached markdownlint requires npm. Python-based verifiers use the shared
 [Python prerequisite check](../hack/ensure-python.sh) to report how to install
@@ -43,9 +43,21 @@ or activate a missing prerequisite. Verification does not create or modify the s
 `python` command. The [Linux workflow](../.github/workflows/linux.yaml) selects
 Python 3.12 explicitly; fresh CI runners install the pinned verification tools.
 
-A newer host Go may exceed the pinned golangci-lint binary's supported version.
-In that case, set `GOTOOLCHAIN` to the `toolchain` value in `go.mod` when running
-verification; automatic toolchain selection does not downgrade a newer Go.
+The module's `go` directive declares the minimum version; it does not select the
+latest compiler patch. CI uses [ci-go-version.sh](../hack/ci-go-version.sh) to
+derive the matching release series (for example, `1.26.x`) and installs its latest
+available patch with `actions/setup-go`. There is no `toolchain` directive to
+update for each patch release.
+
+For local verification, use an up-to-date patch in the same release series.
+A newer host Go may exceed the pinned golangci-lint binary's supported version;
+select a compatible installed compiler or set `GOTOOLCHAIN` to a specific patched
+version in that series. Automatic toolchain selection does not downgrade a newer
+Go or continually update an already-compatible compiler.
+
+Package builds select their compiler independently. Microsoft Go/SystemCrypto
+builds should retain `GOTOOLCHAIN=local` rather than downloading an upstream
+toolchain. Record the resolved compiler version for release builds.
 
 For pin locations, release hashes, dependency-lock updates, and isolated
 validation commands, see [Maintaining verification tools](verification-tools.md).

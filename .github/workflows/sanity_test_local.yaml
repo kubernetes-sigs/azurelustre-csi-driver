@@ -27,10 +27,17 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
-      - name: Set up Go 1.x
+      - name: Read Go release series
+        id: go-version
+        shell: bash
+        run: |
+          version=$(hack/ci-go-version.sh)
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - name: Set up Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
-          go-version-file: 'go.mod'
+          go-version: ${{ steps.go-version.outputs.version }}
+          check-latest: true
         id: go
       - name: Run Sanity Test
         run: make sanity-test-local
