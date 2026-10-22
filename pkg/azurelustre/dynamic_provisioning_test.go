@@ -35,16 +35,24 @@ import (
 	networkfake "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6/fake"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4/fake"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 )
 
 type mockAmlfsRecorder struct {
 	recordedAmlfsConfigurations map[string]armstoragecache.AmlFilesystem
 	failureBehaviors            []string
 	fakeCallCount               []string
+	createResponse              *armstoragecache.AmlFilesystem
+	subnetUsageResponse         *armnetwork.VirtualNetworkListUsageResult
+	skuResponse                 *armstoragecache.ResourceSKUsResult
+	getError                    error
+	deleteError                 error
+	deletePollingError          *azcore.ResponseError
 }
 
 const (
@@ -234,6 +242,12 @@ func newFakeSkusServer(_ *testing.T, recorder *mockAmlfsRecorder) *fake.SKUsServ
 	fakeSkusServer.NewListPager = func(_ *armstoragecache.SKUsClientListOptions) azfake.PagerResponder[armstoragecache.SKUsClientListResponse] {
 		recorder.recordFakeCall()
 		resp := azfake.PagerResponder[armstoragecache.SKUsClientListResponse]{}
+		if recorder.skuResponse != nil {
+			resp.AddPage(http.StatusOK, armstoragecache.SKUsClientListResponse{
+				ResourceSKUsResult: *recorder.skuResponse,
+			}, nil)
+			return resp
+		}
 		nextFailureBehavior := getNextFailureBehavior(recorder)
 		if nextFailureBehavior != "" {
 			switch nextFailureBehavior {
@@ -378,6 +392,13 @@ func newFakeVnetServer(_ *testing.T, recorder *mockAmlfsRecorder) *networkfake.V
 	fakeVnetServer.NewListUsagePager = func(_, vnetName string, _ *armnetwork.VirtualNetworksClientListUsageOptions) azfake.PagerResponder[armnetwork.VirtualNetworksClientListUsageResponse] {
 		recorder.recordFakeCall()
 		resp := azfake.PagerResponder[armnetwork.VirtualNetworksClientListUsageResponse]{}
+
+		if recorder.subnetUsageResponse != nil {
+			resp.AddPage(http.StatusOK, armnetwork.VirtualNetworksClientListUsageResponse{
+				VirtualNetworkListUsageResult: *recorder.subnetUsageResponse,
+			}, nil)
+			return resp
+		}
 
 		if vnetName == vnetListUsageErrorName {
 			resp.AddError(errors.New("fake vnet list usage error"))
@@ -555,6 +576,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		recorder.recordFakeCall()
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.PollerResponder[armstoragecache.AmlFilesystemsClientDeleteResponse]{}
+		if recorder.deleteError != nil {
+			errResp.SetError(recorder.deleteError)
+			return resp, errResp
+		}
 		if amlFilesystemName == immediateDeleteFailureName {
 			errResp.SetError(&azcore.ResponseError{StatusCode: http.StatusConflict})
 			return resp, errResp
@@ -566,9 +591,18 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			return resp, errResp
 		}
 
+		if _, exists := recorder.recordedAmlfsConfigurations[amlFilesystemName]; !exists {
+			resp.SetTerminalResponse(http.StatusNoContent, armstoragecache.AmlFilesystemsClientDeleteResponse{}, nil)
+			return resp, errResp
+		}
+
 		resp.AddNonTerminalResponse(http.StatusAccepted, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
 		resp.AddNonTerminalResponse(http.StatusOK, nil)
+		if recorder.deletePollingError != nil {
+			resp.SetTerminalError(recorder.deletePollingError.StatusCode, recorder.deletePollingError.ErrorCode)
+			return resp, errResp
+		}
 		if amlFilesystemName == eventualDeleteFailureName {
 			resp.SetTerminalError(http.StatusInternalServerError, eventualDeleteFailureName)
 			return resp, errResp
@@ -637,6 +671,9 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		}
 
 		recorder.recordedAmlfsConfigurations[amlFilesystemName] = amlFilesystem
+		if recorder.createResponse != nil {
+			amlFilesystem = *recorder.createResponse
+		}
 		resp.SetTerminalResponse(http.StatusOK, armstoragecache.AmlFilesystemsClientCreateOrUpdateResponse{
 			AmlFilesystem: amlFilesystem,
 		}, nil)
@@ -648,6 +685,10 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		var amlFilesystem *armstoragecache.AmlFilesystem
 		errResp := azfake.ErrorResponder{}
 		resp := azfake.Responder[armstoragecache.AmlFilesystemsClientGetResponse]{}
+		if recorder.getError != nil {
+			errResp.SetError(recorder.getError)
+			return resp, errResp
+		}
 		if amlFilesystemName == clusterGetImmediateFailureName {
 			errResp.SetError(errors.New(clusterGetImmediateFailureName))
 			return resp, errResp
@@ -659,7 +700,7 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 			}
 		}
 		if amlFilesystem == nil {
-			errResp.SetError(errors.New("ResourceNotFound"))
+			errResp.SetResponseError(http.StatusNotFound, "ResourceNotFound")
 			return resp, errResp
 		}
 		amlFilesystem.Properties.ProvisioningState = new(armstoragecache.AmlFilesystemProvisioningStateTypeSucceeded)
@@ -684,6 +725,433 @@ func newFakeAmlFilesystemsServer(_ *testing.T, recorder *mockAmlfsRecorder) *fak
 		return resp, errResp
 	}
 	return &fakeAmlfsServer
+}
+
+func TestUnusableSKUResponseFallsBackToARM(t *testing.T) {
+	testCases := []struct {
+		name    string
+		change  func(*armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU
+		message string
+	}{
+		{name: "nil SKU", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return nil
+		}, message: "missing resource type"},
+		{name: "missing resource type", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.ResourceType = nil
+			return sku
+		}, message: "missing resource type"},
+		{name: "empty resource type", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.ResourceType = new("")
+			return sku
+		}, message: "missing resource type"},
+		{name: "missing SKU name", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Name = nil
+			return sku
+		}, message: "missing SKU name"},
+		{name: "empty SKU name", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Name = new("")
+			return sku
+		}, message: "missing SKU name"},
+		{name: "missing location", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Locations[0] = nil
+			return sku
+		}, message: "missing location"},
+		{name: "empty location", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Locations[0] = new("")
+			return sku
+		}, message: "missing location"},
+		{name: "missing location info", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.LocationInfo[0] = nil
+			return sku
+		}, message: "missing location info"},
+		{name: "missing zone in requested location", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.LocationInfo[0].Zones = []*string{nil}
+			return sku
+		}, message: "missing zone"},
+		{name: "nil capability", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{nil}
+			return sku
+		}, message: "capacity increment or maximum"},
+		{name: "missing capability name", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Value: new("4")}}
+			return sku
+		}, message: "capacity increment or maximum"},
+		{name: "empty capability name", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(""), Value: new("4")}}
+			return sku
+		}, message: "capacity increment or maximum"},
+		{name: "missing capacity increment", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(AmlfsSkuCapacityIncrementName)}}
+			return sku
+		}, message: "missing value for capability " + AmlfsSkuCapacityIncrementName},
+		{name: "empty capacity increment", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(AmlfsSkuCapacityIncrementName), Value: new("")}}
+			return sku
+		}, message: "missing value for capability " + AmlfsSkuCapacityIncrementName},
+		{name: "missing maximum capacity", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(AmlfsSkuCapacityMaximumName)}}
+			return sku
+		}, message: "missing value for capability " + AmlfsSkuCapacityMaximumName},
+		{name: "empty maximum capacity", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(AmlfsSkuCapacityMaximumName), Value: new("")}}
+			return sku
+		}, message: "missing value for capability " + AmlfsSkuCapacityMaximumName},
+		{name: "capacity capabilities absent", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = nil
+			return sku
+		}, message: "capacity increment or maximum"},
+		{name: "maximum capacity capability absent", change: func(sku *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{{Name: new(AmlfsSkuCapacityIncrementName), Value: new("4")}}
+			return sku
+		}, message: "capacity increment or maximum"},
+		{name: "non-numeric increment", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "invalid", "128", expectedZones)
+		}, message: AmlfsSkuCapacityIncrementName},
+		{name: "non-numeric maximum", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "4", "invalid", expectedZones)
+		}, message: AmlfsSkuCapacityMaximumName},
+		{name: "zero increment", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "0", "128", expectedZones)
+		}, message: AmlfsSkuCapacityIncrementName},
+		{name: "negative maximum", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "4", "-1", expectedZones)
+		}, message: AmlfsSkuCapacityMaximumName},
+		{name: "integer overflow", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "4", "9223372036854775808", expectedZones)
+		}, message: AmlfsSkuCapacityMaximumName},
+		{name: "capacity overflows CSI byte range", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "4", "8388608", expectedZones)
+		}, message: AmlfsSkuCapacityMaximumName},
+		{name: "increment exceeds maximum", change: func(_ *armstoragecache.ResourceSKU) *armstoragecache.ResourceSKU {
+			return newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "256", "128", expectedZones)
+		}, message: "capacity increment or maximum"},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			sku := newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, expectedZones)
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{
+				newResourceSku(AmlfsSkuResourceType, otherSkuForLocation, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, expectedZones),
+				test.change(sku),
+			}}
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			skuValues, err := provisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unavailable, status.Code(err), "unusable metadata must not be returned as a successful partial catalog")
+			require.ErrorContains(t, err, test.message)
+			require.ErrorContains(t, err, expectedLocation)
+			assert.NotContains(t, skuValues, expectedSku)
+			assert.Contains(t, skuValues, otherSkuForLocation, "a malformed requested SKU must not discard another usable entry")
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.Equal(t, []string{"SKUsServerTransport.NewListPager"}, recorder.fakeCallCount)
+
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{Value: []*armnetwork.VirtualNetworkUsage{
+				{
+					ID:           new("/subscriptions/fake-subscription-id/resourceGroups/fake-resource-group/providers/Microsoft.Network/virtualNetworks/fake-vnet/subnets/fake-subnet-name"),
+					CurrentValue: new(float64(expectedUsedIPCount)),
+					Limit:        new(float64(expectedTotalIPCount)),
+				},
+			}}
+			driver := NewFakeDriver(t)
+			driver.cloud.SubscriptionID = "fake-subscription-id"
+			driver.dynamicProvisioner = provisioner
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Name = expectedAmlFilesystemName
+			request.Parameters[VolumeContextSkuName] = expectedSku
+			request.Parameters[VolumeContextLocation] = expectedLocation
+			request.Parameters[VolumeContextResourceGroupName] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetResourceGroup] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetName] = expectedVnetName
+			request.Parameters[VolumeContextSubnetName] = expectedAmlFilesystemSubnetName
+			request.CapacityRange = &csi.CapacityRange{RequiredBytes: 9 * util.TiB, LimitBytes: 12 * util.TiB}
+
+			response, err := driver.CreateVolume(t.Context(), request)
+
+			require.NoError(t, err, "unusable SKU metadata must not block the creation attempt")
+			assert.Equal(t, int64(12*util.TiB), response.GetVolume().GetCapacityBytes())
+			require.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName)
+			created := recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName]
+			require.NotNil(t, created.SKU)
+			assert.Equal(t, new(expectedSku), created.SKU.Name)
+			assert.Equal(t, []*string{new("zone1")}, created.Zones)
+			require.NotNil(t, created.Properties)
+			assert.Equal(t, new(float32(12)), created.Properties.StorageCapacityTiB)
+			assert.Contains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginCreateOrUpdate")
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginDelete")
+
+			recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{
+				newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, expectedZones),
+			}}
+			recorder.fakeCallCount = nil
+
+			skuValues, err = provisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
+
+			require.NoError(t, err, "a subsequent complete response must succeed")
+			assert.Contains(t, skuValues, expectedSku)
+			assert.Equal(t, []string{"SKUsServerTransport.NewListPager"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestCreateVolumeUsesValidRequestedSKUDespiteOtherMalformedData(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		change        func(*armstoragecache.ResourceSKU)
+		requiredTiB   int64
+		zone          string
+		expectedCode  codes.Code
+		expectedError string
+	}{
+		{name: "another SKU has invalid capacity", requiredTiB: 9, zone: "zone1"},
+		{name: "unused requested capability fields are malformed", requiredTiB: 9, zone: "zone1", change: func(sku *armstoragecache.ResourceSKU) {
+			sku.Capabilities = append(sku.Capabilities, nil,
+				&armstoragecache.ResourceSKUCapabilities{Value: new("unused")},
+				&armstoragecache.ResourceSKUCapabilities{Name: new("unused capability")})
+		}},
+		{name: "unrelated location fields are missing", requiredTiB: 9, zone: "zone1", change: func(sku *armstoragecache.ResourceSKU) {
+			sku.Locations = append([]*string{nil}, sku.Locations...)
+			sku.LocationInfo = append(sku.LocationInfo, nil,
+				&armstoragecache.ResourceSKULocationInfo{Location: new("other-location")})
+		}},
+		{name: "known maximum still applies", requiredTiB: 72, zone: "zone1", expectedCode: codes.InvalidArgument, expectedError: "exceeds maximum capacity"},
+		{name: "known zones still apply", requiredTiB: 9, zone: "zone2", expectedCode: codes.InvalidArgument, expectedError: "must be one of"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requestedSKU := newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, "8", "64", []string{"zone1"})
+			if test.change != nil {
+				test.change(requestedSKU)
+			}
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{
+				nil,
+				newResourceSku(AmlfsSkuResourceType, otherSkuForLocation, expectedLocation, "invalid", "128", expectedZones),
+				requestedSKU,
+			}}
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{Value: []*armnetwork.VirtualNetworkUsage{
+				{
+					ID:           new("/subscriptions/fake-subscription-id/resourceGroups/fake-resource-group/providers/Microsoft.Network/virtualNetworks/fake-vnet/subnets/fake-subnet-name"),
+					CurrentValue: new(float64(expectedUsedIPCount)),
+					Limit:        new(float64(expectedTotalIPCount)),
+				},
+			}}
+			driver := NewFakeDriver(t)
+			driver.cloud.SubscriptionID = "fake-subscription-id"
+			driver.dynamicProvisioner = newTestDynamicProvisioner(t, recorder)
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Name = expectedAmlFilesystemName
+			request.Parameters[VolumeContextSkuName] = expectedSku
+			request.Parameters[VolumeContextLocation] = expectedLocation
+			request.Parameters[VolumeContextResourceGroupName] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetResourceGroup] = expectedResourceGroupName
+			request.Parameters[VolumeContextVnetName] = expectedVnetName
+			request.Parameters[VolumeContextSubnetName] = expectedAmlFilesystemSubnetName
+			request.Parameters[VolumeContextZone] = test.zone
+			request.CapacityRange = &csi.CapacityRange{RequiredBytes: test.requiredTiB * util.TiB}
+
+			response, err := driver.CreateVolume(t.Context(), request)
+
+			if test.expectedCode != codes.OK {
+				require.ErrorContains(t, err, test.expectedError)
+				assert.Equal(t, test.expectedCode, status.Code(err))
+				assert.Nil(t, response)
+				assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginCreateOrUpdate")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, int64(16*util.TiB), response.GetVolume().GetCapacityBytes(),
+				"the usable eight-TiB SKU increment must not be replaced by the four-TiB fallback")
+			require.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName)
+			created := recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName]
+			require.NotNil(t, created.Properties)
+			assert.Equal(t, new(float32(16)), created.Properties.StorageCapacityTiB)
+			assert.NotContains(t, recorder.fakeCallCount, "AmlFilesystemsServerTransport.BeginDelete")
+		})
+	}
+}
+
+func TestDynamicProvisioner_GetSkuValuesForLocation_IgnoresUnusedCapabilityValues(t *testing.T) {
+	sku := newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, expectedZones)
+	sku.Capabilities = []*armstoragecache.ResourceSKUCapabilities{
+		{Name: new(AmlfsSkuCapacityIncrementName), Value: new(expectedSkuIncrement)},
+		{Name: new(AmlfsSkuCapacityMaximumName), Value: new(expectedSkuMaximum)},
+		{Name: new("bandwidth increment (MB/s/TiB)"), Value: nil},
+	}
+	recorder := newMockAmlfsRecorder(nil)
+	recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{sku}}
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	skuValues, err := provisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
+
+	require.NoError(t, err, "a missing unused bandwidth value must not discard valid capacity metadata")
+	require.Contains(t, skuValues, expectedSku)
+	assert.Equal(t, int64(4), skuValues[expectedSku].IncrementInTib)
+	assert.Equal(t, int64(128), skuValues[expectedSku].MaximumInTib)
+	assert.ElementsMatch(t, expectedZones, skuValues[expectedSku].AvailableZones,
+		"ignoring an unused capability must preserve the advertised zones")
+}
+
+func TestDynamicProvisioner_GetSkuValuesForLocation_FiltersUnrelatedEntriesBeforeValidation(t *testing.T) {
+	testCases := []struct {
+		name  string
+		entry *armstoragecache.ResourceSKU
+	}{
+		{name: "another resource type may omit AMLFS fields", entry: &armstoragecache.ResourceSKU{ResourceType: new("caches")}},
+		{
+			name: "another location may have unusable AMLFS metadata",
+			entry: &armstoragecache.ResourceSKU{
+				ResourceType: new(AmlfsSkuResourceType),
+				Locations:    []*string{new("other-location")},
+				LocationInfo: []*armstoragecache.ResourceSKULocationInfo{nil},
+				Capabilities: []*armstoragecache.ResourceSKUCapabilities{nil},
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{
+				testCase.entry,
+				newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, expectedZones),
+			}}
+
+			skuValues, err := newTestDynamicProvisioner(t, recorder).GetSkuValuesForLocation(t.Context(), expectedLocation)
+
+			require.NoError(t, err, "unrelated incomplete metadata must not reject the requested location's SKU")
+			require.Len(t, skuValues, 1)
+			require.Contains(t, skuValues, expectedSku)
+			assert.Equal(t, int64(4), skuValues[expectedSku].IncrementInTib)
+			assert.Equal(t, int64(128), skuValues[expectedSku].MaximumInTib)
+		})
+	}
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_Err_IncompleteResponse(t *testing.T) {
+	testCases := []struct {
+		name       string
+		properties *armstoragecache.AmlFilesystemProperties
+	}{
+		{name: "missing properties"},
+		{name: "missing client info", properties: &armstoragecache.AmlFilesystemProperties{}},
+		{name: "missing MGS address", properties: &armstoragecache.AmlFilesystemProperties{
+			ClientInfo: &armstoragecache.AmlFilesystemClientInfo{},
+		}},
+		{name: "empty MGS address", properties: &armstoragecache.AmlFilesystemProperties{
+			ClientInfo: &armstoragecache.AmlFilesystemClientInfo{MgsAddress: new("")},
+		}},
+		{name: "blank MGS address", properties: &armstoragecache.AmlFilesystemProperties{
+			ClientInfo: &armstoragecache.AmlFilesystemClientInfo{MgsAddress: new(" \t\n")},
+		}},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.createResponse = &armstoragecache.AmlFilesystem{Properties: test.properties}
+			provisioner := newTestDynamicProvisioner(t, recorder)
+			properties := &AmlFilesystemProperties{
+				ResourceGroupName: expectedResourceGroupName,
+				AmlFilesystemName: expectedAmlFilesystemName,
+				SubnetInfo:        buildExpectedSubnetInfo(),
+			}
+
+			mgsAddress, err := provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unavailable, status.Code(err), "the provisioner must retain the unfinished attempt even if its PVC was deleted")
+			require.ErrorContains(t, err, "missing MGS address")
+			require.ErrorContains(t, err, expectedAmlFilesystemName)
+			require.ErrorContains(t, err, expectedResourceGroupName)
+			assert.Empty(t, mgsAddress)
+			assert.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName, "an incomplete response must not delete the created resource")
+			assert.Equal(t, []string{
+				"AmlFilesystemsServerTransport.Get",
+				"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+				"VirtualNetworksServerTransport.NewListUsagePager",
+				"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+			}, recorder.fakeCallCount, "no destructive retry after a malformed successful response")
+
+			recorder.createResponse = nil
+			recorder.fakeCallCount = nil
+
+			mgsAddress, err = provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.NoError(t, err, "a subsequent complete response must succeed")
+			assert.Equal(t, expectedMgsAddress, mgsAddress)
+			assert.Equal(t, []string{
+				"AmlFilesystemsServerTransport.Get",
+				"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+			}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_Err_IncompleteSubnetUsage(t *testing.T) {
+	testCases := []struct {
+		name    string
+		usage   *armnetwork.VirtualNetworkUsage
+		message string
+	}{
+		{name: "nil usage entry", message: "missing subnet ID"},
+		{name: "missing subnet ID", usage: &armnetwork.VirtualNetworkUsage{}, message: "missing subnet ID"},
+		{name: "empty subnet ID", usage: &armnetwork.VirtualNetworkUsage{ID: new("")}, message: "missing subnet ID"},
+		{name: "missing current value", usage: &armnetwork.VirtualNetworkUsage{
+			ID: new(expectedAmlFilesystemSubnetID), Limit: new(float64(expectedTotalIPCount)),
+		}, message: "missing CurrentValue or Limit"},
+		{name: "missing limit", usage: &armnetwork.VirtualNetworkUsage{
+			ID: new(expectedAmlFilesystemSubnetID), CurrentValue: new(float64(expectedUsedIPCount)),
+		}, message: "missing CurrentValue or Limit"},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{
+				Value: []*armnetwork.VirtualNetworkUsage{
+					{ID: new("unrelated-subnet")},
+					test.usage,
+				},
+			}
+			provisioner := newTestDynamicProvisioner(t, recorder)
+			properties := &AmlFilesystemProperties{
+				ResourceGroupName: expectedResourceGroupName,
+				AmlFilesystemName: expectedAmlFilesystemName,
+				SubnetInfo:        buildExpectedSubnetInfo(),
+			}
+
+			mgsAddress, err := provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.Error(t, err)
+			assert.Equal(t, codes.Unavailable, status.Code(err), "incomplete subnet observations must remain retryable")
+			require.ErrorContains(t, err, test.message)
+			require.ErrorContains(t, err, expectedVnetName)
+			require.ErrorContains(t, err, expectedResourceGroupName)
+			assert.Empty(t, mgsAddress)
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.Equal(t, []string{
+				"AmlFilesystemsServerTransport.Get",
+				"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+				"VirtualNetworksServerTransport.NewListUsagePager",
+			}, recorder.fakeCallCount, "invalid capacity data must not create or delete a filesystem")
+
+			recorder.subnetUsageResponse = &armnetwork.VirtualNetworkListUsageResult{Value: []*armnetwork.VirtualNetworkUsage{{
+				ID:           new(expectedAmlFilesystemSubnetID),
+				CurrentValue: new(float64(0)),
+				Limit:        new(float64(expectedTotalIPCount)),
+			}}}
+			recorder.fakeCallCount = nil
+
+			mgsAddress, err = provisioner.CreateAmlFilesystem(t.Context(), properties)
+
+			require.NoError(t, err, "a complete retry with zero used addresses must be admitted")
+			assert.Equal(t, expectedMgsAddress, mgsAddress)
+			assert.Equal(t, []string{
+				"AmlFilesystemsServerTransport.Get",
+				"ManagementServerTransport.GetRequiredAmlFSSubnetsSize",
+				"VirtualNetworksServerTransport.NewListUsagePager",
+				"AmlFilesystemsServerTransport.BeginCreateOrUpdate",
+			}, recorder.fakeCallCount)
+		})
+	}
 }
 
 func TestDynamicProvisioner_CreateAmlFilesystem_Success(t *testing.T) {
@@ -1238,6 +1706,80 @@ func TestDynamicProvisioner_DeleteAmlFilesystem_Success(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+
+	err = dynamicProvisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.NoError(t, err, "repeating deletion after completion must succeed")
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_AbsentBackendCompletesWithoutPolling(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.NoError(t, err, "the documented HTTP 204 response must succeed without polling")
+	assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
+	assert.Empty(t, recorder.recordedAmlfsConfigurations)
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_RejectsSubmissionErrors(t *testing.T) {
+	testCases := []struct {
+		name         string
+		response     error
+		expectedCode codes.Code
+	}{
+		{name: "resource not found error is not the documented 204", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing resource group", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing operation", response: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "OperationNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "permission denied", response: &azcore.ResponseError{
+			StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
+		}, expectedCode: codes.PermissionDenied},
+		{name: "unauthenticated", response: &azcore.ResponseError{
+			StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed",
+		}, expectedCode: codes.Unauthenticated},
+		{name: "throttled", response: &azcore.ResponseError{
+			StatusCode: http.StatusTooManyRequests, ErrorCode: "TooManyRequests",
+		}, expectedCode: codes.Unavailable},
+		{name: "untyped error text", response: errors.New("ResourceNotFound"), expectedCode: codes.Unknown},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.deleteError = test.response
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err),
+				"DELETE submission must report %s instead of claiming deletion completed; got %v", test.expectedCode, err)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestDynamicProvisioner_DeleteAmlFilesystem_MissingOperationDoesNotProveBackendDeletion(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName] = armstoragecache.AmlFilesystem{
+		Name: new(expectedAmlFilesystemName),
+	}
+	recorder.deletePollingError = &azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound"}
+	provisioner := newTestDynamicProvisioner(t, recorder)
+
+	err := provisioner.DeleteAmlFilesystem(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.NotFound, status.Code(err))
+	assert.Contains(t, recorder.recordedAmlfsConfigurations, expectedAmlFilesystemName, "a failed status poll must not establish successful deletion")
+	assert.Equal(t, []string{"AmlFilesystemsServerTransport.BeginDelete"}, recorder.fakeCallCount)
 }
 
 func TestDynamicProvisioner_DeleteAmlFilesystem_Err_NilCLient(t *testing.T) {
@@ -1358,14 +1900,86 @@ func TestDynamicProvisioner_CurrentClusterState_Success(t *testing.T) {
 	require.Equal(t, ClusterStateExists, currentClusterState)
 }
 
-func TestDynamicProvisioner_CurrentClusterState_SuccessNotFound(t *testing.T) {
-	recorder := newMockAmlfsRecorder([]string{})
-	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
-	require.Empty(t, recorder.recordedAmlfsConfigurations)
+func TestDynamicProvisioner_CurrentClusterState_AcceptsTypedResourceNotFound(t *testing.T) {
+	testCases := []struct {
+		name     string
+		getError error
+	}{
+		{name: "empty backend returns HTTP 404 ResourceNotFound"},
+		{name: "wrapped typed response", getError: fmt.Errorf("looking up AMLFS: %w", &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceNotFound",
+		})},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.getError = test.getError
+			provisioner := newTestDynamicProvisioner(t, recorder)
 
-	currentClusterState, err := dynamicProvisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
-	require.NoError(t, err)
-	require.Equal(t, ClusterStateNotFound, currentClusterState)
+			clusterState, err := provisioner.currentClusterState(t.Context(), expectedResourceGroupName, expectedAmlFilesystemName)
+
+			require.NoError(t, err)
+			assert.Equal(t, ClusterStateNotFound, clusterState)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount)
+		})
+	}
+}
+
+func TestDynamicProvisioner_CreateAmlFilesystem_DoesNotMutateWhenLookupFails(t *testing.T) {
+	testCases := []struct {
+		name         string
+		getError     error
+		expectedCode codes.Code
+	}{
+		{name: "untyped message", getError: errors.New("ResourceNotFound"), expectedCode: codes.Unknown},
+		{name: "synthetic gRPC status lacks ARM absence evidence", getError: status.Error(codes.NotFound, "ResourceNotFound"), expectedCode: codes.NotFound},
+		{name: "missing resource group", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "ResourceGroupNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing operation", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound, ErrorCode: "OperationNotFound",
+		}, expectedCode: codes.NotFound},
+		{name: "missing error code", getError: &azcore.ResponseError{
+			StatusCode: http.StatusNotFound,
+		}, expectedCode: codes.NotFound},
+		{name: "missing status code", getError: &azcore.ResponseError{
+			ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.Unknown},
+		{name: "permission failure mentioning absence", getError: fmt.Errorf("ResourceNotFound text: %w", &azcore.ResponseError{
+			StatusCode: http.StatusForbidden, ErrorCode: "AuthorizationFailed",
+		}), expectedCode: codes.PermissionDenied},
+		{name: "wrong status with absence code", getError: &azcore.ResponseError{
+			StatusCode: http.StatusServiceUnavailable, ErrorCode: "ResourceNotFound",
+		}, expectedCode: codes.Unavailable},
+		{name: "unauthenticated", getError: &azcore.ResponseError{
+			StatusCode: http.StatusUnauthorized, ErrorCode: "AuthenticationFailed",
+		}, expectedCode: codes.Unauthenticated},
+		{name: "throttled", getError: &azcore.ResponseError{
+			StatusCode: http.StatusTooManyRequests, ErrorCode: "TooManyRequests",
+		}, expectedCode: codes.Unavailable},
+		{name: "canceled", getError: context.Canceled, expectedCode: codes.Canceled},
+		{name: "deadline exceeded", getError: context.DeadlineExceeded, expectedCode: codes.DeadlineExceeded},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := newMockAmlfsRecorder(nil)
+			recorder.getError = test.getError
+			provisioner := newTestDynamicProvisioner(t, recorder)
+
+			mgsAddress, err := provisioner.CreateAmlFilesystem(t.Context(), &AmlFilesystemProperties{
+				ResourceGroupName: expectedResourceGroupName,
+				AmlFilesystemName: expectedAmlFilesystemName,
+				SubnetInfo:        buildExpectedSubnetInfo(),
+			})
+
+			require.Error(t, err)
+			assert.Equal(t, test.expectedCode, status.Code(err),
+				"lookup failure must report %s before any mutation; got %v", test.expectedCode, err)
+			assert.Empty(t, mgsAddress)
+			assert.Empty(t, recorder.recordedAmlfsConfigurations)
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount, "failed observation must not create or delete storage")
+		})
+	}
 }
 
 func TestDynamicProvisioner_CurrentClusterState_Err(t *testing.T) {
@@ -1521,12 +2135,14 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Err_NilClient(t *testing.T) 
 	assert.Empty(t, recorder.recordedAmlfsConfigurations)
 }
 
-func TestDynamicProvisioner_GetSkuValuesForLocation_NoZonesAvailable(t *testing.T) {
-	recorder := newMockAmlfsRecorder([]string{noZonesForLocation})
+func TestDynamicProvisioner_GetSkuValuesForLocation_AllowsEmptyAdvertisedZoneList(t *testing.T) {
+	recorder := newMockAmlfsRecorder(nil)
+	recorder.skuResponse = &armstoragecache.ResourceSKUsResult{Value: []*armstoragecache.ResourceSKU{
+		newResourceSku(AmlfsSkuResourceType, expectedSku, expectedLocation, expectedSkuIncrement, expectedSkuMaximum, []string{}),
+	}}
 	dynamicProvisioner := newTestDynamicProvisioner(t, recorder)
 
 	skuValues, err := dynamicProvisioner.GetSkuValuesForLocation(t.Context(), expectedLocation)
-	t.Log(skuValues)
 	require.NoError(t, err)
 	require.Len(t, skuValues, 1)
 
@@ -1560,20 +2176,20 @@ func TestDynamicProvisioner_GetSkuValuesForLocation_Errors(t *testing.T) {
 		{
 			desc:             "Invalid SKU increment",
 			failureBehaviors: []string{invalidSkuIncrement},
-			expectedCode:     codes.Internal,
-			expectedError:    "found no AMLFS SKUs",
+			expectedCode:     codes.Unavailable,
+			expectedError:    "invalid SKU response",
 		},
 		{
 			desc:             "Invalid SKU maximum",
 			failureBehaviors: []string{invalidSkuMaximum},
-			expectedCode:     codes.Internal,
-			expectedError:    "found no AMLFS SKUs",
+			expectedCode:     codes.Unavailable,
+			expectedError:    "invalid SKU response",
 		},
 		{
 			desc:             "No location info for SKU",
 			failureBehaviors: []string{noLocationInfoForSku},
-			expectedCode:     codes.Internal,
-			expectedError:    "could not find location info for sku",
+			expectedCode:     codes.Unavailable,
+			expectedError:    "missing location info",
 		},
 		{
 			desc:             "Invalid location",
