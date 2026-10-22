@@ -46,6 +46,14 @@ For manifest installations, follow the [upgrade-in-place
 instructions](../docs/install-csi-driver.md#install-with-kubectl) instead of
 uninstall/reinstall.
 
+Keep `csidriver.name` equal to the existing driver/PV identity during an upgrade.
+The chart now supplies it to the controller and nodes as well as Kubernetes
+objects and the uninstall guard. If an older installation used explicit
+`--drivername` arguments, align the chart setting with that existing identity;
+matching arguments remain valid, but conflicting arguments fail rendering.
+See [Driver Identity](../docs/driver-parameters.md#driver-identity). Changing
+the name is not a volume-preserving migration.
+
 > [!IMPORTANT]
 > **Stop every workload using Lustre on the affected nodes before upgrading.** An
 > upgrade restarts the node pods. If the release changes the Lustre client

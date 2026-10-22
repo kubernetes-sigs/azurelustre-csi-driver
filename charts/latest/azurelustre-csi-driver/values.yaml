@@ -160,6 +160,7 @@ rbac:
   create: true
 
 csidriver:
+  # Runtime and Kubernetes identity; keep unchanged when upgrading existing volumes.
   name: azurelustre.csi.azure.com
   fsGroupPolicy: File
   attachRequired: false

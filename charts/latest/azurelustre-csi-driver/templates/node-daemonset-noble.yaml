@@ -174,9 +174,7 @@ spec:
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-{{- range $arg := .Values.node.extraArgs }}
-            - {{ $arg | quote }}
-{{- end }}
+{{ include "azurelustre.driverArgs" (dict "name" .Values.csidriver.name "args" .Values.node.extraArgs "source" "node.extraArgs") | indent 12 }}
             - --endpoint=$(CSI_ENDPOINT)
             - --nodeid=$(KUBE_NODE_NAME)
           ports:

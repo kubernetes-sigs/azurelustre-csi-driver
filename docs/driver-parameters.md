@@ -8,6 +8,25 @@ For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service d
 
 These parameters control the behavior of the Azure Lustre CSI driver itself and are typically configured during driver installation rather than in StorageClass definitions.
 
+### Driver Identity
+
+For Helm installations, `csidriver.name` selects the CSI plugin identity. The
+chart passes it to the controller and every node flavor and uses the same name
+for the CSIDriver object, registration paths and uninstall guard. The default is
+`azurelustre.csi.azure.com`, also used explicitly by the static manifests.
+
+Configure a nondefault identity through `csidriver.name`, not by overriding
+`--drivername` independently in `controller.extraArgs` or `node.extraArgs`.
+Existing matching flags are accepted; conflicting or incomplete identity flags
+fail chart rendering rather than silently selecting a different driver name.
+StorageClasses and PVs must use that same CSI identity.
+
+Keep the identity unchanged when upgrading an installation with existing
+volumes. For an older custom configuration, make `csidriver.name` agree with
+the identity the running driver and its PVs already use before upgrading.
+Changing this value is not a volume-preserving rename. A configurable identity
+does not make concurrent installations of this driver supported.
+
 ### Node Startup Taint Management
 
 Name | Meaning | Available Value | Default Value | Configuration Method

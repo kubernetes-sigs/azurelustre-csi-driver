@@ -163,9 +163,7 @@ spec:
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}-noble
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-{{- range $arg := .Values.controller.extraArgs }}
-            - {{ $arg | quote }}
-{{- end }}
+{{ include "azurelustre.driverArgs" (dict "name" .Values.csidriver.name "args" .Values.controller.extraArgs "source" "controller.extraArgs") | indent 12 }}
             - --endpoint=$(CSI_ENDPOINT)
           ports:
             - containerPort: {{ .Values.sidecars.livenessProbe.controller.healthPort }}
