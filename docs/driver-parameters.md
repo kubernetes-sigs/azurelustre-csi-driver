@@ -94,18 +94,20 @@ sub-dir | This is the subdirectory within the AMLFS cluster's root directory whi
 
 For both static and dynamic provisioning, a writable mount creates the configured
 `sub-dir` if it does not already exist. Creation resolves paths relative to the
-mounted Lustre filesystem root. Path resolution outside that root and absolute
-symlink targets are rejected during creation.
+mounted Lustre filesystem root. Path resolution outside that root is rejected.
 
 The configured `sub-dir` must use directory components, not symlinks. Lustre
 cannot mount a subdirectory through a symlink, even when a relative symlink stays
-within the same filesystem. Use the target's directory path instead. Directory
-creation can follow such an in-root link before the final mount fails, so a failed
-publish does not imply that no directories were created. This limitation applies
-to the configured mount path, not to ordinary symlink use inside a mounted volume.
+within the same filesystem. Use the target's directory path instead. For a new
+writable mount, the driver checks existing path components and returns
+`FailedPrecondition` if it finds a symlink, before creating the subdirectory.
+This does not affect ordinary symlink use inside a mounted volume.
+
+Directories created during an unsuccessful mount are not automatically removed.
 
 Read-only mounts do not create subdirectories; the configured path must already
-exist. Creation does not change permissions on existing directories.
+exist. Existing mounts are not rechecked.
+Creation does not change permissions on existing directories.
 Administrators must still set appropriate Lustre directory permissions for
 shared storage.
 

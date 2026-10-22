@@ -649,9 +649,35 @@ func makeSubDirInMountRoot(workingMountDir, mountPath, subDirPath string) error 
 		return status.Errorf(codes.Internal, "failed to open internal mount root: %v", err)
 	}
 
-	// Keep path resolution and creation relative to the mounted filesystem root.
-	if err := errors.Join(root.MkdirAll(filepath.Clean(subDirPath), 0o775), root.Close()); err != nil {
+	cleanSubDir := filepath.Clean(subDirPath)
+	var componentPath, symlinkComponent string
+	// Detect existing links for an early diagnostic; rooted creation remains the
+	// confinement boundary if the shared directory tree changes after this check.
+	for component := range strings.SplitSeq(cleanSubDir, string(filepath.Separator)) {
+		componentPath = filepath.Join(componentPath, component)
+		info, statErr := root.Lstat(componentPath)
+		if os.IsNotExist(statErr) {
+			break
+		}
+		if statErr != nil {
+			err = statErr
+			break
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			symlinkComponent = componentPath
+			break
+		}
+	}
+	if err == nil && symlinkComponent == "" {
+		err = root.MkdirAll(cleanSubDir, 0o775)
+	}
+	if err = errors.Join(err, root.Close()); err != nil {
 		return status.Errorf(codes.Internal, "failed to make subdirectory: %v", err)
+	}
+	if symlinkComponent != "" {
+		return status.Errorf(codes.FailedPrecondition,
+			"sub-dir %q contains symlink component %q; use the directory path instead",
+			subDirPath, symlinkComponent)
 	}
 
 	return nil

@@ -29,6 +29,7 @@ kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre
     - [Error: Could not mount target](#error-could-not-mount-target)
     - [Error: MGS IP address is not reachable](#error-mgs-ip-address-is-not-reachable)
     - [Error: Context sub-dir must be strict subpath](#error-context-sub-dir-must-be-strict-subpath)
+    - [Error: Subdirectory contains a symlink](#error-subdirectory-contains-a-symlink)
 - [Configuration Errors](#configuration-errors)
   - [StorageClass Parameter Errors](#storageclass-parameter-errors)
     - [Error: Cannot unmarshal number](#error-cannot-unmarshal-number)
@@ -538,6 +539,23 @@ kubectl logs -n kube-system csi-azurelustre-node-<pod> -c azurelustre --tail=300
 
 - Validate subdirectory path doesn't escape the filesystem root
 - Use valid subdirectory paths without `../` patterns
+
+---
+
+#### Error: Subdirectory contains a symlink
+
+`FailedPrecondition` with `sub-dir ... contains symlink component ...` means the
+driver found a symlink while preparing a new writable subdirectory mount. Lustre
+cannot mount through that path. The driver leaves the link unchanged and does not
+create directories through it.
+
+Use a directory-only `sub-dir` path, or coordinate a filesystem correction with
+its owner. Do not delete shared entries simply to clear the error. See
+[subdirectory creation](driver-parameters.md#subdirectory-creation) for readonly
+behavior.
+
+If the error reports `Unavailable` because temporary mount cleanup is incomplete,
+keep the driver running so cleanup can be retried.
 
 ---
 
