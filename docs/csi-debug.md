@@ -786,9 +786,8 @@ Look for events such as:
 - `failed to provision volume`
 - `error creating AMLFS cluster`
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
-Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+Use the [dynamic provisioning error reference](errors.md#dynamic-provisioning-errors)
+to interpret the reported error.
 
 **Check controller logs for dynamic provisioning errors:**
 
@@ -802,8 +801,6 @@ Common error patterns:
 - Quota exceeded errors
 - Network/subnet configuration issues
 - Invalid StorageClass parameters
-
-Check for solutions in [Resolving Common Errors](errors.md)
 
 Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
 
@@ -821,8 +818,6 @@ Check for:
 - Resource group and location settings
 - Zone parameter matches available zones for the SKU and location
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
 **Check Azure subscription quotas and limits:**
 
 ```sh
@@ -830,19 +825,17 @@ Check for solutions in [Resolving Common Errors](errors.md)
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "quota\|limit\|insufficient"
 ```
 
-Check for solutions in [Resolving Common Errors](errors.md)
+**Verify Azure permissions for the controller's identity:**
 
-**Verify Azure permissions for the kubelet identity:**
-
-Confirm that the driver has the necessary [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
+Check the [required permissions](driver-parameters.md#permissions-for-kubelet-identity)
+on the kubelet identity, or on the federated identity when workload identity is
+enabled. Missing optional discovery permissions do not prevent provisioning.
 
 Check for permission errors in the controller logs:
 
 ```sh
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "forbidden\|unauthorized\|permission"
 ```
-
-Check for solutions in [Resolving Common Errors](errors.md)
 
 **Monitor AMLFS cluster creation progress in the Azure portal:**
 
@@ -870,8 +863,6 @@ Common network issues:
 - Network security group blocking traffic
 - Missing virtual network peering
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
 **Check for zone configuration issues:**
 
 ```sh
@@ -888,12 +879,13 @@ Common zone issues:
 - Zone value not available for the specified SKU in the location
 - Zone specified when the SKU doesn't support zones in the location
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
 See [What are availability zones?](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview?tabs=azure-cli#regions-that-support-availability-zones)
 for more information about availability zones.
 
 #### Find all skus and available zones for a location
+
+These manual queries use your Azure CLI identity and require
+[SKU lookup permission](driver-parameters.md#optional-fail-fast-checks).
 
 ```sh
 # Find all sku values and available zones for a location:
@@ -938,7 +930,7 @@ az rest --method get --uri "/subscriptions/${SUBSCRIPTION}/providers/Microsoft.S
 
 ---
 
-**Check for SKU retrieval issues:**
+#### SKU lookup and validation
 
 ```sh
 # Check for SKU-related errors in controller logs
@@ -952,9 +944,11 @@ Common SKU-related issues:
 - Insufficient permissions to list Azure SKUs
 - Invalid or misspelled SKU names
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
-Check [Find all skus and available zones for a location](#find-all-skus-and-available-zones-for-a-location)
+If SKU discovery is unavailable, the driver warns and continues with the
+configured SKU and zone, rounding capacity in 4-TiB increments. Azure validates
+the creation request. Diagnose any subsequent creation or subnet-check error,
+rather than treating the discovery warning as the failure. See
+[SKU retrieval warnings](errors.md#warning-sku-retrieval-failures).
 
 **Verify SKU availability for a location:**
 

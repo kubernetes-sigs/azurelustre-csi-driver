@@ -54,39 +54,39 @@ func TestClusterPingCacheProbe(t *testing.T) {
 	}
 
 	tests := []struct {
-		desc              string
-		dial              func(context.Context, string, string) (net.Conn, error)
-		pingFails         bool
-		wantReachable     bool
-		wantPingAttempted bool
+		desc                  string
+		dial                  func(context.Context, string, string) (net.Conn, error)
+		pingFails             bool
+		expectedReachable     bool
+		expectedPingAttempted bool
 	}{
 		{
-			desc:              "port open and lnetctl ping succeeds",
-			dial:              dialOpenPort,
-			pingFails:         false,
-			wantReachable:     true,
-			wantPingAttempted: true,
+			desc:                  "port open and lnetctl ping succeeds",
+			dial:                  dialOpenPort,
+			pingFails:             false,
+			expectedReachable:     true,
+			expectedPingAttempted: true,
 		},
 		{
-			desc:              "port open but conn close errors, ping still succeeds",
-			dial:              dialCloseErr,
-			pingFails:         false,
-			wantReachable:     true,
-			wantPingAttempted: true,
+			desc:                  "port open but conn close errors, ping still succeeds",
+			dial:                  dialCloseErr,
+			pingFails:             false,
+			expectedReachable:     true,
+			expectedPingAttempted: true,
 		},
 		{
-			desc:              "port open but lnetctl ping fails",
-			dial:              dialOpenPort,
-			pingFails:         true,
-			wantReachable:     false,
-			wantPingAttempted: true,
+			desc:                  "port open but lnetctl ping fails",
+			dial:                  dialOpenPort,
+			pingFails:             true,
+			expectedReachable:     false,
+			expectedPingAttempted: true,
 		},
 		{
-			desc:              "port unreachable so lnetctl ping is skipped",
-			dial:              dialUnreachable,
-			pingFails:         false,
-			wantReachable:     false,
-			wantPingAttempted: false,
+			desc:                  "port unreachable so lnetctl ping is skipped",
+			dial:                  dialUnreachable,
+			pingFails:             false,
+			expectedReachable:     false,
+			expectedPingAttempted: false,
 		},
 	}
 
@@ -100,9 +100,9 @@ func TestClusterPingCacheProbe(t *testing.T) {
 
 			reachable, ok := result.(bool)
 			require.True(t, ok, "probe result should be a bool")
-			assert.Equal(t, test.wantReachable, reachable)
+			assert.Equal(t, test.expectedReachable, reachable)
 
-			if test.wantPingAttempted {
+			if test.expectedPingAttempted {
 				assert.Equal(t, []string{"lnetctl ping 1.1.1.1@tcp"}, fakeRunner.CalledCommands, "probe must invoke lnetctl with the <ip>@tcp NID once the port is open")
 			} else {
 				assert.Empty(t, fakeRunner.CalledCommands, "probe must not run lnetctl when the port is unreachable")

@@ -7,12 +7,10 @@ using the Lustre CSI driver.
 
 ### Permissions
 
-> [!IMPORTANT]
-***IMPORTANT NOTE***: Before using this CSI driver to dynamically create AMLFS clusters, the
-kubelet identity must have the correct permissions granted to it.
-
-Ensure that the kubelet identity has all of the permissions that are listed in the section
-on [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
+Before provisioning, grant the [required permissions](driver-parameters.md#permissions-for-kubelet-identity)
+to the controller's Azure identity: the kubelet identity by default, or the
+federated user-assigned identity when [workload identity](workload-identity.md)
+is enabled. The permissions reference also lists optional fail-fast checks.
 
 ### SKU discovery and capacity validation
 
@@ -28,6 +26,10 @@ values.
 The provisioned capacity can be larger than the size requested in the PVC. See
 [SKU retrieval warnings](errors.md#warning-sku-retrieval-failures) for
 troubleshooting.
+
+Subnet-capacity checks are also optional when their permissions are missing.
+To enable early validation, grant the [optional fail-fast permissions](driver-parameters.md#optional-fail-fast-checks).
+Other subnet-check errors and known insufficient capacity still block creation.
 
 ### Azure cloud environment
 

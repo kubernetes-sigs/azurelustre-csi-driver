@@ -104,7 +104,7 @@ before deleting claims; the `Delete` reclaim policy can destroy backing data.
 
 **Possible Causes:**
 
-- Insufficient Azure RBAC permissions for kubelet identity
+- Insufficient Azure RBAC permissions for the identity used by the controller
 - Incorrect identity configuration
 - Workload identity is enabled but the federated credential subject does not match the controller ServiceAccount
 
@@ -114,14 +114,20 @@ before deleting claims; the `Delete` reclaim policy can destroy backing data.
 # Check controller logs for auth errors
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "forbidden\|unauthorized\|authorization"
 
-# Verify kubelet identity permissions in Azure portal
+# Verify the controller identity's permissions in Azure portal
 # Check: IAM (Access control) → Role assignments
 ```
 
 **Resolution:**
 
-- Assign required RBAC roles to kubelet identity:
+- Assign required resource-scoped RBAC roles to the identity used by the controller:
+  the kubelet identity by default, or the federated user-assigned identity when
+  workload identity is enabled.
   - See [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity)
+- Permission denials from SKU lookup, subnet sizing or VNet usage are discovery
+  warnings, not provisioning failures. Grant the
+  [optional fail-fast permissions](driver-parameters.md#optional-fail-fast-checks)
+  only if you want those early checks.
 - If using workload identity, confirm the federated credential subject matches the controller ServiceAccount. It must be `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`. The chart annotates that ServiceAccount automatically, so a missing `azure.workload.identity/client-id` annotation means the release was not installed with `IsWorkloadIdentityEnabled=Enabled`. See [Workload Identity](workload-identity.md).
 
 ---
@@ -253,7 +259,7 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 - Verify subnet name and virtual network configuration
 - Ensure the vnet and subnet exist in the correct resource group
-- Check Azure RBAC permissions for the kubelet identity
+- Check the required Azure RBAC permissions for the identity used by the controller
 
 ---
 
@@ -267,7 +273,6 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 **Possible Causes:**
 
 - The specified subnet has insufficient available IP addresses
-- AMLFS clusters require a contiguous block of IP addresses
 
 **Debugging Steps:**
 
@@ -754,6 +759,7 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 - The driver cannot use the requested SKU's metadata and defers SKU, zone and capacity validation
   to ARM during creation
 - Controller logs show one or more of the following:
+  - `cannot retrieve SKU metadata for <sku> in location <location>: ...; continuing creation ...`
   - `error retrieving SKUs: ...`
   - `found no AMLFS SKUs for location <location>`
   - `could not find location info for sku <sku> in location <location>`
@@ -780,9 +786,15 @@ kubectl get storageclass <storageclass> -o yaml | grep location
 **Resolution:**
 
 - Verify Azure region name is correct (e.g., `eastus`, `westus2`)
-- SKU lookup permissions are optional; the actual creation request still requires
-  the documented resource permissions.
-- Check the actual creation error if provisioning fails.
+- No subscription-wide permission grant is required to proceed. Optional SKU
+  discovery permissions enable earlier validation; see
+  [optional fail-fast checks](driver-parameters.md#optional-fail-fast-checks).
+- Check that the SKU, zone and PVC capacity are supported in the target region.
+  Without SKU metadata, capacity uses the driver's 4-TiB fallback increment
+  rather than the SKU-specific increment.
+- If creation fails, inspect the subsequent ARM creation or subnet-check error.
+- Permission denials from subnet sizing or VNet usage are also warnings; other
+  subnet errors and known insufficient capacity still stop creation.
 - See [SKU discovery and capacity validation](dynamic-provisioning.md#sku-discovery-and-capacity-validation)
   for capacity rounding.
 

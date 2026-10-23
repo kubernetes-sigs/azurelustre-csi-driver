@@ -1,6 +1,7 @@
 # Driver Parameters
 
-These are the parameters to be passed into the custom StorageClass that users must create to use the CSI driver.
+This reference covers driver installation settings, dynamic provisioning, and
+connections to existing filesystems.
 
 For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/use-csi-driver-kubernetes).
 
@@ -60,25 +61,42 @@ setup and lifecycle instructions.
 
 See [Use a managed identity in Azure Kubernetes Service (AKS)](https://learn.microsoft.com/en-us/azure/aks/use-managed-identity) for information about configuring your kubelet identity.
 
-The kubelet identity attached to the cluster will require the following permission actions (at the Subscription scope):
+Grant these required permissions:
 
-```text
-Microsoft.Network/virtualNetworks/subnets/read
-Microsoft.Network/virtualNetworks/subnets/join/action
-Microsoft.StorageCache/getRequiredAmlFSSubnetsSize/*
-Microsoft.StorageCache/checkAmlFSSubnets/action
-Microsoft.StorageCache/amlFilesystems/read
-Microsoft.StorageCache/amlFilesystems/write
-Microsoft.StorageCache/amlFilesystems/delete
-```
+Action | Assignment scope
+--- | ---
+`Microsoft.StorageCache/amlFilesystems/read` | Filesystem resource group (`resource-group-name`)
+`Microsoft.StorageCache/amlFilesystems/write` | Filesystem resource group (`resource-group-name`)
+`Microsoft.StorageCache/amlFilesystems/delete` | Filesystem resource group (`resource-group-name`)
+`Microsoft.Network/virtualNetworks/subnets/join/action` | Filesystem subnet or its containing virtual network
 
-Alternatively, users can grant the identity the following broader roles:
+Alternatively, assign both broader built-in roles:
 
-- Reader permissions the Subscription scope
-- Contributor permissions at the Resource Group scope (the Resource Group `resource-group-name` parameter of the StorageClass)
-- Network Contributor at the Virtual Network scope (the Virtual Network specified in the `vnet-name` parameter of the StorageClass) instead of the individual permissions.
+- Contributor on the filesystem resource group.
+- Network Contributor on the filesystem's virtual network.
 
-If using the `identities` parameter, users will also need to grant Managed Identity Operator role on the identity being assigned or the following permission action:
+Allow several minutes for role assignments to take effect before provisioning.
+
+#### Optional fail-fast checks
+
+For early SKU and subnet-capacity validation, also grant:
+
+Check | Action | Assignment scope
+--- | --- | ---
+SKU lookup | `Microsoft.StorageCache/skus/read` | Subscription containing the filesystem
+Required subnet size | `Microsoft.StorageCache/getRequiredAmlFSSubnetsSize/*` | Subscription containing the filesystem
+Available subnet IP addresses | `Microsoft.Network/virtualNetworks/usages/read` | Virtual network containing the filesystem subnet
+
+Assign the subscription-scoped actions through a separate custom role.
+
+Missing any combination of these permissions does not prevent provisioning.
+Azure still validates the filesystem creation request.
+See [SKU discovery and capacity validation](dynamic-provisioning.md#sku-discovery-and-capacity-validation).
+
+#### Filesystem identity assignment
+
+When using `identities`, also grant Managed Identity Operator on each assigned
+identity, or this action:
 
 ```text
 Microsoft.ManagedIdentity/userAssignedIdentities/assign/action
@@ -97,7 +115,7 @@ federated with the controller ServiceAccount. See
 Name | Meaning | Available Value | Mandatory | Default value
 --- | --- | --- | --- | ---
 sku-name | SKU name for the Azure Managed Lustre file system. The SKU determines the throughput of the AMLFS cluster. | The SKU value must be one of the following: `AMLFS-Durable-Premium-40`, `AMLFS-Durable-Premium-125`, `AMLFS-Durable-Premium-250`, `AMLFS-Durable-Premium-500`. | Yes | This value must be provided.
-zone | The availability zone where your resource will be created. For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients. | The zone must be a single value e.g., `"1"`, `"2"`, or `"3"`. | Yes | This value must be provided.
+zone | The availability zone where your resource will be created. For the best performance, locate your AMLFS cluster in the same region and availability zone that houses your AKS cluster and other compute clients. | The zone must be a single value e.g., `"1"`, `"2"`, or `"3"`. | When required by the region | No default.
 maintenance-day-of-week | The day of the week for maintenance to be performed on the AMLFS cluster. | `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday` | Yes | This value must be provided.
 maintenance-time-of-day-utc | The time (in UTC) when the maintenance window can begin on the AMLFS cluster. | Time value can only be in 24-hour format i.e., HH:MM | Yes | This value must be provided.
 location | Azure region in which the AMLFS cluster will be created. The region name should only have lower-case letters or numbers. | `eastus2`, `westus`, etc. | No | If empty, the driver will use the same region name as the current AKS cluster.
@@ -138,9 +156,8 @@ not restricted by a driver allowlist.
 
 ### Controller override for incomplete SKU zone metadata
 
-Some zonal regions may temporarily return an empty zone list from the Azure
-SKU API even though the AMLFS create API requires a zone. For that deployment
-specific case, enable the controller-only override:
+Use this controller-only override when AMLFS requires a zone but the SKU
+metadata advertises no zones for that region.
 
 For a Helm installation, set `controller.extraArgs` in the Helm values:
 
@@ -164,12 +181,13 @@ args:
 Apply the updated controller manifest after making this change. Do not add the
 flag to the node DaemonSets, CSI provisioner sidecar, or StorageClass.
 
-The `zone` StorageClass parameter must still be set to a value accepted by the
-AMLFS create API. The override only permits an explicitly supplied zone when
-the SKU API advertises no zones; it does not disable validation when the SKU
-API returns a non-empty zone list. Keep this override disabled unless the
-region's SKU metadata is known to be incorrect, and remove it after the RP
-metadata is fixed.
+Set `zone` in the StorageClass to a value supported by AMLFS. The override
+permits an explicit zone only when SKU metadata advertises no zones; it does
+not bypass validation of a non-empty zone list. Leave it disabled otherwise,
+and remove it once the metadata advertises the region's zones.
+
+This override is not needed when SKU discovery itself fails. In that case the
+driver passes the configured zone to Azure for validation.
 
 ## Static Provisioning (Bring your own AMLFS Cluster through AKS)
 
