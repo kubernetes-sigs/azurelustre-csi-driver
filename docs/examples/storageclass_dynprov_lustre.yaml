@@ -73,9 +73,8 @@ mountOptions:
 # In this example, the quota is set to 1 PVC per storage class. This means that only one PVC (and therefore only one Azure Managed Lustre cluster)
 # can be created for this storage class at a time, but the value could be increased according to your needs.
 #
-# There may also be a quota set on the Azure subscription to limit the number of AMLFS clusters that can be created by a single identity. This quota
-# would have to be increased for your Azure subscription if you needed to create more Azure Managed clusters at once. Setting this quota can allow for
-# more fine-grained control over the number of AMLFS clusters that can be created.
+# The Azure subscription may have a separate filesystem-count quota.
+# This Kubernetes ResourceQuota limits PVCs only in the namespace where it is applied.
 #
 apiVersion: v1
 kind: ResourceQuota

@@ -148,15 +148,23 @@ func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
 	f.fakeCallCount[name]++
 }
 
-func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error) {
+func (f *FakeDynamicProvisioner) GetAmlFilesystem(_ context.Context, _ *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	return nil, nil
+}
+
+func (f *FakeDynamicProvisioner) ValidateSubnetCapacity(context.Context, *AmlFilesystemProperties) error {
+	return nil
+}
+
+func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFilesystemProperties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	f.recordFakeCall("CreateAmlFilesystem")
 	if strings.HasSuffix(amlFilesystemProperties.AmlFilesystemName, clusterRequestFailureName) {
-		return "", status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
+		return nil, status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
 	}
 	f.Filesystems = append(f.Filesystems, amlFilesystemProperties)
-	return "127.0.0.2", nil
+	return &AmlFilesystemResult{MGSAddress: "127.0.0.2", CapacityBytes: int64(amlFilesystemProperties.StorageCapacityTiB * util.TiB)}, nil
 }
 
 func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, resourceGroupName, amlFilesystemName string) error {
@@ -240,9 +248,9 @@ func newBlockingDynamicProvisioner(operation string) *blockingDynamicProvisioner
 	}
 }
 
-func (provisioner *blockingDynamicProvisioner) CreateAmlFilesystem(ctx context.Context, properties *AmlFilesystemProperties) (string, error) {
+func (provisioner *blockingDynamicProvisioner) CreateAmlFilesystem(ctx context.Context, properties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
 	if err := provisioner.wait(ctx, "create"); err != nil {
-		return "", err
+		return nil, err
 	}
 	return provisioner.FakeDynamicProvisioner.CreateAmlFilesystem(ctx, properties)
 }

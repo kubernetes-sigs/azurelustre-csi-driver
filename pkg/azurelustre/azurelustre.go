@@ -328,6 +328,7 @@ func (d *Driver) initDynamicProvisioner(config *azureconfig.Config) error {
 		return fmt.Errorf("failed to create network client factory: %w", err)
 	}
 	d.dynamicProvisioner = &DynamicProvisioner{
+		subscriptionID:       config.SubscriptionID,
 		amlFilesystemsClient: storageClientFactory.NewAmlFilesystemsClient(),
 		mgmtClient:           storageClientFactory.NewManagementClient(),
 		vnetClient:           networkClientFactory.NewVirtualNetworksClient(),

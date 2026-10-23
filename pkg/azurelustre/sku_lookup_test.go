@@ -280,9 +280,9 @@ func TestDynamicProvisioner_SubnetPermissionFallbackPreservesCreateErrors(t *tes
 			expectedMessage: "SkuNotAvailable",
 		},
 		{
-			name:            "ARM rejects capacity while polling the accepted creation",
+			name:            "capacity rejection after accepted creation remains observable on retry",
 			pollingError:    &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "InvalidStorageCapacity"},
-			expectedCode:    codes.InvalidArgument,
+			expectedCode:    codes.Unavailable,
 			expectedMessage: "InvalidStorageCapacity",
 		},
 		{

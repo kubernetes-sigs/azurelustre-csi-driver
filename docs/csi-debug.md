@@ -847,7 +847,10 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
      - kubernetes.io-created-for-pv-name: pvc-78876f95-32c2-41c4-bdfa-eb92d1eeb341
      - kubernetes.io-created-for-pvc-name: pvc-lustre-dynprov
      - kubernetes.io-created-for-pvc-namespace: default
-4. Review the Activity Log for any deployment failures
+4. Review the Activity Log for the failed create/update event. If PVC events or
+   logs show only `Failed` or a generic health message, follow
+   [AMLFS provisioning failed](errors.md#error-amlfs-provisioning-failed)
+   to find the service error, including after the filesystem has been recreated.
 
 **Check for network issues:**
 
@@ -862,6 +865,7 @@ Common network issues:
 - Insufficient IP addresses in the subnet
 - Network security group blocking traffic
 - Missing virtual network peering
+- Missing outbound connectivity from the AMLFS filesystem subnet
 
 **Check for zone configuration issues:**
 
