@@ -20,8 +20,9 @@ The addition of native sidecar containers (init containers with `restartPolicy: 
 
 | Driver version | Image | Supported k8s version | Lustre client version |
 | -------------- | ----- | --------------------- | --------------------- |
-| main branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
+| main branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
 | development branch | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
+| v0.7.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.7.0-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
 | v0.6.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-noble<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.6.0-azurelinux3 | 1.29+ | 2.15.8 (jammy)<br>2.17.0 (noble)<br>2.17.0 (azurelinux3) |
 | v0.4.0 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy<br>mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-noble | 1.21+ | 2.15.7 (jammy)<br>2.16.1 (noble) |
 | v0.3.1 | mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.3.1 | 1.21+ | 2.15.7 |
