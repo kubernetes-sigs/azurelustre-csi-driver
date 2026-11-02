@@ -1,0 +1,71 @@
+{{- if .Values.preDeleteGuard.enabled }}
+# Pre-delete guard.
+#
+# CSI teardown is a two-party handshake: the external-provisioner sidecar (in the
+# controller) observes PVC deletion and calls the driver controller's
+# DeleteVolume, which for dynamically provisioned volumes deletes the backing
+# AMLFS filesystem. `helm uninstall` removes both the controller and the node
+# plugin, so if it runs while driver-owned PersistentVolumes still exist there is
+# nothing left to service teardown: the AMLFS filesystem is orphaned (still
+# billing) and PV objects are left stuck in Terminating with stale node mounts.
+#
+# This pre-delete hook Job lists PersistentVolumes and fails (blocking uninstall)
+# if any still reference this driver, forcing the operator to delete the volumes
+# first. It runs the driver's typed Kubernetes client in a standalone check mode,
+# so no additional image or runtime tool is required. Disable with
+# preDeleteGuard.enabled=false.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "azurelustre.preDeleteGuardName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: predelete-guard
+    {{- include "azurelustre.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.preDeleteGuard.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.preDeleteGuard.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: predelete-guard
+        {{- include "azurelustre.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "azurelustre.preDeleteGuardName" . }}
+      priorityClassName: {{ .Values.preDeleteGuard.priorityClassName }}
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "azurelustre.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: predelete-guard
+          image: {{ printf "%s:%s-noble" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ default .Values.image.pullPolicy .Values.preDeleteGuard.imagePullPolicy }}
+          command:
+            - /app/azurelustreplugin
+          args:
+            - --pre-delete-check
+            - {{ printf "--pre-delete-check-timeout=%s" .Values.preDeleteGuard.checkTimeout | quote }}
+            - {{ printf "--drivername=%s" .Values.csidriver.name | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.preDeleteGuard.resources | nindent 12 }}
+{{- end }}

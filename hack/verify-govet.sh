@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
+
 echo "Verifying govet"
 
 # Collect package list, excluding vendor, then vet them

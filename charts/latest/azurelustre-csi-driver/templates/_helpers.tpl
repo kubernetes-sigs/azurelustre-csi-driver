@@ -47,12 +47,44 @@ Full entity names.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Create the pre-delete guard resource name after adding its suffix.
+*/}}
+{{- define "azurelustre.preDeleteGuardName" -}}
+{{- printf "%s-predelete-guard" (include "azurelustre.fullname" . | trunc 47 | trimSuffix "-") -}}
+{{- end -}}
+
 {{- define "azurelustre.serviceAccountNameController" -}}
 csi-azurelustre-controller-sa
 {{- end -}}
 
 {{- define "azurelustre.serviceAccountNameNode" -}}
 csi-azurelustre-node-sa
+{{- end -}}
+
+{{/*
+Keep the configured identity authoritative while accepting matching legacy flags.
+*/}}
+{{- define "azurelustre.driverArgs" -}}
+{{- $name := required "csidriver.name must be set" .name -}}
+{{- $message := printf "drivername in %s must match csidriver.name; configure identity through csidriver.name" .source -}}
+{{- $needsValue := false -}}
+{{- range .args -}}
+  {{- $arg := toString . -}}
+  {{- if $needsValue -}}
+    {{- if ne $arg $name -}}{{ fail $message }}{{- end -}}
+    {{- $needsValue = false -}}
+  {{- else if or (eq $arg "--drivername") (eq $arg "-drivername") -}}
+    {{- $needsValue = true -}}
+  {{- else if or (hasPrefix "--drivername=" $arg) (hasPrefix "-drivername=" $arg) -}}
+    {{- if ne (regexReplaceAll "^--?drivername=" $arg "") $name -}}{{ fail $message }}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- if $needsValue -}}{{ fail $message }}{{- end }}
+- {{ printf "--drivername=%s" $name | quote }}
+{{- range .args }}
+- {{ . | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*

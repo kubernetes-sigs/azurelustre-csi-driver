@@ -53,6 +53,34 @@ mapping.
 ## Troubleshooting
 
 - [CSI driver troubleshooting guide](./docs/csi-debug.md)
+- [Common error reference](./docs/errors.md)
+
+### Driver Shutdown
+
+On SIGTERM or SIGINT, the driver rejects new CSI requests and cancels active
+request contexts. It allows up to ten seconds for handlers to finish and send
+their responses, then closes remaining gRPC connections. A cleanup timeout or
+startup/serving failure produces a non-zero exit; completed signal-driven
+shutdown exits successfully.
+
+Cancellation stops local Azure polling, not an operation already accepted by
+Azure. This shutdown behavior does not wait for filesystem provisioning to
+finish or prevent termination while provisioning is in progress. The existing
+pod termination grace period and normal CSI request timeout are unchanged.
+
+**Before uninstalling or deliberately shutting down the driver**, stop workloads
+using Lustre volumes, stop new provisioning, and let in-flight volume operations
+finish while the driver is still running. For uninstall, also complete the
+[PVC and PV cleanup](docs/install-csi-driver.md#install-with-helm-recommended) before removing
+the driver.
+
+The uninstall guard blocks removal while driver-owned PersistentVolumes exist,
+but it cannot detect a `CreateVolume` operation that has not produced a PV. It
+also does not run on ordinary pod termination. A successful shutdown is not a
+substitute for these pre-uninstall checks.
+
+For startup failures, unexpected restarts, or cleanup timeouts, use the
+[driver lifecycle troubleshooting steps](docs/csi-debug.md#driver-startup-and-shutdown-failures).
 
 &nbsp;
 

@@ -16,7 +16,8 @@
 
 set -euo pipefail
 
-PKG_ROOT=$(git rev-parse --show-toplevel)
+PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${PKG_ROOT}"
 
 "${PKG_ROOT}"/hack/verify-gofmt.sh
 "${PKG_ROOT}"/hack/verify-govet.sh
@@ -27,4 +28,6 @@ PKG_ROOT=$(git rev-parse --show-toplevel)
 "${PKG_ROOT}"/hack/verify-shellcheck.sh
 "${PKG_ROOT}"/hack/verify-markdownlint.sh
 "${PKG_ROOT}"/hack/verify-helm-chart-files.sh
+"${PKG_ROOT}"/hack/verify-predelete-guard.sh
+"${PKG_ROOT}"/hack/verify-codespell.sh
 "${PKG_ROOT}"/hack/verify-spelling.sh

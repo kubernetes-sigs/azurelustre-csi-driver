@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -31,7 +30,7 @@ func TestGetPluginInfo(t *testing.T) {
 	// Check with correct arguments
 	d := NewFakeDriver(t)
 	req := csi.GetPluginInfoRequest{}
-	resp, err := d.GetPluginInfo(context.Background(), &req)
+	resp, err := d.GetPluginInfo(t.Context(), &req)
 	require.NoError(t, err)
 	assert.Equal(t, fakeDriverName, resp.GetName())
 	assert.Equal(t, vendorVersion, resp.GetVendorVersion())
@@ -42,7 +41,7 @@ func TestGetPluginInfo_Err_NoDriverName(t *testing.T) {
 	d := NewFakeDriver(t)
 	d.Name = ""
 	req := csi.GetPluginInfoRequest{}
-	resp, err := d.GetPluginInfo(context.Background(), &req)
+	resp, err := d.GetPluginInfo(t.Context(), &req)
 	require.Error(t, err)
 	assert.Nil(t, resp)
 	grpcStatus, ok := status.FromError(err)
@@ -56,7 +55,7 @@ func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
 	d := NewFakeDriver(t)
 	d.Version = ""
 	req := csi.GetPluginInfoRequest{}
-	resp, err := d.GetPluginInfo(context.Background(), &req)
+	resp, err := d.GetPluginInfo(t.Context(), &req)
 	require.Error(t, err)
 	assert.Nil(t, resp)
 	grpcStatus, ok := status.FromError(err)
@@ -68,7 +67,7 @@ func TestGetPluginInfo_Err_NoVersion(t *testing.T) {
 func TestProbe(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.ProbeRequest{}
-	resp, err := d.Probe(context.Background(), &req)
+	resp, err := d.Probe(t.Context(), &req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.True(t, resp.GetReady().GetValue())
@@ -77,7 +76,7 @@ func TestProbe(t *testing.T) {
 func TestGetPluginCapabilities(t *testing.T) {
 	d := NewFakeDriver(t)
 	req := csi.GetPluginCapabilitiesRequest{}
-	resp, err := d.GetPluginCapabilities(context.Background(), &req)
+	resp, err := d.GetPluginCapabilities(t.Context(), &req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.NotEmpty(t, resp.GetCapabilities())

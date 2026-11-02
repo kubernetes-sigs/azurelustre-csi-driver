@@ -17,20 +17,17 @@ limitations under the License.
 package sanitylocal
 
 import (
-	"os"
+	"context"
 	"path/filepath"
 	"testing"
 
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
-	"k8s.io/klog/v2"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/azurelustre"
 )
 
 func TestSanity(t *testing.T) {
-	testDir, err := os.MkdirTemp("", "csi_sanity_test")
-	if err != nil {
-		t.Fatalf("can't create tmp dir %s", err)
-	}
+	testDir := t.TempDir()
+	t.Setenv(azurelustre.DefaultAzureConfigFileEnv, filepath.Join(testDir, "missing-azure.json"))
 	socketEndpoint := filepath.Join(testDir, "csi.sock")
 	targetPath := filepath.Join(testDir, "targetPath")
 	stagingPath := filepath.Join(testDir, "stagingPath")
@@ -48,14 +45,20 @@ func TestSanity(t *testing.T) {
 		EnableAzureLustreMockMount:   true,
 		EnableAzureLustreMockDynProv: true,
 	}
-	driver, err := azurelustre.NewDriver(&driverOptions)
+	driver, err := azurelustre.NewDriver(t.Context(), &driverOptions)
 	if err != nil {
 		t.Fatalf("failed to create driver: %v", err)
 	}
-	go func() {
-		if err := driver.Run(socketEndpoint, true); err != nil {
-			klog.Errorf("driver.Run returned error: %v", err)
+	ctx, cancel := context.WithCancel(t.Context())
+	finished := make(chan error, 1)
+	t.Cleanup(func() {
+		cancel()
+		if err := <-finished; err != nil {
+			t.Errorf("driver.Run returned error: %v", err)
 		}
+	})
+	go func() {
+		finished <- driver.Run(ctx, socketEndpoint)
 	}()
 	sanity.Test(t, config)
 }

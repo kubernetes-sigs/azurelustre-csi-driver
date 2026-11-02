@@ -23,13 +23,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +43,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
+	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
 
 var DefaultLocationSkuValues = map[string]*LustreSkuValue{
@@ -63,13 +66,14 @@ const (
 
 func NewFakeDriver(t *testing.T) *Driver {
 	t.Helper()
+	t.Setenv(DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing-azure.json"))
 	driverOptions := DriverOptions{
 		NodeID:                       fakeNodeID,
 		DriverName:                   fakeDriverName,
 		EnableAzureLustreMockMount:   false,
 		EnableAzureLustreMockDynProv: true,
 	}
-	driver, err := NewDriver(&driverOptions)
+	driver, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	driver.Version = vendorVersion
 	driver.cloud = &azure.Cloud{}
@@ -118,10 +122,14 @@ func (f *FakeCommandRunner) RunWithTimeout(_ context.Context, _ time.Duration, c
 }
 
 type fakePingChecker struct {
-	err error
+	err     error
+	onCheck func(string)
 }
 
-func (f *fakePingChecker) EnsureReachable(_ string) error {
+func (f *fakePingChecker) EnsureReachable(address string) error {
+	if f.onCheck != nil {
+		f.onCheck(address)
+	}
 	return f.err
 }
 
@@ -129,6 +137,8 @@ type FakeDynamicProvisioner struct {
 	DynamicProvisionerInterface
 	Filesystems   []*AmlFilesystemProperties
 	fakeCallCount map[string]int
+	mutex         sync.Mutex
+	skuError      error
 }
 
 func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
@@ -138,30 +148,45 @@ func (f *FakeDynamicProvisioner) recordFakeCall(name string) {
 	f.fakeCallCount[name]++
 }
 
-func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFilesystemProperties *AmlFilesystemProperties) (string, error) {
-	f.recordFakeCall("CreateAmlFilesystem")
-	if strings.HasSuffix(amlFilesystemProperties.AmlFilesystemName, clusterRequestFailureName) {
-		return "", status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
-	}
-	f.Filesystems = append(f.Filesystems, amlFilesystemProperties)
-	return "127.0.0.2", nil
+func (f *FakeDynamicProvisioner) GetAmlFilesystem(_ context.Context, _ *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	return nil, nil
 }
 
-func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, _, amlFilesystemName string) error {
+func (f *FakeDynamicProvisioner) ValidateSubnetCapacity(context.Context, *AmlFilesystemProperties) error {
+	return nil
+}
+
+func (f *FakeDynamicProvisioner) CreateAmlFilesystem(_ context.Context, amlFilesystemProperties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.recordFakeCall("CreateAmlFilesystem")
+	if strings.HasSuffix(amlFilesystemProperties.AmlFilesystemName, clusterRequestFailureName) {
+		return nil, status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
+	}
+	f.Filesystems = append(f.Filesystems, amlFilesystemProperties)
+	return &AmlFilesystemResult{MGSAddress: "127.0.0.2", CapacityBytes: int64(amlFilesystemProperties.StorageCapacityTiB * util.TiB)}, nil
+}
+
+func (f *FakeDynamicProvisioner) DeleteAmlFilesystem(_ context.Context, resourceGroupName, amlFilesystemName string) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.recordFakeCall("DeleteAmlFilesystem")
 	if amlFilesystemName == clusterRequestFailureName {
 		return status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", clusterRequestFailureName)
 	}
 	f.Filesystems = slices.DeleteFunc(f.Filesystems, func(filesystem *AmlFilesystemProperties) bool {
-		return filesystem.AmlFilesystemName == amlFilesystemName
+		return strings.EqualFold(filesystem.ResourceGroupName, resourceGroupName) &&
+			strings.EqualFold(filesystem.AmlFilesystemName, amlFilesystemName)
 	})
 	return nil
 }
 
 func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, location string) (map[string]*LustreSkuValue, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	f.recordFakeCall("GetSkuValuesForLocation")
-	if location == errorLocation {
-		return nil, status.Errorf(codes.InvalidArgument, "error occurred calling API: %s", errorLocation)
+	if f.skuError != nil {
+		return nil, f.skuError
 	}
 	if location == driverDefaultLocation {
 		return DefaultLocationSkuValues, nil
@@ -182,6 +207,86 @@ func (f *FakeDynamicProvisioner) GetSkuValuesForLocation(_ context.Context, loca
 	}, nil
 }
 
+func TestAzureConfigFilePath(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		value        string
+		unset        bool
+		expectedPath string
+	}{
+		{name: "unset uses default", unset: true, expectedPath: DefaultConfigFilePathLinux},
+		{name: "empty uses default", value: "", expectedPath: DefaultConfigFilePathLinux},
+		{name: "whitespace only uses default", value: " \t\n ", expectedPath: DefaultConfigFilePathLinux},
+		{name: "explicit path is selected", value: "/test/custom-azure.json", expectedPath: "/test/custom-azure.json"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(DefaultAzureConfigFileEnv, test.value)
+			if test.unset {
+				require.NoError(t, os.Unsetenv(DefaultAzureConfigFileEnv))
+			}
+
+			assert.Equal(t, test.expectedPath, azureConfigFilePath())
+		})
+	}
+}
+
+type blockingDynamicProvisioner struct {
+	*FakeDynamicProvisioner
+	operation      string
+	entered        chan struct{}
+	release        chan struct{}
+	firstCall      sync.Once
+	firstCallError error
+}
+
+func newBlockingDynamicProvisioner(operation string) *blockingDynamicProvisioner {
+	return &blockingDynamicProvisioner{
+		FakeDynamicProvisioner: &FakeDynamicProvisioner{},
+		operation:              operation,
+		entered:                make(chan struct{}),
+		release:                make(chan struct{}),
+	}
+}
+
+func (provisioner *blockingDynamicProvisioner) CreateAmlFilesystem(ctx context.Context, properties *AmlFilesystemProperties) (*AmlFilesystemResult, error) {
+	if err := provisioner.wait(ctx, "create"); err != nil {
+		return nil, err
+	}
+	return provisioner.FakeDynamicProvisioner.CreateAmlFilesystem(ctx, properties)
+}
+
+func (provisioner *blockingDynamicProvisioner) DeleteAmlFilesystem(ctx context.Context, resourceGroup, filesystemName string) error {
+	if err := provisioner.wait(ctx, "delete"); err != nil {
+		return err
+	}
+	return provisioner.FakeDynamicProvisioner.DeleteAmlFilesystem(ctx, resourceGroup, filesystemName)
+}
+
+func (provisioner *blockingDynamicProvisioner) wait(ctx context.Context, operation string) error {
+	if operation != provisioner.operation {
+		return nil
+	}
+
+	// Pause only the first matching call and signal the test to start its competitor.
+	// Later calls must proceed normally so the fake cannot hide a missing controller lock.
+	firstCall := false
+	provisioner.firstCall.Do(func() {
+		firstCall = true
+		close(provisioner.entered)
+	})
+	if !firstCall {
+		return nil
+	}
+
+	// Wait outside Once.Do; blocking inside it would serialize competing calls.
+	select {
+	case <-provisioner.release:
+		return provisioner.firstCallError
+	case <-ctx.Done():
+		return convertHTTPResponseErrorToGrpcCodeError(ctx.Err())
+	}
+}
+
 func TestNewDriver(t *testing.T) {
 	t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
 
@@ -192,8 +297,9 @@ func TestNewDriver(t *testing.T) {
 		EnableAzureLustreMockDynProv: true,
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
+		AllowUnadvertisedZones:       true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.NotNil(t, d.cloud)
@@ -213,6 +319,7 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.enableAzureLustreMockDynProv, "enableAzureLustreMockDynProv should be true")
 	assert.False(t, d.enableAzureLustreMockMount, "enableAzureLustreMockMount should be false")
 	assert.True(t, d.removeNotReadyTaint, "removeNotReadyTaint should be true")
+	assert.True(t, d.allowUnadvertisedZones, "allowUnadvertisedZones should be true")
 }
 
 func TestNewDriverIdentityModes(t *testing.T) {
@@ -243,7 +350,7 @@ func TestNewDriverIdentityModes(t *testing.T) {
 				DriverName:                   fakeDriverName,
 				EnableAzureLustreMockDynProv: true,
 			}
-			driver, err := NewDriver(&driverOptions)
+			driver, err := NewDriver(t.Context(), &driverOptions)
 
 			require.NoError(t, err)
 			require.NotNil(t, driver)
@@ -251,6 +358,81 @@ func TestNewDriverIdentityModes(t *testing.T) {
 			assert.NotNil(t, driver.dynamicProvisioner, "controller pods must build Azure clients")
 		})
 	}
+}
+
+func TestGetAzureClientOptionsForClouds(t *testing.T) {
+	tests := []struct {
+		name     string
+		cloud    string
+		endpoint string
+		audience string
+	}{
+		{
+			name:     "public",
+			cloud:    "AzurePublicCloud",
+			endpoint: "https://management.azure.com",
+			audience: "https://management.core.windows.net/",
+		},
+		{
+			name:     "default when cloud is not provided",
+			cloud:    "",
+			endpoint: "https://management.azure.com",
+			audience: "https://management.core.windows.net/",
+		},
+		{
+			name:     "china",
+			cloud:    "AzureChinaCloud",
+			endpoint: "https://management.chinacloudapi.cn",
+			audience: "https://management.core.chinacloudapi.cn/",
+		},
+		{
+			name:     "government",
+			cloud:    "AzureUSGovernmentCloud",
+			endpoint: "https://management.usgovcloudapi.net",
+			audience: "https://management.core.usgovcloudapi.net/",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := &azureconfig.Config{}
+			config.Cloud = test.cloud
+
+			credentialClientOptions, resourceClientOptions, err := getAzureClientOptions(config)
+			require.NoError(t, err)
+
+			resourceManager, ok := resourceClientOptions.Cloud.Services[cloud.ResourceManager]
+			require.True(t, ok)
+			assert.Equal(t, test.endpoint, resourceManager.Endpoint)
+			assert.Equal(t, test.audience, resourceManager.Audience)
+			assert.Equal(t, resourceClientOptions.Cloud, credentialClientOptions.Cloud)
+			assert.Zero(t, credentialClientOptions.Retry.RetryDelay)
+			assert.Zero(t, credentialClientOptions.Retry.MaxRetries)
+			assert.Nil(t, credentialClientOptions.Transport)
+			assert.Empty(t, credentialClientOptions.PerRetryPolicies)
+			assert.False(t, credentialClientOptions.InsecureAllowCredentialWithHTTP)
+			assert.Zero(t, resourceClientOptions.Retry.RetryDelay)
+			assert.Zero(t, resourceClientOptions.Retry.MaxRetries)
+			assert.Nil(t, resourceClientOptions.Transport)
+			assert.Empty(t, resourceClientOptions.PerRetryPolicies)
+			assert.False(t, resourceClientOptions.InsecureAllowCredentialWithHTTP)
+		})
+	}
+}
+
+func TestNewDriverPingCacheError(t *testing.T) {
+	t.Setenv(DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing.json"))
+	expectedErr := errors.New("cache initialization failed")
+	options := DriverOptions{DriverName: fakeDriverName, EnableAzureLustreMockDynProv: true}
+	newPingCache := func(util.CommandRunnerInterface) (*clusterPingCache, error) {
+		return nil, expectedErr
+	}
+
+	driver, err := newDriver(t.Context(), &options, newPingCache)
+
+	require.ErrorIs(t, err, expectedErr)
+	require.ErrorContains(t, err, "failed to initialize ping cache")
+	assert.Nil(t, driver, "cache initialization failure must not return a driver")
 }
 
 func writeFakeManagedIdentityCloudConfig(t *testing.T) string {
@@ -302,7 +484,7 @@ func TestNewDriverKubeletIdentityFallback(t *testing.T) {
 				DriverName:                   fakeDriverName,
 				EnableAzureLustreMockDynProv: true,
 			}
-			_, err := NewDriver(&driverOptions)
+			_, err := NewDriver(t.Context(), &driverOptions)
 
 			require.NoError(t, err)
 			assert.Equal(t, test.expectedClientID, os.Getenv("AZURE_CLIENT_ID"), test.reason)
@@ -317,7 +499,7 @@ func TestControllerRPCsRejectedWithoutDynamicProvisioner(t *testing.T) {
 		NodeID:     fakeNodeID,
 		DriverName: fakeDriverName,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	require.Nil(t, d.dynamicProvisioner, "node pods must not build Azure clients")
 
@@ -345,7 +527,7 @@ func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
@@ -376,7 +558,7 @@ func TestNewDriverInvalidConfigFileContents(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 	assert.Equal(t, &azure.Cloud{}, d.cloud)
@@ -400,7 +582,7 @@ func TestNewDriverNoCloudConfigReturnsError(t *testing.T) {
 		WorkingMountDir:              "/tmp",
 		RemoveNotReadyTaint:          true,
 	}
-	d, err := NewDriver(&driverOptions)
+	d, err := NewDriver(t.Context(), &driverOptions)
 	require.Error(t, err, "NewDriver should return an error when no cloud config is provided and mock dynamic provisioning is disabled")
 	assert.Nil(t, d, "driver should be nil when NewDriver fails")
 }
@@ -420,15 +602,7 @@ func TestSelectForceUnmounter(t *testing.T) {
 }
 
 func TestIsCorruptedDir(t *testing.T) {
-	existingMountPath, err := os.MkdirTemp(os.TempDir(), "azurelustre-csi-mount-test")
-	if err != nil {
-		t.Fatalf("failed to create tmp dir: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(existingMountPath); err != nil {
-			t.Fatalf("failed to remove tmp dir: %v", err)
-		}
-	}()
+	existingMountPath := t.TempDir()
 
 	tests := []struct {
 		desc           string
@@ -437,7 +611,7 @@ func TestIsCorruptedDir(t *testing.T) {
 	}{
 		{
 			desc:           "NotExist dir",
-			dir:            "/tmp/NotExist",
+			dir:            filepath.Join(existingMountPath, "missing"),
 			expectedResult: false,
 		},
 		{
@@ -563,8 +737,10 @@ func TestGetLustreVolFromID(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			lustreVolume, err := getLustreVolFromID(test.volumeID)
 
-			if !reflect.DeepEqual(err, test.expectedErr) {
-				t.Errorf("Desc: %v, Expected error: %v, Actual error: %v", test.desc, test.expectedErr, err)
+			if test.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, test.expectedErr.Error())
 			}
 			assert.Equal(t, test.expectedLustreVolume, lustreVolume, "Desc: %s - Incorrect lustre volume: %v - Expected: %v", test.desc, lustreVolume, test.expectedLustreVolume)
 		})
@@ -573,132 +749,88 @@ func TestGetLustreVolFromID(t *testing.T) {
 
 func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 	testCases := []struct {
-		name     string
-		testFunc func(t *testing.T)
+		name                          string
+		subscriptionID                string
+		networkResourceSubscriptionID string
+		resourceGroup                 string
+		vnetResourceGroup             string
+		input                         SubnetProperties
+		expected                      SubnetProperties
 	}{
 		{
-			name: "NetworkResourceSubscriptionID is Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "fakeSubID"
-				d.cloud.NetworkResourceSubscriptionID = ""
-				d.cloud.ResourceGroup = "foo"
-				d.cloud.VnetResourceGroup = "foo"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, d.cloud.SubscriptionID, "foo", d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "foo",
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.SubscriptionID should be used as the SubID")
+			name:              "NetworkResourceSubscriptionID is Empty",
+			subscriptionID:    "fakeSubID",
+			resourceGroup:     "foo",
+			vnetResourceGroup: "foo",
+			expected: SubnetProperties{
+				VnetResourceGroup: "foo",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "fakeSubID", "foo", "", ""),
 			},
 		},
 		{
-			name: "NetworkResourceSubscriptionID is not Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "fakeSubID"
-				d.cloud.NetworkResourceSubscriptionID = "fakeNetSubID"
-				d.cloud.ResourceGroup = "foo"
-				d.cloud.VnetResourceGroup = "foo"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, d.cloud.NetworkResourceSubscriptionID, "foo", d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "foo",
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.NetworkResourceSubscriptionID should be used as the SubID")
+			name:                          "NetworkResourceSubscriptionID is not Empty",
+			subscriptionID:                "fakeSubID",
+			networkResourceSubscriptionID: "fakeNetSubID",
+			resourceGroup:                 "foo",
+			vnetResourceGroup:             "foo",
+			expected: SubnetProperties{
+				VnetResourceGroup: "foo",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "fakeNetSubID", "foo", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup is Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = ""
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", d.cloud.ResourceGroup, d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: d.cloud.ResourceGroup,
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.ResourceGroup should be used as the rg")
+			name:                          "VnetResourceGroup is Empty",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			expected: SubnetProperties{
+				VnetResourceGroup: "fakeResourceGroup",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "fakeResourceGroup", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup is not Empty",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = "fakeVnetResourceGroup"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "",
-					VnetName:          "",
-					SubnetName:        "",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", d.cloud.VnetResourceGroup, d.cloud.VnetName, d.cloud.SubnetName)
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: d.cloud.VnetResourceGroup,
-					VnetName:          d.cloud.VnetName,
-					SubnetName:        d.cloud.SubnetName,
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "cloud.VnetResourceGroup should be used as the rg")
+			name:                          "VnetResourceGroup is not Empty",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			vnetResourceGroup:             "fakeVnetResourceGroup",
+			expected: SubnetProperties{
+				VnetResourceGroup: "fakeVnetResourceGroup",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "fakeVnetResourceGroup", "", ""),
 			},
 		},
 		{
-			name: "VnetResourceGroup, vnetName, subnetName is specified",
-			testFunc: func(t *testing.T) {
-				d := NewFakeDriver(t)
-				d.cloud = &azure.Cloud{}
-				d.cloud.SubscriptionID = "bar"
-				d.cloud.NetworkResourceSubscriptionID = "bar"
-				d.cloud.ResourceGroup = "fakeResourceGroup"
-				d.cloud.VnetResourceGroup = "fakeVnetResourceGroup"
-				actualOutput := d.populateSubnetPropertiesFromCloudConfig(SubnetProperties{
-					VnetResourceGroup: "vnetrg",
-					VnetName:          "vnetName",
-					SubnetName:        "subnetName",
-				})
-				expectedSubnetID := fmt.Sprintf(subnetTemplate, "bar", "vnetrg", "vnetName", "subnetName")
-				expectedOutput := SubnetProperties{
-					VnetResourceGroup: "vnetrg",
-					VnetName:          "vnetName",
-					SubnetName:        "subnetName",
-					SubnetID:          expectedSubnetID,
-				}
-				assert.Equal(t, expectedOutput, actualOutput, "VnetResourceGroup, vnetName, subnetName is specified")
+			name:                          "VnetResourceGroup, vnetName, subnetName is specified",
+			subscriptionID:                "bar",
+			networkResourceSubscriptionID: "bar",
+			resourceGroup:                 "fakeResourceGroup",
+			vnetResourceGroup:             "fakeVnetResourceGroup",
+			input: SubnetProperties{
+				VnetResourceGroup: "vnetrg",
+				VnetName:          "vnetName",
+				SubnetName:        "subnetName",
+			},
+			expected: SubnetProperties{
+				VnetResourceGroup: "vnetrg",
+				VnetName:          "vnetName",
+				SubnetName:        "subnetName",
+				SubnetID:          fmt.Sprintf(subnetTemplate, "bar", "vnetrg", "vnetName", "subnetName"),
 			},
 		},
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, tc.testFunc)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			driver := NewFakeDriver(t)
+			driver.cloud = &azure.Cloud{}
+			driver.cloud.SubscriptionID = testCase.subscriptionID
+			driver.cloud.NetworkResourceSubscriptionID = testCase.networkResourceSubscriptionID
+			driver.cloud.ResourceGroup = testCase.resourceGroup
+			driver.cloud.VnetResourceGroup = testCase.vnetResourceGroup
+
+			actual := driver.populateSubnetPropertiesFromCloudConfig(testCase.input)
+
+			assert.Equal(t, testCase.expected, actual)
+		})
 	}
 }
 
@@ -808,7 +940,7 @@ func TestRemoveNotReadyTaintIfNeeded(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 
 				// Create fake kubernetes client
 				fakeClient := kubefake.NewSimpleClientset()

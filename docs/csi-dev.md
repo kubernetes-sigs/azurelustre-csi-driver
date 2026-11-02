@@ -30,9 +30,84 @@ make azurelustre
 make verify
 ```
 
+Verification tools are pinned and installed under
+`_output/tools/<tool>/<version>` in the repository, not into system directories.
+Keep this directory between local runs to reuse the installations. Release
+downloads are checked against pinned SHA-256 checksums before installation.
+A Go compiler meeting the minimum in [go.mod](../go.mod), Python 3.8 or later
+available as `python3`, and Node.js 20 or later remain prerequisites.
+Installing uncached Python tools requires pip, and installing
+uncached markdownlint requires npm. Python-based verifiers use the shared
+[Python prerequisite check](../hack/ensure-python.sh) to report how to install
+or activate a missing prerequisite. Verification does not create or modify the system
+`python` command. The [Linux workflow](../.github/workflows/linux.yaml) selects
+Python 3.12 explicitly; fresh CI runners install the pinned verification tools.
+
+The module's `go` directive declares the minimum version; it does not select the
+latest compiler patch. CI uses [ci-go-version.sh](../hack/ci-go-version.sh) to
+derive the matching release series (for example, `1.26.x`) and installs its latest
+available patch with `actions/setup-go`. There is no `toolchain` directive to
+update for each patch release.
+
+For local verification, use an up-to-date patch in the same release series.
+A newer host Go may exceed the pinned golangci-lint binary's supported version;
+select a compatible installed compiler or set `GOTOOLCHAIN` to a specific patched
+version in that series. Automatic toolchain selection does not downgrade a newer
+Go or continually update an already-compatible compiler.
+
+Package builds select their compiler independently. Microsoft Go/SystemCrypto
+builds should retain `GOTOOLCHAIN=local` rather than downloading an upstream
+toolchain. Record the resolved compiler version for release builds.
+
+For pin locations, release hashes, dependency-lock updates, and isolated
+validation commands, see [Maintaining verification tools](verification-tools.md).
+
+Go lint policy is defined in [.golangci.yaml](../.golangci.yaml). Verification
+uses `modernize` for current Go idioms, `unparam` for unused parameters and
+results, and `fatcontext` for nested contexts in loops and closures. Tests use
+`usetesting` to prefer `t.Context()`, `t.TempDir()`, `t.Chdir()`, and `t.Setenv()`
+where appropriate so resources follow the test lifetime.
+
+Additional lint checks cover these conventions:
+
+| Linter | Purpose |
+| --- | --- |
+| `canonicalheader` | Use canonical HTTP header names. |
+| `dogsled` | Flag assignments that discard too many return values. |
+| `dupword` | Detect accidentally repeated words in comments and strings. |
+| `errname` | Give sentinel errors and error types recognizable names. |
+| `exptostd` | Prefer standard-library equivalents of experimental APIs. |
+| `forbidigo` | Use klog and return errors; only main may terminate the process. |
+| `goconst` | Detect repeated production strings; preserve literal test fixtures. |
+| `gocritic` | Check suspicious constructs with its default stable rules. |
+| `godoclint` | Keep Go documentation consistent with the symbols it describes. |
+| `goprintffuncname` | Name printf-style helpers with an f suffix. |
+| `govet.deepequalerrors` | Assert error contracts instead of comparing private error fields. |
+| `grouper` | Group constants while allowing separate enum and unrelated constant blocks. |
+| `iface` | Detect duplicate interfaces with identical method sets. |
+| `iotamixing` | Avoid mixing iota and explicit constants in one block. |
+| `mirror` | Use matching string or byte APIs without unnecessary conversions. |
+| `perfsprint` | Replace unnecessary formatting calls with simpler expressions. |
+| `testableexamples` | Give Go examples expected output so tests execute them. |
+| `testifylint` | Enable all checks for assertions and suite helpers. |
+| `thelper` | Mark test helpers so failures point to their callers. |
+| `tparallel` | Check parallel subtest scheduling and cleanup consistency. |
+
+General Go checks remain enabled to catch mistakes when a construct is first
+introduced, even when the current code has no examples, parallel tests, or iota
+declarations. SQL, span-lifecycle, and zerolog checks are not enabled because the
+driver does not use those APIs directly; add their checks with the APIs if needed.
+
+The blocking `RunGRPCServer(ctx, ...)` API owns endpoint setup, serving, and
+shutdown. `Driver.Run(ctx, endpoint)` returns lifecycle errors to the executable;
+completed cancellation-driven shutdown returns `nil`.
+Driver and test-client constructors return errors to their callers rather than
+terminating the process. Canonical unit tests include the Azure client helper's
+synthetic constructor tests; they do not authenticate or contact Azure.
+
 &nbsp;
 
-- Verify Helm chart source changes
+### Verify Helm chart source changes
 
 The repository stores one unpackaged chart source at
 `charts/latest/azurelustre-csi-driver`. Keep its `Chart.yaml` version at
@@ -50,7 +125,7 @@ such as `vX.Y.Z`. It writes `A.B.C` to the chart `version`, and writes `vX.Y.Z`
 to `appVersion` and `image.tag`. `appVersion` is informational; `image.tag`
 selects the actual flavored images. Never derive either input from the other.
 
-- Build container image locally for testing
+### Build container image locally for testing
 
 Set up a personal ACR if you don't have one (one-time):
 

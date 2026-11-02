@@ -29,8 +29,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v9"
 	"github.com/samber/lo"
 
 	v1 "k8s.io/api/core/v1"
@@ -117,7 +117,7 @@ func (az *Cloud) getLoadBalancerProbeIDWithRG(lbName, rgName, lbRuleName string)
 
 // getNetworkResourceSubscriptionID returns the subscription id which hosts network resources
 func (az *Cloud) getNetworkResourceSubscriptionID() string {
-	if az.Config.UsesNetworkResourceInDifferentSubscription() {
+	if az.UsesNetworkResourceInDifferentSubscription() {
 		return az.NetworkResourceSubscriptionID
 	}
 	return az.SubscriptionID
@@ -306,20 +306,6 @@ func (az *Cloud) getloadbalancerHAmodeRuleName(service *v1.Service, isIPv6 bool)
 	return az.getLoadBalancerRuleName(service, service.Spec.Ports[0].Protocol, service.Spec.Ports[0].Port, isIPv6)
 }
 
-func (az *Cloud) getSecurityRuleName(service *v1.Service, port v1.ServicePort, sourceAddrPrefix string, isIPv6 bool) string {
-	isDualStack := isServiceDualStack(service)
-	safePrefix := strings.Replace(sourceAddrPrefix, "/", "_", -1)
-	safePrefix = strings.Replace(safePrefix, ":", ".", -1) // Consider IPv6 address
-	var name string
-	if useSharedSecurityRule(service) {
-		name = fmt.Sprintf("shared-%s-%d-%s", port.Protocol, port.Port, safePrefix)
-	} else {
-		rulePrefix := az.getRulePrefix(service)
-		name = fmt.Sprintf("%s-%s-%d-%s", rulePrefix, port.Protocol, port.Port, safePrefix)
-	}
-	return getResourceByIPFamily(name, isDualStack, isIPv6)
-}
-
 // This returns a human-readable version of the Service used to tag some resources.
 // This is only used for human-readable convenience, and not to filter.
 func getServiceName(service *v1.Service) string {
@@ -443,11 +429,11 @@ func (as *availabilitySet) newVMASCache() (azcache.Resource, error) {
 		return localCache, nil
 	}
 
-	if as.Config.AvailabilitySetsCacheTTLInSeconds == 0 {
-		as.Config.AvailabilitySetsCacheTTLInSeconds = consts.VMASCacheTTLDefaultInSeconds
+	if as.AvailabilitySetsCacheTTLInSeconds == 0 {
+		as.AvailabilitySetsCacheTTLInSeconds = consts.VMASCacheTTLDefaultInSeconds
 	}
 
-	return azcache.NewTimedCache(time.Duration(as.Config.AvailabilitySetsCacheTTLInSeconds)*time.Second, getter, as.Cloud.Config.DisableAPICallCache)
+	return azcache.NewTimedCache(time.Duration(as.AvailabilitySetsCacheTTLInSeconds)*time.Second, getter, as.DisableAPICallCache)
 }
 
 // RefreshCaches invalidates and renew all related caches.
@@ -605,7 +591,7 @@ func (as *availabilitySet) GetZoneByNodeName(ctx context.Context, name string) (
 // GetPrimaryVMSetName returns the VM set name depending on the configured vmType.
 // It returns config.PrimaryScaleSetName for vmss and config.PrimaryAvailabilitySetName for standard vmType.
 func (as *availabilitySet) GetPrimaryVMSetName() string {
-	return as.Config.PrimaryAvailabilitySetName
+	return as.PrimaryAvailabilitySetName
 }
 
 // GetIPByNodeName gets machine private IP and public IP by node name.
@@ -713,7 +699,7 @@ func (as *availabilitySet) GetVMSetNames(ctx context.Context, service *v1.Servic
 	if !hasMode || as.UseStandardLoadBalancer() {
 		// no mode specified in service annotation or use single SLB mode
 		// default to PrimaryAvailabilitySetName
-		availabilitySetNames = []*string{to.Ptr(as.Config.PrimaryAvailabilitySetName)}
+		availabilitySetNames = []*string{to.Ptr(as.PrimaryAvailabilitySetName)}
 		return availabilitySetNames, nil
 	}
 
@@ -844,11 +830,8 @@ func (as *availabilitySet) getPrimaryInterfaceWithVMSet(ctx context.Context, nod
 	// - For single standard SKU load balancer, backend could belong to multiple VMAS, so we
 	//   don't check vmSet for it.
 	// - For multiple standard SKU load balancers, the behavior is similar to the basic LB.
-	needCheck := false
-	if !as.UseStandardLoadBalancer() {
-		// need to check the vmSet name when using the basic LB
-		needCheck = true
-	}
+	needCheck := !as.UseStandardLoadBalancer()
+
 	if vmSetName != "" && needCheck {
 		expectedAvailabilitySetID := as.getAvailabilitySetID(nodeResourceGroup, vmSetName)
 		if machine.Properties.AvailabilitySet == nil || !strings.EqualFold(*machine.Properties.AvailabilitySet.ID, expectedAvailabilitySetID) {
@@ -900,7 +883,7 @@ func (as *availabilitySet) EnsureHostInPool(ctx context.Context, service *v1.Ser
 
 	var primaryIPConfig *armnetwork.InterfaceIPConfiguration
 	ipv6 := isBackendPoolIPv6(backendPoolID)
-	if !as.Cloud.ipv6DualStackEnabled && !ipv6 {
+	if !as.ipv6DualStackEnabled && !ipv6 {
 		primaryIPConfig, err = getPrimaryIPConfig(nic)
 		if err != nil {
 			return "", "", "", nil, err

@@ -16,16 +16,65 @@
 
 set -euo pipefail
 
-# shellcheck disable=SC2312 # golangci-lint version output is what we want; non-zero exit (not installed) also fails the comparison
-if [[ "$(golangci-lint version --short 2>/dev/null)" != "2."* ]]; then
-  echo "golangci-lint not found or not v2.x. Installing golangci-lint..."
-  gopath=$(go env GOPATH)
-  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "${gopath}/bin" v2.7.2
-  export PATH=${PATH}:"${gopath}/bin"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
+readonly GOLANGCI_LINT_VERSION="v2.12.2"
+readonly GOLANGCI_LINT_SHA256_AMD64="8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553"
+readonly GOLANGCI_LINT_SHA256_ARM64="44cd40a8c76c86755375adfeea52cfd3533cb43d7bd647771e0ae065e166df3a"
+
+if [[ "${1:-}" == "--tool-version" ]]; then
+	if [[ $# -ne 1 ]]; then
+		echo "Usage: $0 [--tool-version]" >&2
+		exit 2
+	fi
+	printf '%s\n' "${GOLANGCI_LINT_VERSION}"
+	exit 0
+fi
+if [[ $# -ne 0 ]]; then
+	echo "Usage: $0 [--tool-version]" >&2
+	exit 2
 fi
 
-echo "Verifying golangci-lint"
+case "$(uname -m)" in
+	x86_64)
+		arch="amd64"
+		checksum="${GOLANGCI_LINT_SHA256_AMD64}"
+		;;
+	aarch64 | arm64)
+		arch="arm64"
+		checksum="${GOLANGCI_LINT_SHA256_ARM64}"
+		;;
+	*)
+		echo "Unsupported architecture: $(uname -m); golangci-lint supports x86_64 and arm64." >&2
+		exit 1
+		;;
+esac
 
-golangci-lint run --timeout=10m
+version=${GOLANGCI_LINT_VERSION#v}
+install_dir="${ROOT}/_output/tools/golangci-lint/${GOLANGCI_LINT_VERSION}"
+GOLANGCI_LINT_BIN="${install_dir}/golangci-lint"
+
+installed_version=""
+if [[ -x "${GOLANGCI_LINT_BIN}" ]]; then
+	installed_version=$("${GOLANGCI_LINT_BIN}" version --short 2>&1) || installed_version=""
+fi
+if [[ "${installed_version}" != "${version}" ]]; then
+	temp_dir=$(mktemp -d)
+	trap 'rm -rf "${temp_dir}"' EXIT
+	artifact="golangci-lint-${version}-linux-${arch}.tar.gz"
+
+	rm -rf "${install_dir}"
+	mkdir -p "${install_dir}"
+	"${ROOT}/hack/tools/download-verified.sh" \
+		"https://github.com/golangci/golangci-lint/releases/download/${GOLANGCI_LINT_VERSION}/${artifact}" \
+		"${checksum}" \
+		"${temp_dir}/${artifact}"
+	tar -xzf "${temp_dir}/${artifact}" -C "${temp_dir}"
+	install -m 0755 "${temp_dir}/golangci-lint-${version}-linux-${arch}/golangci-lint" "${GOLANGCI_LINT_BIN}"
+fi
+
+echo "Verifying golangci-lint ${GOLANGCI_LINT_VERSION}"
+
+"${GOLANGCI_LINT_BIN}" run --timeout=10m
 
 echo "Congratulations! Lint check completed for all Go source files."

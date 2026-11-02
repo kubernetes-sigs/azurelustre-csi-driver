@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
@@ -40,6 +42,7 @@ import (
 	mount "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
@@ -121,6 +124,8 @@ type DriverOptions struct {
 	EnableAzureLustreMockDynProv bool
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
+	// AllowUnadvertisedZones allows an explicitly supplied zone when the SKU API advertises none.
+	AllowUnadvertisedZones bool
 }
 
 // LustreSkuValue describes the increment and maximum size of a given Lustre sku
@@ -156,9 +161,9 @@ type Driver struct {
 	enableAzureLustreMockMount bool
 	// enableAzureLustreMockDynProv is only for testing, DO NOT set as true in non-testing scenario
 	enableAzureLustreMockDynProv bool
+	allowUnadvertisedZones       bool
 	mounter                      *mount.SafeFormatAndMount
 	forceMounter                 *mount.MounterForceUnmounter
-	volLockMap                   *util.LockMap
 	// Directory to temporarily mount to for subdirectory creation
 	workingMountDir string
 	// A map storing all volumes with ongoing operations so that additional operations
@@ -182,12 +187,16 @@ type Driver struct {
 
 // NewDriver creates a new Driver. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
-func NewDriver(options *DriverOptions) (*Driver, error) {
+func NewDriver(ctx context.Context, options *DriverOptions) (*Driver, error) {
+	return newDriver(ctx, options, newClusterPingCache)
+}
+
+func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(util.CommandRunnerInterface) (*clusterPingCache, error)) (*Driver, error) {
 	d := Driver{
-		volLockMap:                   util.NewLockMap(),
 		volumeLocks:                  newVolumeLocks(),
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
 		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
+		allowUnadvertisedZones:       options.AllowUnadvertisedZones,
 		workingMountDir:              options.WorkingMountDir,
 		removeNotReadyTaint:          options.RemoveNotReadyTaint,
 	}
@@ -200,18 +209,9 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		d.podRole = nodePod
 	}
 
-	ctx := context.Background()
-
 	az := &azure.Cloud{}
 
-	credFile, ok := os.LookupEnv(DefaultAzureConfigFileEnv)
-	if ok && strings.TrimSpace(credFile) != "" {
-		klog.V(2).Infof("%s env var set as %v", DefaultAzureConfigFileEnv, credFile)
-	} else {
-		credFile = DefaultConfigFilePathLinux
-		klog.V(2).Infof("use default %s env var: %v", DefaultAzureConfigFileEnv, credFile)
-	}
-
+	credFile := azureConfigFilePath()
 	config, err := configloader.Load[azureconfig.Config](ctx, nil, &configloader.FileLoaderConfig{
 		FilePath: credFile,
 	})
@@ -259,11 +259,22 @@ func NewDriver(options *DriverOptions) (*Driver, error) {
 		}
 	}
 
-	if d.pingChecker, err = newClusterPingCache(&util.DefaultCommandRunner{}); err != nil {
-		klog.Fatalf("%v", err)
+	if d.pingChecker, err = newPingCache(&util.DefaultCommandRunner{}); err != nil {
+		return nil, fmt.Errorf("failed to initialize ping cache: %w", err)
 	}
 
 	return &d, nil
+}
+
+func azureConfigFilePath() string {
+	credFile, ok := os.LookupEnv(DefaultAzureConfigFileEnv)
+	if ok && strings.TrimSpace(credFile) != "" {
+		klog.V(2).Infof("%s env var set as %v", DefaultAzureConfigFileEnv, credFile)
+	} else {
+		credFile = DefaultConfigFilePathLinux
+		klog.V(2).Infof("use default %s env var: %v", DefaultAzureConfigFileEnv, credFile)
+	}
+	return credFile
 }
 
 // resolveControllerIdentity settles which identity the ARM clients authenticate with.
@@ -296,19 +307,28 @@ func (d *Driver) networkSubscriptionID() string {
 // never call ARM, so they leave the provisioner unset.
 func (d *Driver) initDynamicProvisioner(config *azureconfig.Config) error {
 	klog.Infof("%s", azureIdentityConfigurationMessage())
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	// Keep credential and ARM client options separate: both need the selected
+	// Azure cloud, but ARM-only settings must not change credential behavior.
+	credentialClientOptions, resourceClientOptions, err := getAzureClientOptions(config)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure client options: %w", err)
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: credentialClientOptions,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to obtain a credential: %w", err)
 	}
-	storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, nil)
+	storageClientFactory, err := armstoragecache.NewClientFactory(config.SubscriptionID, cred, resourceClientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create storage client factory: %w", err)
 	}
-	networkClientFactory, err := armnetwork.NewClientFactory(d.networkSubscriptionID(), cred, nil)
+	networkClientFactory, err := armnetwork.NewClientFactory(d.networkSubscriptionID(), cred, resourceClientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create network client factory: %w", err)
 	}
 	d.dynamicProvisioner = &DynamicProvisioner{
+		subscriptionID:       config.SubscriptionID,
 		amlFilesystemsClient: storageClientFactory.NewAmlFilesystemsClient(),
 		mgmtClient:           storageClientFactory.NewManagementClient(),
 		vnetClient:           networkClientFactory.NewVirtualNetworksClient(),
@@ -336,6 +356,27 @@ func azureIdentityConfigurationMessage() string {
 	return fmt.Sprintf("authenticating with managed identity (client ID %q)", clientID)
 }
 
+func getAzureClientOptions(config *azureconfig.Config) (azcore.ClientOptions, *arm.ClientOptions, error) {
+	cloudConfig, _, err := azclient.GetAzureCloudConfigAndEnvConfig(&config.ARMClientConfig)
+	if err != nil {
+		return azcore.ClientOptions{}, nil, err
+	}
+
+	// Pass the cloud configuration to the credential so token authority and
+	// ARM audience match the endpoint used by the selected Azure cloud.
+	credentialClientOptions := azcore.ClientOptions{
+		Cloud: cloudConfig,
+	}
+
+	// ARM clients need the same cloud endpoint, while keeping SDK retry,
+	// throttling, transport, and timeout defaults unchanged.
+	resourceClientOptions := &arm.ClientOptions{
+		ClientOptions: credentialClientOptions,
+	}
+
+	return credentialClientOptions, resourceClientOptions, nil
+}
+
 func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProperties) SubnetProperties {
 	subnetProperties := subnetInfo
 	subsID := d.networkSubscriptionID()
@@ -361,8 +402,8 @@ func (d *Driver) populateSubnetPropertiesFromCloudConfig(subnetInfo SubnetProper
 	return subnetProperties
 }
 
-// Run driver initialization
-func (d *Driver) Run(endpoint string, testBool bool) error {
+// Run initializes the driver and serves CSI requests until shutdown.
+func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	versionMeta, err := GetVersionYAML(d.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get driver version: %w", err)
@@ -390,11 +431,7 @@ func (d *Driver) Run(endpoint string, testBool bool) error {
 
 	d.removeNotReadyTaintIfNeeded()
 
-	s := NewNonBlockingGRPCServer()
-	s.Start(endpoint, d, d, d, testBool)
-	s.Wait()
-
-	return nil
+	return RunGRPCServer(ctx, endpoint, d, d, d)
 }
 
 // selectForceUnmounter returns the force-unmount capable view of the given
@@ -483,9 +520,9 @@ func getKubeClient() (kubernetes.Interface, error) {
 
 // JSONPatch represents a JSON patch operation
 type JSONPatch struct {
-	OP    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
+	OP    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
 }
 
 func (d *Driver) removeNotReadyTaintIfNeeded() {

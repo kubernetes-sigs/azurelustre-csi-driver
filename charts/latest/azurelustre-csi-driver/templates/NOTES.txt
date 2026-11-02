@@ -6,5 +6,44 @@ To verify:
 CSIDriver object:
   kubectl get csidriver {{ .Values.csidriver.name }} -o yaml
 
-Uninstall:
-  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+Before uninstalling, stop consumers and new provisioning, wait for unmounts and
+in-flight volume operations, and keep the driver running during volume cleanup.
+Choose what data to retain BEFORE deleting claims. For dynamically provisioned
+volumes, reclaim policy "Delete" deletes the backing filesystem and its data;
+"Retain" preserves it. Save the filesystem mapping before removing its PV.
+Safe teardown and recovery:
+  https://github.com/kubernetes-sigs/azurelustre-csi-driver/blob/development/charts/README.md#uninstall
+
+After completing that procedure, for a direct Helm installation:
+  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }} --wait --timeout {{ add .Values.preDeleteGuard.activeDeadlineSeconds 60 }}s
+{{- if .Values.preDeleteGuard.enabled }}
+
+The guard checks ALL PVs using {{ .Values.csidriver.name }} across the cluster,
+including static, retained, released and unbound PVs, not only mounted volumes.
+It cannot detect CreateVolume before its PV appears.
+It fails closed if the check cannot run.
+
+If uninstall is blocked, inspect the hook before retrying:
+  kubectl -n {{ .Release.Namespace }} get jobs,pods -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard
+  kubectl -n {{ .Release.Namespace }} describe jobs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=predelete-guard -c predelete-guard --tail=-1
+Failed Job TTL is {{ .Values.preDeleteGuard.ttlSecondsAfterFinished }} seconds after completion;
+pods/logs can disappear sooner. Save diagnostics before retrying.
+After fixing the cause, retry ordinary uninstall. --no-hooks skips ALL hooks;
+use it only as an approved emergency bypass.
+{{- if not .Values.rbac.create }}
+
+WARNING: preDeleteGuard.enabled=true but rbac.create=false. Grant ServiceAccount
+'{{ include "azurelustre.preDeleteGuardName" . }}' cluster-wide list on
+persistentvolumes, or the guard will block uninstall.
+{{- end }}
+{{- else }}
+
+WARNING: preDeleteGuard.enabled=false. No hook enforces the PV check for this
+release. Complete the safe teardown procedure before uninstalling.
+{{- end }}
+
+For Azure-managed extensions, finish teardown before deleting the extension.
+The guard cannot preserve the Azure extension resource.
+`az k8s-extension delete --force` is not a Helm hook bypass;
+it can leave the driver unmanaged.

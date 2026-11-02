@@ -1,5 +1,12 @@
 # CSI Driver Troubleshooting Guide
 
+Examples use `kube-system` and static-manifest workload names. For Helm installs,
+substitute your release namespace and the workload names returned by:
+
+```sh
+kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre-csi-driver
+```
+
 ---
 
 ## Driver Readiness and Health Issues
@@ -13,12 +20,27 @@
 > | `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) that loads the Lustre kernel modules + brings up LNet, then runs an LNet reconcile loop for the life of the pod | `startupProbe` + `readinessProbe` = `/app/readinessProbe.sh` (LNet health); `livenessProbe` = `test -d /sys/module/lnet` | kernel modules, LNet/NIDs, metapackage install |
 > | `azurelustre` | CSI driver: installs userspace tools, then serves the gRPC socket | `startupProbe` + `livenessProbe` = `/healthz` (port 29763); `readinessProbe` = `test -S /csi/csi.sock` | userspace utils install, mounts, gRPC/CSI logs |
 > | `liveness-probe` | exposes the driver `/healthz` to the kubelet | — | — |
-> | `node-driver-registrar` | registers the driver socket with the kubelet | registration `livenessProbe` | kubelet registration |
+> | `node-driver-registrar` | registers the driver socket with the kubelet | `startupProbe` + `livenessProbe` = `/healthz` (port 29764; registration socket responds) | kubelet registration |
 >
 > A node pod is `Ready` (`4/4`) only when the `lustre-loader` sidecar reports
-> LNet healthy **and** the `azurelustre` driver socket is serving. LNet and
+> LNet healthy **and** the `azurelustre` driver passes its socket-file readiness
+> check. Socket existence alone does not verify a successful CSI RPC. LNet and
 > kernel-module troubleshooting targets `-c lustre-loader`; mount and CSI driver
 > troubleshooting targets `-c azurelustre`.
+
+### Controller provisioner health
+
+The controller's `csi-provisioner` exposes `/healthz/leader-election` on port
+29761, separate from the CSI driver's `/healthz` on port 29762. The provisioner
+starts its HTTP server only after connecting to and initializing with the CSI
+driver. Its startup probe allows about ten minutes for that initialization,
+holding off liveness checks until the endpoint responds successfully.
+
+After startup, the liveness probe can restart a provisioner whose leader-election
+health check fails. A successful response does not mean that this replica is the
+leader or that a volume operation succeeded; standby replicas can also be healthy.
+Check `-c csi-provisioner` logs for election and provisioning errors, and
+`-c azurelustre` logs for CSI driver errors.
 
 ### LNet readiness troubleshooting (loader sidecar)
 
@@ -51,7 +73,12 @@ During initial startup it is normal to see the loader's startup probe fail a few
 times while LNet comes up; once LNet is operational the probes succeed and the
 gated `azurelustre` and `node-driver-registrar` containers start. The driver's
 startup probe may likewise fail with `connection refused` until its CSI socket
-exists. Neither is a problem on a pod that goes on to reach Ready.
+exists, and the registrar's startup probe may fail until its registration socket
+responds. The registrar's startup probe holds off liveness checks with a budget of
+about one minute. It does not extend the registrar's 30-second CSI connection
+timeout: if that expires, the registrar exits and Kubernetes restarts it with
+backoff. Its HTTP health check does not confirm completed kubelet registration; check the
+registrar logs for `NotifyRegistrationStatus` when diagnosing registration failures.
 
 #### Run the LNet readiness probe directly (loader sidecar)
 
@@ -103,11 +130,12 @@ the client install is larger). If the install cannot be completed the container
 exits rather than opening the socket, so the kubelet restarts it and the node is
 never advertised as able to serve mounts it would fail.
 
-`Startup probe failed` events alone indicate only that the install has not yet
-completed: the liveness check is suppressed until the startup probe succeeds, so
-the container is not restarted while the install is in progress. An increasing
-`RESTARTS` count indicates the container is being terminated and recreated,
-which means the install is failing or exceeding the startup probe's budget.
+`Startup probe failed` events alone do not identify the cause. Liveness checks
+are suppressed until the startup probe succeeds, but the startup probe can
+itself restart the container when its failure budget is exhausted. Increasing
+`RESTARTS` can also result from driver initialization or serving errors,
+cleanup timeouts, or OOM kills. Inspect the termination details and logs using
+the [driver lifecycle troubleshooting steps](#driver-startup-and-shutdown-failures).
 
 ```sh
 # Driver startup + install logs; look for "Listening for connections"
@@ -116,8 +144,8 @@ kubectl logs -n kube-system <pod-name> -c azurelustre --tail=100
 # Logs from the previous attempt if the container is restarting
 kubectl logs -n kube-system <pod-name> -c azurelustre --previous --tail=100
 
-# Confirm the socket exists (Ready) or not (NotReady)
-kubectl exec -n kube-system <pod-name> -c azurelustre -- test -S /csi/csi.sock && echo serving || echo "not serving"
+# Check socket-file readiness; this alone does not establish gRPC health
+kubectl exec -n kube-system <pod-name> -c azurelustre -- test -S /csi/csi.sock
 
 # Confirm the userspace tools installed (these come from the driver's utils install)
 kubectl exec -n kube-system <pod-name> -c azurelustre -- sh -c 'command -v mount.lustre lnetctl'
@@ -132,6 +160,52 @@ cannot reach the package feed, or the requested Lustre version
 > Kernel modules are **not** installed by the driver container — the
 > `lustre-loader` sidecar already loaded them into the shared host kernel. The
 > driver container only installs the kernel-agnostic userspace tools.
+
+### Driver startup and shutdown failures
+
+This section applies to the `azurelustre` container in both controller and node
+pods. The loader's kernel-module cleanup is a separate
+[teardown step](#teardown-behavior-sigterm-and-termination).
+
+For the running gRPC server, a completed SIGTERM/SIGINT shutdown exits
+successfully. Startup or serving failures and cleanup timeouts exit with an
+error. The [shutdown contract](../README.md#driver-shutdown) describes the
+ten-second cleanup deadline and the work that can continue in Azure afterward.
+This deadline is separate from both pod termination grace and the provisioning
+request timeout.
+
+Capture the affected container's logs and the pod's termination details before
+restarting it:
+
+```sh
+kubectl describe pod <pod-name> -n <driver-namespace>
+kubectl logs <pod-name> -n <driver-namespace> -c azurelustre --timestamps --tail=200
+
+# Use this when a previous instance of the container exists in this pod
+kubectl logs <pod-name> -n <driver-namespace> -c azurelustre --previous --timestamps --tail=200
+```
+
+In `describe`, inspect the `azurelustre` container's `State`, `Last State`,
+termination reason, exit code, and timestamps, along with the pod events.
+Correlate these with rollout, drain, probe-failure, and OOM events; a restart
+count or socket file alone does not establish the cause. `--previous` retrieves
+the prior container instance in the same pod, not a deleted pod. Use cluster
+log aggregation for pods that have already been removed.
+
+For controller provisioning failures, also capture the client's view:
+
+```sh
+kubectl logs <controller-pod-name> -n <driver-namespace> -c csi-provisioner --timestamps --tail=200
+```
+
+Use the [lifecycle error reference](errors.md#driver-lifecycle-errors) to
+distinguish initialization failures, rejected or canceled requests, and cleanup
+timeouts. Do not treat a ten-second shutdown timeout as the longer-running
+[AMLFS creation timeout](errors.md#error-amlfs-cluster-creation-timed-out).
+Before an intentional restart, follow the workload and provisioning
+precautions in the [shutdown contract](../README.md#driver-shutdown). Neither
+successful shutdown nor a cancellation error proves that an Azure operation
+has finished; check its resource state before taking further action.
 
 ### Loader sidecar restarting (`lustre-loader` CrashLoopBackOff / RESTARTS climbing)
 
@@ -319,14 +393,15 @@ kubectl get events -n kube-system --field-selector involvedObject.kind=DaemonSet
 
 2. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which conflicts with the new distribution-specific architecture.
@@ -388,7 +463,7 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
    ```sh
    # Check actual OS on the node
-   kubectl debug node/<node-name> -it --image=ubuntu -- cat /etc/os-release
+   kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 -- cat /host/etc/os-release
    ```
 
 2. **Remove incorrect pods:**
@@ -410,14 +485,15 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which can result in multiple pods on the same node when upgrading.
@@ -472,8 +548,8 @@ kubectl get ds -n kube-system csi-azurelustre-node-azurelinux3 -o jsonpath='{.sp
 # Check image pull secrets
 kubectl get serviceaccount -n kube-system csi-azurelustre-node-sa -o yaml
 
-# Test image pull manually on a node
-kubectl debug node/<node-name> -it --image=ubuntu -- bash
+# Test image pull manually on a node (requires privileged debugging access)
+kubectl debug node/<node-name> -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0 --profile=sysadmin -- chroot /host /bin/sh
 # Then inside the debug pod:
 # crictl pull mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:v0.4.0-jammy
 ```
@@ -546,7 +622,7 @@ kubectl rollout history ds/csi-azurelustre-node-noble -n kube-system
 kubectl rollout history ds/csi-azurelustre-node-azurelinux3 -n kube-system
 
 # Check pod ages to identify old pods
-kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[0].image
+kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns='NAME:.metadata.name,AGE:.metadata.creationTimestamp,IMAGE:.spec.containers[?(@.name=="azurelustre")].image'
 ```
 
 **Resolution:**
@@ -578,14 +654,15 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns=NA
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   Uninstall the old driver before deploying the new OS-specific DaemonSets:
+   For a manifest installation, use the [in-place upgrade
+   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
+   Stop workloads and wait for unmounts as described in the [upgrade
+   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
+   For a Helm installation, use `helm upgrade` instead of the script below.
 
    ```sh
-   # Uninstall the previous driver version
-   ./deploy/uninstall-driver.sh
-
-   # Then install the new version with OS-specific DaemonSets
-   ./deploy/install-driver.sh
+   # From a checkout of the intended driver version; preserves PVCs and PVs
+   ./deploy/install-driver.sh local
    ```
 
    Versions prior to v0.4.0 used a single DaemonSet which can cause version inconsistencies when mixing with the new OS-specific DaemonSets.
@@ -709,9 +786,8 @@ Look for events such as:
 - `failed to provision volume`
 - `error creating AMLFS cluster`
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
-Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+Use the [dynamic provisioning error reference](errors.md#dynamic-provisioning-errors)
+to interpret the reported error.
 
 **Check controller logs for dynamic provisioning errors:**
 
@@ -725,8 +801,6 @@ Common error patterns:
 - Quota exceeded errors
 - Network/subnet configuration issues
 - Invalid StorageClass parameters
-
-Check for solutions in [Resolving Common Errors](errors.md)
 
 Consult [Troubleshoot Azure Managed Lustre deployment issues](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
 
@@ -744,8 +818,6 @@ Check for:
 - Resource group and location settings
 - Zone parameter matches available zones for the SKU and location
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
 **Check Azure subscription quotas and limits:**
 
 ```sh
@@ -753,19 +825,17 @@ Check for solutions in [Resolving Common Errors](errors.md)
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "quota\|limit\|insufficient"
 ```
 
-Check for solutions in [Resolving Common Errors](errors.md)
+**Verify Azure permissions for the controller's identity:**
 
-**Verify Azure permissions for the kubelet identity:**
-
-Confirm that the driver has the necessary [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
+Check the [required permissions](driver-parameters.md#permissions-for-kubelet-identity)
+on the kubelet identity, or on the federated identity when workload identity is
+enabled. Missing optional discovery permissions do not prevent provisioning.
 
 Check for permission errors in the controller logs:
 
 ```sh
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "forbidden\|unauthorized\|permission"
 ```
-
-Check for solutions in [Resolving Common Errors](errors.md)
 
 **Monitor AMLFS cluster creation progress in the Azure portal:**
 
@@ -777,7 +847,10 @@ Check for solutions in [Resolving Common Errors](errors.md)
      - kubernetes.io-created-for-pv-name: pvc-78876f95-32c2-41c4-bdfa-eb92d1eeb341
      - kubernetes.io-created-for-pvc-name: pvc-lustre-dynprov
      - kubernetes.io-created-for-pvc-namespace: default
-4. Review the Activity Log for any deployment failures
+4. Review the Activity Log for the failed create/update event. If PVC events or
+   logs show only `Failed` or a generic health message, follow
+   [AMLFS provisioning failed](errors.md#error-amlfs-provisioning-failed)
+   to find the service error, including after the filesystem has been recreated.
 
 **Check for network issues:**
 
@@ -792,8 +865,7 @@ Common network issues:
 - Insufficient IP addresses in the subnet
 - Network security group blocking traffic
 - Missing virtual network peering
-
-Check for solutions in [Resolving Common Errors](errors.md)
+- Missing outbound connectivity from the AMLFS filesystem subnet
 
 **Check for zone configuration issues:**
 
@@ -811,12 +883,13 @@ Common zone issues:
 - Zone value not available for the specified SKU in the location
 - Zone specified when the SKU doesn't support zones in the location
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
 See [What are availability zones?](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview?tabs=azure-cli#regions-that-support-availability-zones)
 for more information about availability zones.
 
 #### Find all skus and available zones for a location
+
+These manual queries use your Azure CLI identity and require
+[SKU lookup permission](driver-parameters.md#optional-fail-fast-checks).
 
 ```sh
 # Find all sku values and available zones for a location:
@@ -861,7 +934,7 @@ az rest --method get --uri "/subscriptions/${SUBSCRIPTION}/providers/Microsoft.S
 
 ---
 
-**Check for SKU retrieval issues:**
+#### SKU lookup and validation
 
 ```sh
 # Check for SKU-related errors in controller logs
@@ -875,9 +948,11 @@ Common SKU-related issues:
 - Insufficient permissions to list Azure SKUs
 - Invalid or misspelled SKU names
 
-Check for solutions in [Resolving Common Errors](errors.md)
-
-Check [Find all skus and available zones for a location](#find-all-skus-and-available-zones-for-a-location)
+If SKU discovery is unavailable, the driver warns and continues with the
+configured SKU and zone, rounding capacity in 4-TiB increments. Azure validates
+the creation request. Diagnose any subsequent creation or subnet-check error,
+rather than treating the discovery warning as the failure. See
+[SKU retrieval warnings](errors.md#warning-sku-retrieval-failures).
 
 **Verify SKU availability for a location:**
 
@@ -1195,6 +1270,12 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
 
 1. **Restart CSI Driver Pods**
 
+   Diagnose the failure first. Before an intentional restart, follow the
+   [shutdown precautions](../README.md#driver-shutdown): stop new provisioning
+   and let in-flight volume operations finish. For node pods, stop the affected
+   workloads and confirm their volumes are unmounted before restarting the
+   driver; see [teardown behavior](#teardown-behavior-sigterm-and-termination).
+
    ```bash
    kubectl rollout restart -n kube-system deployment/csi-azurelustre-controller
    kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-jammy
@@ -1202,12 +1283,15 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
    kubectl rollout restart -n kube-system daemonset/csi-azurelustre-node-azurelinux3
    ```
 
-2. **Force PVC Recreation**
+2. **PVC Recreation Is Destructive**
 
-   ```bash
-   kubectl delete pvc <pvc-name>
-   kubectl apply -f <pvc-file>.yaml
-   ```
+   Do not delete and recreate a PVC to address a canceled request, temporary
+   driver unavailability, or a shutdown cleanup timeout. With a `Delete`
+   reclaim policy, PVC deletion can also delete the PV, Azure filesystem,
+   and its data. If deletion is intentional, verify ownership and data
+   retention requirements and follow the
+   [safe teardown procedure](../charts/README.md#safe-teardown-procedure) and
+   [volume deletion guidance](dynamic-provisioning.md#delete-the-volume).
 
 3. **Check Kubernetes Resource Quotas**
 
@@ -1224,12 +1308,19 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
    kubectl get pvc <pvc-name> -o yaml
    ```
 
-5. **Reinstall Driver**
-    Ensure that all of your volumes are unmounted before uninstalling the driver.
+5. **Repair the Driver Installation**
+
+   Do not uninstall merely to restart the driver; use an appropriate rollout
+   restart or in-place upgrade to preserve existing PVCs and PVs. Follow the
+   [upgrade precautions](../charts/README.md#upgrade), including stopping consumers
+   and waiting for unmounts before replacing node plugins. For Helm, use
+   `helm upgrade`. For a manifest installation, use the installer from a checkout
+   of the intended driver version:
 
    ```bash
-   ./deploy/uninstall-driver.sh
-   ./deploy/install-driver.sh
-   # You can install other versions by checking them out locally and running a local install
-   # See the output of ./deploy/install-driver.sh --help for more information
+   ./deploy/install-driver.sh local
    ```
+
+   If the goal really is driver removal rather than repair, follow the
+   [safe teardown procedure](../charts/README.md#safe-teardown-procedure) instead.
+   Unmounting alone does not satisfy the guard while matching PVs remain.

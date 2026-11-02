@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
@@ -227,7 +227,7 @@ func (as *availabilitySet) UpdateVM(ctx context.Context, nodeName types.NodeName
 		return err
 	}
 
-	result, rerr := as.ComputeClientFactory.GetVirtualMachineClient().CreateOrUpdate(ctx, nodeResourceGroup, vmName, armcompute.VirtualMachine{})
+	result, rerr := updateVirtualMachine(ctx, as.ComputeClientFactory.GetVirtualMachineClient(), nodeResourceGroup, vmName)
 	if rerr != nil {
 		if exists, err := errutils.CheckResourceExistsFromAzcoreError(rerr); !exists && err == nil {
 			// if the VM does not exist, we should not update the cache
