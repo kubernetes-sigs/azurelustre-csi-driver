@@ -17,10 +17,11 @@ limitations under the License.
 package util
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,14 +47,14 @@ func TestRoundUpGiB(t *testing.T) {
 func TestCommandRunnerSuccess(t *testing.T) {
 	runner := &DefaultCommandRunner{}
 
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "echo", "hello")
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "echo", "hello")
 	require.NoError(t, err)
 	require.Equal(t, "hello\n", output)
 }
 
 func TestCommandRunnerTimeout(t *testing.T) {
 	runner := &DefaultCommandRunner{}
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "sleep", "10")
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "sleep", "10")
 	require.ErrorContains(t, err, "killed")
 	require.Empty(t, output, "Expected no output on timeout")
 }
@@ -62,83 +63,9 @@ func TestCommandRunnerError(t *testing.T) {
 	runner := &DefaultCommandRunner{}
 
 	nonexistentPath := "./non-existent-path"
-	output, err := runner.RunWithTimeout(context.Background(), 1*time.Second, "ls", nonexistentPath)
+	output, err := runner.RunWithTimeout(t.Context(), 1*time.Second, "ls", nonexistentPath)
 	require.Error(t, err)
 	require.Contains(t, output, nonexistentPath)
-}
-
-func TestSimpleLockEntry(t *testing.T) {
-	testLockMap := NewLockMap()
-
-	callbackChan1 := make(chan any)
-	go testLockMap.lockAndCallback(t, "entry1", callbackChan1)
-	ensureCallbackHappens(t, callbackChan1)
-}
-
-func TestSimpleLockUnlockEntry(t *testing.T) {
-	testLockMap := NewLockMap()
-
-	callbackChan1 := make(chan any)
-	go testLockMap.lockAndCallback(t, "entry1", callbackChan1)
-	ensureCallbackHappens(t, callbackChan1)
-	testLockMap.UnlockEntry("entry1")
-}
-
-func TestConcurrentLockEntry(t *testing.T) {
-	testLockMap := NewLockMap()
-
-	callbackChan1 := make(chan any)
-	callbackChan2 := make(chan any)
-
-	go testLockMap.lockAndCallback(t, "entry1", callbackChan1)
-	ensureCallbackHappens(t, callbackChan1)
-
-	go testLockMap.lockAndCallback(t, "entry1", callbackChan2)
-	ensureNoCallback(t, callbackChan2)
-
-	testLockMap.UnlockEntry("entry1")
-	ensureCallbackHappens(t, callbackChan2)
-	testLockMap.UnlockEntry("entry1")
-}
-
-func (lm *LockMap) lockAndCallback(_ *testing.T, entry string, callbackChan chan<- any) {
-	lm.LockEntry(entry)
-	callbackChan <- true
-}
-
-var callbackTimeout = 2 * time.Second
-
-func ensureCallbackHappens(t *testing.T, callbackChan <-chan any) bool {
-	t.Helper()
-	select {
-	case <-callbackChan:
-		return true
-	case <-time.After(callbackTimeout):
-		t.Fatalf("timed out waiting for callback")
-		return false
-	}
-}
-
-func ensureNoCallback(t *testing.T, callbackChan <-chan any) bool {
-	t.Helper()
-	select {
-	case <-callbackChan:
-		t.Fatalf("unexpected callback")
-		return false
-	case <-time.After(callbackTimeout):
-		return true
-	}
-}
-
-func TestUnlockEntryNotExists(t *testing.T) {
-	testLockMap := NewLockMap()
-
-	callbackChan1 := make(chan any)
-	go testLockMap.lockAndCallback(t, "entry1", callbackChan1)
-	ensureCallbackHappens(t, callbackChan1)
-	// entry2 does not exist
-	testLockMap.UnlockEntry("entry2")
-	testLockMap.UnlockEntry("entry1")
 }
 
 func TestBytesToGiB(t *testing.T) {
@@ -236,11 +163,62 @@ func TestConvertTagsToMap(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := ConvertTagsToMap(test.tags)
-		if !reflect.DeepEqual(err, test.expectedError) {
-			t.Errorf("test[%s]: unexpected error: %v, expected error: %v", test.desc, err, test.expectedError)
+		actual, err := ConvertTagsToMap(test.tags)
+		require.Equal(t, test.expected, actual, test.desc)
+		if test.expectedError == nil {
+			require.NoError(t, err, test.desc)
+		} else {
+			require.EqualError(t, err, test.expectedError.Error(), test.desc)
 		}
 	}
+}
+
+func TestTagCountBoundary(t *testing.T) {
+	tags := make([]string, MaxAzureResourceTags)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("key%d=value", i)
+	}
+	encoded := strings.Join(tags, ",")
+	t.Run("50 unique tags are accepted", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded)
+
+		require.NoError(t, err)
+		require.Len(t, result, MaxAzureResourceTags)
+	})
+	t.Run("51 unique tags are rejected", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded + ",overflow=value")
+
+		require.ErrorContains(t, err, "maximum of 50")
+		require.Nil(t, result)
+	})
+	t.Run("case-insensitive replacement does not consume another tag slot", func(t *testing.T) {
+		result, err := ConvertTagsToMap(encoded + ",KEY0=replaced")
+
+		require.NoError(t, err)
+		require.Len(t, result, MaxAzureResourceTags)
+		require.Equal(t, "replaced", result["key0"])
+	})
+}
+
+func TestTagPairSyntaxAndDuplicateNames(t *testing.T) {
+	t.Run("an extra equals sign is not part of a tag value", func(t *testing.T) {
+		result, err := ConvertTagsToMap("key=a=b")
+
+		require.Error(t, err)
+		require.Nil(t, result)
+	})
+	t.Run("last value wins while original tag-name spelling is retained", func(t *testing.T) {
+		result, err := ConvertTagsToMap("MixedCase=first,mixedcase=second")
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"MixedCase": "second"}, result)
+	})
+	t.Run("an empty tag value is allowed", func(t *testing.T) {
+		result, err := ConvertTagsToMap("empty=")
+
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"empty": ""}, result)
+	})
 }
 
 func TestSetKeyValueInMap(t *testing.T) {

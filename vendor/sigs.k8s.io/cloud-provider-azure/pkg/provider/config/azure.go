@@ -172,6 +172,17 @@ type Config struct {
 	ClusterServiceSharedLoadBalancerHealthProbePort int32 `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty" yaml:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
 	// ClusterServiceSharedLoadBalancerHealthProbePath defines the target path of the shared health probe. Default to `/healthz`.
 	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty" yaml:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
+
+	// NodeInstanceNotFoundGracePeriodInSeconds is the period, measured from a node's
+	// creation timestamp, during which a node whose backing VM/VMSS instance is not yet
+	// visible in ARM is still reported as existing. This tolerates the delay between a
+	// node registering itself in the cluster and its backing instance propagating into
+	// ARM, preventing the cloud-node-lifecycle controller from deleting the node
+	// prematurely. If not set, it defaults to 0, which disables the grace period.
+	NodeInstanceNotFoundGracePeriodInSeconds int `json:"nodeInstanceNotFoundGracePeriodInSeconds,omitempty" yaml:"nodeInstanceNotFoundGracePeriodInSeconds,omitempty"`
+
+	// ServiceGatewayEnabled indicates whether the service gateway is enabled for the cluster.
+	ServiceGatewayEnabled bool `json:"serviceGatewayEnabled,omitempty" yaml:"serviceGatewayEnabled,omitempty"`
 }
 
 // HasExtendedLocation returns true if extendedlocation prop are specified.
@@ -185,6 +196,14 @@ func (az *Config) IsLBBackendPoolTypeNodeIPConfig() bool {
 
 func (az *Config) IsLBBackendPoolTypeNodeIP() bool {
 	return strings.EqualFold(az.LoadBalancerBackendPoolConfigurationType, consts.LoadBalancerBackendPoolConfigurationTypeNodeIP)
+}
+
+func (az *Config) IsLBBackendPoolTypePodIP() bool {
+	return strings.EqualFold(az.LoadBalancerBackendPoolConfigurationType, consts.LoadBalancerBackendPoolConfigurationTypePodIP)
+}
+
+func (az *Config) UseServiceLoadBalancer() bool {
+	return strings.EqualFold(az.LoadBalancerSKU, consts.LoadBalancerSKUService)
 }
 
 func (az *Config) GetPutVMSSVMBatchSize() int {

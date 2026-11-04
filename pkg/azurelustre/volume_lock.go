@@ -17,6 +17,8 @@ limitations under the License.
 package azurelustre
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -26,8 +28,11 @@ const (
 	volumeOperationAlreadyExistsFmt = "An operation with the given Volume ID %s already exists"
 )
 
-// VolumeLocks implements a map with atomic operations. It stores a set of all volume IDs
-// with an ongoing operation.
+func amlFilesystemLockKey(subscriptionID, resourceGroupName, amlFilesystemName string) string {
+	return strings.ToLower(fmt.Sprintf("amlfs/%s/%s/%s", subscriptionID, resourceGroupName, amlFilesystemName))
+}
+
+// volumeLocks tracks operation keys in use by this process.
 type volumeLocks struct {
 	locks sets.Set[string]
 	mux   sync.Mutex
@@ -39,20 +44,19 @@ func newVolumeLocks() *volumeLocks {
 	}
 }
 
-// TryAcquire tries to acquire the lock for operating on volumeID and returns true if successful.
-// If another operation is already using volumeID, returns false.
-func (vl *volumeLocks) TryAcquire(volumeID string) bool {
+// TryAcquire returns false if another operation already holds operationKey.
+func (vl *volumeLocks) TryAcquire(operationKey string) bool {
 	vl.mux.Lock()
 	defer vl.mux.Unlock()
-	if vl.locks.Has(volumeID) {
+	if vl.locks.Has(operationKey) {
 		return false
 	}
-	vl.locks.Insert(volumeID)
+	vl.locks.Insert(operationKey)
 	return true
 }
 
-func (vl *volumeLocks) Release(volumeID string) {
+func (vl *volumeLocks) Release(operationKey string) {
 	vl.mux.Lock()
 	defer vl.mux.Unlock()
-	vl.locks.Delete(volumeID)
+	vl.locks.Delete(operationKey)
 }

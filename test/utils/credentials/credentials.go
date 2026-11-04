@@ -21,6 +21,7 @@ import (
 	"html/template"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/pborman/uuid"
 	"github.com/pelletier/go-toml"
@@ -137,15 +138,16 @@ func DeleteAzureCredentialFile() error {
 // getCredentialsFromAzureCredentials parses the azure credentials toml (AZURE_CREDENTIALS)
 // in Prow and returns the credential information usable to Azure Lustre CSI driver
 func getCredentialsFromAzureCredentials(azureCredentialsPath string) (*FromProw, error) {
-	content, err := os.ReadFile(azureCredentialsPath) // #nosec G304 // Using env var for test, not production concern
-	log.Printf("Reading credentials file %v", azureCredentialsPath)
+	quotedCredentialsPath := strconv.Quote(azureCredentialsPath)
+	content, err := os.ReadFile(azureCredentialsPath) // #nosec G304 G703 -- AZURE_CREDENTIALS intentionally names a trusted Prow credentials file.
+	log.Printf("Reading credentials file %s", quotedCredentialsPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading credentials file %v %w", azureCredentialsPath, err)
+		return nil, fmt.Errorf("error reading credentials file %s %w", quotedCredentialsPath, err)
 	}
 
 	c := Config{}
 	if err := toml.Unmarshal(content, &c); err != nil {
-		return nil, fmt.Errorf("error parsing credentials file %v %w", azureCredentialsPath, err)
+		return nil, fmt.Errorf("error parsing credentials file %s %w", quotedCredentialsPath, err)
 	}
 
 	return &c.Creds, nil

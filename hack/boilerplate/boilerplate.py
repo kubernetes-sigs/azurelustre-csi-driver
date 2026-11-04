@@ -142,12 +142,15 @@ def normalize_files(files):
         newfiles.append(pathname)
     return newfiles
 
+def raise_walk_error(error):
+    raise error
+
 def get_files(extensions):
     files = []
     if len(args.filenames) > 0:
         files = args.filenames
     else:
-        for root, dirs, walkfiles in os.walk(args.rootdir):
+        for root, dirs, walkfiles in os.walk(args.rootdir, onerror=raise_walk_error):
             # don't visit certain dirs. This is just a performance improvement
             # as we would prune these later in normalize_files(). But doing it
             # cuts down the amount of filesystem walking we do and cuts down
@@ -190,7 +193,11 @@ def get_regexs():
 def main():
     regexs = get_regexs()
     refs = get_refs()
-    filenames = get_files(refs.keys())
+    try:
+        filenames = get_files(refs.keys())
+    except OSError as error:
+        print(f"Unable to scan source files: {error}", file=sys.stderr)
+        return 1
 
     error_code = 0
     for filename in filenames:

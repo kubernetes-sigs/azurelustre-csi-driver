@@ -20,13 +20,8 @@ set -o pipefail
 
 echo "Verifying boilerplate"
 
-# shellcheck disable=SC2312 # command -v prints nothing on failure; -z captures both signals
-if [[ -z "$(command -v python)" ]]; then
-  echo "Cannot find python. Make link to python3..."
-  update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-fi
-
 REPO_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
+PYTHON_BIN=$("${REPO_ROOT}/hack/ensure-python.sh")
 
 boilerDir="${REPO_ROOT}/hack/boilerplate"
 boiler="${boilerDir}/boilerplate.py"
@@ -34,7 +29,7 @@ boiler="${boilerDir}/boilerplate.py"
 # Capture into a variable first so a crash in boilerplate.py (syntax error,
 # missing dependency, etc.) propagates via set -e rather than being swallowed
 # by process substitution.
-boiler_output=$("${boiler}" --rootdir="${REPO_ROOT}" --verbose)
+boiler_output=$("${PYTHON_BIN}" "${boiler}" --rootdir="${REPO_ROOT}" --verbose)
 files_need_boilerplate=()
 if [[ -n "${boiler_output}" ]]; then
   mapfile -t files_need_boilerplate <<< "${boiler_output}"

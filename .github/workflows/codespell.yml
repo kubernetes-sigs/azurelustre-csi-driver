@@ -1,7 +1,4 @@
 ---
-# GitHub Action to automate the identification of common misspellings in text files.
-# https://github.com/codespell-project/actions-codespell
-# https://github.com/codespell-project/codespell
 name: codespell
 on:
   push:
@@ -25,8 +22,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
-      - uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579  # v2.2
-        with:
-          check_filenames: true
-          skip: ./.git,./.github/workflows/codespell.yml,.git,*.png,*.jpg,*.svg,*.sum,./vendor,go.sum
-          ignore_words_list: "AKS,aks,ro,NotIn"
+      - name: Enable codespell annotations
+        run: echo "::add-matcher::.github/codespell-problem-matcher.json"
+      - name: Run codespell
+        run: hack/verify-codespell.sh
+      - name: Disable codespell annotations
+        if: always()
+        run: |
+          echo "::remove-matcher owner=codespell-matcher-default::"
+          echo "::remove-matcher owner=codespell-matcher-specified::"

@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+PKG_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "${PKG_ROOT}"
+
 # This script verifies that the helm chart files in the charts/ directory
 # are consistent with the Kubernetes deployment files in the deploy/ directory.
 # It checks that for each deploy file, the corresponding helm chart template
@@ -33,36 +36,17 @@ set -euo pipefail
 MCR_REPOSITORY="mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi"
 REPOSITORY=${REPOSITORY:-${MCR_REPOSITORY}}
 COLOR=${COLOR:-always}
+KUBE_VERSION="1.29.0"
 
 # Temp directory for intermediate files during diff comparisons
 DIFF_TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "${DIFF_TEMP_DIR}"' EXIT
 
-if [[ -z "$(command -v helm)" ]]; then
-  echo "Cannot find helm. Please install helm first."
-  exit 1
-fi
-
-# Install a pinned mikefarah/yq (provides the `yq eval` syntax used below).
-# Pin to a specific version for deterministic, supply-chain-safe runs, and
-# install into the script-scoped temp dir (cleaned up on exit) instead of a
-# system path that may require root or be read-only.
-YQ_VERSION="v4.53.3"
-if ! command -v yq >/dev/null 2>&1 || ! yq --version 2>&1 | grep -qi mikefarah; then
-  echo "Cannot find mikefarah yq. Installing ${YQ_VERSION} ..."
-  yq_arch=$(uname -m)
-  case "${yq_arch}" in
-    x86_64) yq_arch=amd64 ;;
-    aarch64 | arm64) yq_arch=arm64 ;;
-    *)
-        echo "Unsupported architecture: ${yq_arch}, must be x86_64 or aarch64" >&2
-        exit 1
-        ;;
-  esac
-  curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}" -o "${DIFF_TEMP_DIR}/yq"
-  chmod +x "${DIFF_TEMP_DIR}/yq"
-  export PATH="${DIFF_TEMP_DIR}:${PATH}"
-fi
+HELM_BIN=$("${PKG_ROOT}/hack/ensure-helm.sh")
+YQ_BIN=$("${PKG_ROOT}/hack/ensure-yq.sh")
+HELM_DIR=$(dirname "${HELM_BIN}")
+YQ_DIR=$(dirname "${YQ_BIN}")
+export PATH="${HELM_DIR}:${YQ_DIR}:${PATH}"
 
 # Map of deploy files to chart template files. Per-flavor node DaemonSet entries
 # are derived from the Makefile's canonical flavor list (`make print-all-flavors`)
@@ -80,6 +64,16 @@ ALL_FLAVORS=$(make -s print-all-flavors)
 for flavor in ${ALL_FLAVORS}; do
   CHARTS_FOR_DEPLOY_FILE["deploy/csi-azurelustre-node-${flavor}.yaml"]="templates/node-daemonset-${flavor}.yaml"
 done
+
+# Templates that intentionally have NO deploy/ equivalent. These are Helm
+# lifecycle hooks (helm.sh/hook) that only run inside `helm install/uninstall`;
+# there is no meaningful `kubectl apply` static manifest for them, so they are
+# exempt from the deploy<->charts mirror enforced by check_unlisted_files.
+# Keyed by template basename.
+declare -A CHART_ONLY_TEMPLATES=(
+  ["predelete-guard-job.yaml"]=1
+  ["predelete-guard-rbac.yaml"]=1
+)
 
 yq_format() {
   # Format yaml for diffing
@@ -127,6 +121,10 @@ check_unlisted_files() {
     fi
   done
   for file in ${all_charts_files}; do
+    # Helm-only lifecycle hooks have no deploy/ counterpart by design; skip them.
+    if [[ -n "${CHART_ONLY_TEMPLATES[$(basename "${file}")]:-}" ]]; then
+      continue
+    fi
     # Check for all actual chart files in deploy references
     if ! grep -q -R -F "templates/$(basename "${file}")" - <<<"${referenced_charts_files}"; then
       echo "File ${file} missing from list of deploy files!"
@@ -155,6 +153,7 @@ helm_template() {
     show_only+=("--show-only" "${value}")
   done
   helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --set "image.repository=${repository}" \
     --set "image.tag=${version_override}" \
@@ -372,6 +371,7 @@ check_source_version_metadata() {
   # Check rendered app.kubernetes.io/version labels
   local rendered
   if ! rendered=$(helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --namespace kube-system \
     chart-test \
@@ -407,6 +407,101 @@ check_source_version_metadata() {
   return 0
 }
 
+check_driver_identity_render() {
+  local version=${1} case_name=${2} driver_name=${3}
+  shift 3
+  local rendered driver_object first_args guard_arg registrations sockets
+  local flavors driver_args registration_paths socket_paths
+  read -r -a flavors <<<"${ALL_FLAVORS}"
+
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-identity \
+    "./charts/${version}/azurelustre-csi-driver" "$@" 2>&1); then
+    echo "ERROR: ${case_name}: helm template failed:"
+    echo "${rendered}"
+    return 1
+  fi
+  if ! driver_object=$(yq -r -N 'select(.kind == "CSIDriver") | .metadata.name' <<<"${rendered}") ||
+     ! first_args=$(yq -r -N 'select(.kind == "Deployment" or .kind == "DaemonSet")
+       | .spec.template.spec.containers[] | select(.name == "azurelustre") | .args[0]' <<<"${rendered}") ||
+     ! guard_arg=$(yq -r -N 'select(.kind == "Job" and .metadata.labels."app.kubernetes.io/component" == "predelete-guard")
+       | .spec.template.spec.containers[].args[] | select(test("^--drivername="))' <<<"${rendered}") ||
+     ! registrations=$(yq -r -N 'select(.kind == "DaemonSet")
+       | .spec.template.spec.containers[] | select(.name == "node-driver-registrar")
+       | .env[] | select(.name == "DRIVER_REG_SOCK_PATH") | .value' <<<"${rendered}") ||
+     ! sockets=$(yq -r -N 'select(.kind == "DaemonSet")
+       | .spec.template.spec.volumes[] | select(.name == "socket-dir") | .hostPath.path' <<<"${rendered}"); then
+    echo "ERROR: ${case_name}: could not inspect rendered driver identities"
+    return 1
+  fi
+
+  mapfile -t driver_args <<<"${first_args}"
+  mapfile -t registration_paths <<<"${registrations}"
+  mapfile -t socket_paths <<<"${sockets}"
+  if [[ "${driver_object}" != "${driver_name}" ||
+        "${guard_arg}" != "--drivername=${driver_name}" ||
+        "${#driver_args[@]}" -ne $((${#flavors[@]} + 1)) ||
+        "${#registration_paths[@]}" -ne "${#flavors[@]}" ||
+        "${#socket_paths[@]}" -ne "${#flavors[@]}" ]]; then
+    echo "ERROR: ${case_name}: expected one CSIDriver/guard, one controller and every node flavor using ${driver_name}"
+    printf 'CSIDriver=%s\nguard=%s\ndriver args=%s\nregistration paths=%s\nsocket paths=%s\n' \
+      "${driver_object}" "${guard_arg}" "${first_args}" "${registrations}" "${sockets}"
+    return 1
+  fi
+  local argument index
+  for argument in "${driver_args[@]}"; do
+    if [[ "${argument}" != "--drivername=${driver_name}" ]]; then
+      echo "ERROR: ${case_name}: expected --drivername=${driver_name}, got ${argument}"
+      return 1
+    fi
+  done
+  for ((index = 0; index < ${#socket_paths[@]}; index++)); do
+    if [[ "${socket_paths[index]}" != */plugins/"${driver_name}" ||
+          "${registration_paths[index]}" != "${socket_paths[index]}/csi.sock" ]]; then
+      echo "ERROR: ${case_name}: registration and socket paths disagree for ${driver_name}"
+      printf 'registration=%s\nsocket=%s\n' "${registration_paths[index]}" "${socket_paths[index]}"
+      return 1
+    fi
+  done
+  echo "PASS: ${case_name}"
+}
+
+check_driver_identity() {
+  local version=${1}
+  local driver_name=test.csi.example.com
+  local component flag arguments output
+  echo "== Checking consistent driver identity for version: ${version} =="
+
+  check_driver_identity_render "${version}" "default driver identity" azurelustre.csi.azure.com || return 1
+  check_driver_identity_render "${version}" "configured driver identity" "${driver_name}" \
+    --set-string "csidriver.name=${driver_name}" || return 1
+
+  for component in controller node; do
+    for flag in --drivername -drivername; do
+      for arguments in "[\"${flag}=${driver_name}\"]" "[\"${flag}\",\"${driver_name}\"]"; do
+        check_driver_identity_render "${version}" "matching ${component}.extraArgs ${arguments}" "${driver_name}" \
+          --set-string "csidriver.name=${driver_name}" \
+          --set-json "${component}.extraArgs=${arguments}" || return 1
+      done
+      for arguments in "[\"${flag}=other.csi.example.com\"]" "[\"${flag}\",\"other.csi.example.com\"]" "[\"${flag}\"]"; do
+        if output=$(helm template --kube-version "${KUBE_VERSION}" \
+          --namespace kube-system chart-identity "./charts/${version}/azurelustre-csi-driver" \
+          --set-string "csidriver.name=${driver_name}" \
+          --set-json "${component}.extraArgs=${arguments}" 2>&1); then
+          echo "ERROR: conflicting/incomplete ${component}.extraArgs ${arguments} unexpectedly rendered"
+          return 1
+        fi
+        if [[ "${output}" != *"drivername in ${component}.extraArgs must match csidriver.name"* ]]; then
+          echo "ERROR: ${component}.extraArgs ${arguments} failed for an unexpected reason:"
+          echo "${output}"
+          return 1
+        fi
+        echo "PASS: rejected ${component}.extraArgs ${arguments}"
+      done
+    done
+  done
+}
+
 check_conditional_blocks() {
   # podAnnotations, podLabels and imagePullSecrets are empty by default, so a
   # mis-indented `{{- with .Values.podAnnotations }}` block only breaks when the
@@ -422,6 +517,7 @@ check_conditional_blocks() {
 
   local rendered
   if ! rendered=$(helm template \
+    --kube-version "${KUBE_VERSION}" \
     --set "fullnameOverride=csi-azurelustre" \
     --set "podAnnotations.probe=present" \
     --set "podLabels.probe=present" \
@@ -468,7 +564,8 @@ check_workload_identity() {
   local rendered pod_label client_id tenant_id sa_name token_creds
 
   echo "== Checking workload identity configuration for version: ${version} =="
-  if ! rendered=$(helm template --set "fullnameOverride=csi-azurelustre" \
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "fullnameOverride=csi-azurelustre" \
     --set "IdentityClientId=test-client-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: helm template failed with workload identity disabled:"
@@ -485,7 +582,8 @@ check_workload_identity() {
     return 1
   fi
 
-  if rendered=$(helm template --set "IsWorkloadIdentityEnabled=Enabled" \
+  if rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "IsWorkloadIdentityEnabled=Enabled" \
     --namespace kube-system chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: workload identity rendered without IdentityClientId"
     return 1
@@ -498,7 +596,8 @@ check_workload_identity() {
 
   # A near-miss value must be rejected at render time: anything but an exact
   # "Enabled" would otherwise skip both the label and the IdentityClientId guard.
-  if rendered=$(helm template --set "IsWorkloadIdentityEnabled=enabled" \
+  if rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "IsWorkloadIdentityEnabled=enabled" \
     --set "IdentityClientId=test-client-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
     echo "ERROR: invalid IsWorkloadIdentityEnabled value rendered successfully"
@@ -510,7 +609,8 @@ check_workload_identity() {
     return 1
   fi
 
-  if ! rendered=$(helm template --set "fullnameOverride=csi-azurelustre" \
+  if ! rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --set "fullnameOverride=csi-azurelustre" \
     --set "IsWorkloadIdentityEnabled=Enabled" --set "IdentityClientId=test-client-id" \
     --set "IdentityTenantId=test-tenant-id" --namespace kube-system \
     chart-test "${chart_dir}" 2>&1); then
@@ -547,7 +647,7 @@ check_helm_lint() {
   local chart_dir="./charts/${version}/azurelustre-csi-driver"
 
   echo "== Linting chart: ${version} =="
-  if ! helm lint "${chart_dir}"; then
+  if ! helm lint --kube-version "${KUBE_VERSION}" "${chart_dir}"; then
     echo
     return 1
   fi
@@ -599,7 +699,8 @@ check_service_account_names() {
 
   echo "== Checking ServiceAccount names for version: ${version} =="
 
-  rendered=$(helm template --namespace kube-system chart-test "${chart_dir}")
+  rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-test "${chart_dir}")
   ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
   node=$(yq ea '[select(.kind == "DaemonSet") | .spec.template.spec.serviceAccountName] | unique | .[]' - <<<"${rendered}")
   if [[ "${ctrl}" != "csi-azurelustre-controller-sa" || "${node}" != "csi-azurelustre-node-sa" ]]; then
@@ -608,7 +709,8 @@ check_service_account_names() {
   fi
 
   # The names are fixed by design, so an attempted override must be ignored.
-  rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
+  rendered=$(helm template --kube-version "${KUBE_VERSION}" \
+    --namespace kube-system chart-test "${chart_dir}" \
     --set "serviceAccount.controller.name=custom-controller-sa" \
     --set "serviceAccount.node.name=custom-node-sa")
   ctrl=$(yq eval 'select(.kind == "Deployment") | .spec.template.spec.serviceAccountName' - <<<"${rendered}")
@@ -623,8 +725,7 @@ check_service_account_names() {
 
 check_chart_source_layout() {
   local layout_issues=false
-  local packaged_charts=()
-  local unexpected_dirs=()
+  local packaged_charts unexpected_dirs
 
   echo "== Checking chart source layout =="
 
@@ -633,17 +734,23 @@ check_chart_source_layout() {
     layout_issues=true
   fi
 
-  mapfile -t packaged_charts < <(find charts -type f -name '*.tgz' -print)
-  if (( ${#packaged_charts[@]} > 0 )); then
+  if ! packaged_charts=$(find charts -type f -name '*.tgz' -print); then
+    echo "ERROR: Could not inspect packaged charts" >&2
+    return 1
+  fi
+  if [[ -n "${packaged_charts}" ]]; then
     echo "ERROR: Packaged charts must not be committed:"
-    printf '  %s\n' "${packaged_charts[@]}"
+    printf '%s\n' "${packaged_charts}"
     layout_issues=true
   fi
 
-  mapfile -t unexpected_dirs < <(find charts -mindepth 1 -maxdepth 1 -type d ! -name latest -print)
-  if (( ${#unexpected_dirs[@]} > 0 )); then
+  if ! unexpected_dirs=$(find charts -mindepth 1 -maxdepth 1 -type d ! -name latest -print); then
+    echo "ERROR: Could not inspect chart source directories" >&2
+    return 1
+  fi
+  if [[ -n "${unexpected_dirs}" ]]; then
     echo "ERROR: Only charts/latest may contain chart source:"
-    printf '  %s\n' "${unexpected_dirs[@]}"
+    printf '%s\n' "${unexpected_dirs}"
     layout_issues=true
   fi
 
@@ -716,6 +823,11 @@ else
   if ! check_service_account_names "${version}"; then
     issues_found=true
     failures+=("ServiceAccount name check (version: ${version})")
+  fi
+
+  if ! check_driver_identity "${version}"; then
+    issues_found=true
+    failures+=("Driver identity consistency check (version: ${version})")
   fi
 
   if ! check_conditional_blocks "${version}"; then

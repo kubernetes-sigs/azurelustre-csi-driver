@@ -27,7 +27,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v9"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -354,7 +354,7 @@ func (az *Cloud) newLBCache() (azcache.Resource, error) {
 	if az.LoadBalancerCacheTTLInSeconds == 0 {
 		az.LoadBalancerCacheTTLInSeconds = loadBalancerCacheTTLDefaultInSeconds
 	}
-	return azcache.NewTimedCache(time.Duration(az.LoadBalancerCacheTTLInSeconds)*time.Second, getter, az.Config.DisableAPICallCache)
+	return azcache.NewTimedCache(time.Duration(az.LoadBalancerCacheTTLInSeconds)*time.Second, getter, az.DisableAPICallCache)
 }
 
 func (az *Cloud) getAzureLoadBalancer(ctx context.Context, name string, crt azcache.AzureCacheReadType) (lb *armnetwork.LoadBalancer, exists bool, err error) {

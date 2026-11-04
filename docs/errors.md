@@ -1,13 +1,27 @@
 # Azure Lustre CSI Driver - Resolving Common Errors
 
-This document describes common errors that can occur during volume creation and mounting with the Azure Lustre CSI driver, along with debugging and troubleshooting steps.
+This document describes common errors that can occur during driver startup and shutdown, volume creation, mounting, and driver uninstall, along with debugging and troubleshooting steps.
+
+Examples use `kube-system` and static-manifest workload names. For Helm installs,
+substitute your release namespace and the workload names returned by:
+
+```bash
+kubectl get pods,deployments,daemonsets -A -l app.kubernetes.io/name=azurelustre-csi-driver
+```
 
 ## Table of Contents
 
+- [Driver Lifecycle Errors](#driver-lifecycle-errors)
+- [Driver Uninstall Errors](#driver-uninstall-errors)
 - [Volume Creation Errors](#volume-creation-errors)
   - [Dynamic Provisioning Errors](#dynamic-provisioning-errors)
     - [Authentication and Authorization Errors](#authentication-and-authorization-errors)
+    - [Error: Lease access is forbidden](#error-lease-access-is-forbidden)
+    - [Error: Incomplete Azure API response](#error-incomplete-azure-api-response)
+    - [Error: Uncertain Azure creation outcome](#error-uncertain-azure-creation-outcome)
     - [Error: AMLFS cluster creation timed out](#error-amlfs-cluster-creation-timed-out)
+    - [Error: AMLFS provisioning failed](#error-amlfs-provisioning-failed)
+    - [Deleted pending PVC or untracked filesystem](#deleted-pending-pvc-or-untracked-filesystem)
     - [Error: Resource not found](#error-resource-not-found)
     - [Error: Cannot create AMLFS cluster, not enough IP addresses available](#error-cannot-create-amlfs-cluster-not-enough-ip-addresses-available)
     - [Error: Reached Azure Subscription Quota Limit for AMLFS Clusters](#error-reached-azure-subscription-quota-limit-for-amlfs-clusters)
@@ -19,6 +33,7 @@ This document describes common errors that can occur during volume creation and 
     - [Error: Could not mount target](#error-could-not-mount-target)
     - [Error: MGS IP address is not reachable](#error-mgs-ip-address-is-not-reachable)
     - [Error: Context sub-dir must be strict subpath](#error-context-sub-dir-must-be-strict-subpath)
+    - [Error: Subdirectory contains a symlink](#error-subdirectory-contains-a-symlink)
 - [Configuration Errors](#configuration-errors)
   - [StorageClass Parameter Errors](#storageclass-parameter-errors)
     - [Error: Cannot unmarshal number](#error-cannot-unmarshal-number)
@@ -26,7 +41,7 @@ This document describes common errors that can occur during volume creation and 
     - [Error: CreateVolume Parameter zone cannot be used in location, no zones available for SKU](#error-createvolume-parameter-zone-cannot-be-used-in-location-no-zones-available-for-sku)
     - [Error: CreateVolume Parameter zone must be one of available zones](#error-createvolume-parameter-zone-must-be-one-of-available-zones)
     - [Error: CreateVolume Parameter sku-name must be one of supported values](#error-createvolume-parameter-sku-name-must-be-one-of-supported-values)
-    - [Error: SKU retrieval failures](#error-sku-retrieval-failures)
+    - [Warning: SKU retrieval failures](#warning-sku-retrieval-failures)
     - [Error: CreateVolume Parameter maintenance-time-of-day-utc must be in HH:MM format](#error-createvolume-parameter-maintenance-time-of-day-utc-must-be-in-hhmm-format)
   - [Kubernetes resource quota restriction](#kubernetes-resource-quota-restriction)
     - [Error: Dynamic provisioning would exceed default quota](#error-dynamic-provisioning-would-exceed-default-quota)
@@ -35,6 +50,47 @@ This document describes common errors that can occur during volume creation and 
     - [Controller Logs](#controller-logs)
     - [Node Logs](#node-logs)
     - [Comprehensive Log Collection](#comprehensive-log-collection)
+
+---
+
+## Driver Lifecycle Errors
+
+Check `azurelustre` logs for startup, serving, and cleanup failures, and
+client logs (such as `csi-provisioner`) for gRPC statuses. Use the
+[startup and shutdown troubleshooting steps](csi-debug.md#driver-startup-and-shutdown-failures)
+to collect current and previous logs, termination details, and events.
+
+| Message or gRPC status | Meaning | What to check |
+| ---------------------- | ------- | ------------- |
+| `failed to initialize Azure Lustre CSI driver` | Driver construction failed. | Read the accompanying error for the specific configuration, identity, or local initialization failure. |
+| `invalid endpoint`, `failed to prepare Unix socket <path>`, or `failed to listen` | The CSI endpoint could not be prepared. | Check `--endpoint`, the underlying OS error, socket-directory mounts and permissions, and address conflicts. Do not remove a socket belonging to a running driver. |
+| `refusing to remove endpoint that is not a socket` | A file, directory, or symlink occupies the configured Unix endpoint. Startup leaves it untouched. | Correct the endpoint or resolve the unexpected object after establishing its ownership. The driver only removes socket objects; scheme names are case-insensitive. |
+| `failed to serve on <address>` | gRPC serving failed. | Inspect the underlying listener error and correlate it with container restarts or pod termination. |
+| `timed out shutting down gRPC server` | The driver's ten-second cleanup deadline expired. Remaining gRPC connections are closed and the process exits with an error. | Capture the driver logs and in-flight request details. This is not an Azure filesystem provisioning timeout; extending the pod termination grace period does not change this driver deadline. |
+| `Unavailable` with `gRPC server is shutting down` | A new request was rejected during shutdown. | Check whether termination was planned and whether a replacement driver is healthy. Other `Unavailable` messages can have different causes. |
+| `Canceled` / `context canceled` | The caller or driver shutdown canceled a request. | Correlate driver and client logs with termination events. This does not establish that an Azure operation failed or was canceled. |
+| `driver.Run returned unexpectedly` | Serving returned without cancellation of the executable's context. | Collect driver logs and termination details and report the unexpected exit. |
+
+A completed signal-driven shutdown exits successfully; see the
+[shutdown contract](../README.md#driver-shutdown). Cancellation stops local
+polling, not an operation already accepted by Azure. Do not delete or recreate
+a PVC or AMLFS resource solely because one of these messages appeared. Check
+the resource's actual state and ownership before considering recovery actions;
+deleting a PVC with a `Delete` reclaim policy can delete the filesystem and
+its data.
+
+---
+
+## Driver Uninstall Errors
+
+For `failed pre-delete` hook errors, matching-PV rejections, or a Helm release
+left in `uninstalling`, use the [blocked-uninstall
+procedure](../charts/README.md#troubleshoot-a-blocked-uninstall). Capture diagnostics
+before retrying: failed Jobs expire 300 seconds after completion by default,
+and pod logs can disappear sooner.
+
+Follow the [safe teardown procedure](../charts/README.md#safe-teardown-procedure)
+before deleting claims; the `Delete` reclaim policy can destroy backing data.
 
 ---
 
@@ -51,7 +107,7 @@ This document describes common errors that can occur during volume creation and 
 
 **Possible Causes:**
 
-- Insufficient Azure RBAC permissions for kubelet identity
+- Insufficient Azure RBAC permissions for the identity used by the controller
 - Incorrect identity configuration
 - Workload identity is enabled but the federated credential subject does not match the controller ServiceAccount
 
@@ -61,66 +117,179 @@ This document describes common errors that can occur during volume creation and 
 # Check controller logs for auth errors
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "forbidden\|unauthorized\|authorization"
 
-# Verify kubelet identity permissions in Azure portal
+# Verify the controller identity's permissions in Azure portal
 # Check: IAM (Access control) → Role assignments
 ```
 
 **Resolution:**
 
-- Assign required RBAC roles to kubelet identity:
+- Assign required resource-scoped RBAC roles to the identity used by the controller:
+  the kubelet identity by default, or the federated user-assigned identity when
+  workload identity is enabled.
   - See [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity)
+- Permission denials from SKU lookup, subnet sizing or VNet usage are discovery
+  warnings, not provisioning failures. Grant the
+  [optional fail-fast permissions](driver-parameters.md#optional-fail-fast-checks)
+  only if you want those early checks.
 - If using workload identity, confirm the federated credential subject matches the controller ServiceAccount. It must be `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`. The chart annotates that ServiceAccount automatically, so a missing `azure.workload.identity/client-id` annotation means the release was not installed with `IsWorkloadIdentityEnabled=Enabled`. See [Workload Identity](workload-identity.md).
+
+---
+
+#### Error: Lease access is forbidden
+
+If `csi-provisioner` logs report `leases.coordination.k8s.io` access is
+`forbidden`, leader election is blocked by Kubernetes RBAC, not Azure role
+assignments.
+
+```bash
+kubectl logs -n <driver-namespace> -l app=csi-azurelustre-controller -c csi-provisioner --tail=100 --prefix
+kubectl get role,rolebinding -n <driver-namespace> -l app.kubernetes.io/name=azurelustre-csi-driver -o yaml
+```
+
+Check that the Role permits Lease access and its RoleBinding names
+`csi-azurelustre-controller-sa` in the controller's namespace. Restore the
+chart's namespaced RBAC rather than granting cluster-wide Lease access.
+
+---
+
+#### Error: Incomplete Azure API response
+
+Provisioning reports `Unavailable` with `received incomplete AMLFS response` or
+`received incomplete subnet usage response`.
+The message identifies the affected resource or location and missing information.
+
+Missing subnet-usage data prevents the driver from checking capacity; it does not
+mean the subnet is full. A missing MGS address does not prove creation failed:
+the filesystem may already exist, and this error does not trigger its deletion.
+
+SKU lookup warnings do not by themselves prevent provisioning. See
+[SKU retrieval failures](#warning-sku-retrieval-failures).
+
+Keep the PVC and driver in place while provisioning retries. If the error
+persists, collect the
+[controller logs](#controller-logs), check the affected resource in Azure, and
+contact Azure support with the missing-field message and resource details. Do not
+delete the PVC or filesystem solely because of this error.
+
+---
+
+#### Error: Uncertain Azure creation outcome
+
+`Unavailable` can mean the driver could not determine the outcome of Azure
+work, including a failed status lookup, an error polling accepted creation, or
+blocked recovery of a matching `Failed` filesystem. Messages include:
+
+- `AMLFS operation outcome is unresolved`
+- `Failed recovery is blocked by admission`
+- `AMLFS creation outcome is uncertain`
+
+Keep the pending PVC and driver in place while retries check Azure state.
+Correct the reported problem: for example, a 401/403 while checking an existing
+filesystem requires restoring authentication or the controller's required
+permissions. Retrying does not grant access, and a failed status check does not
+prove that Azure creation or deletion stopped.
+
+The error includes details from the current failed attempt when available. It
+does not guarantee that an earlier service failure remains visible after a
+timeout or restart. Use the [Azure Activity Log](#error-amlfs-provisioning-failed)
+when the original cause is missing.
+
+Definitive rejection of a new creation request is still reported as an error.
+A confirmed incompatible filesystem returns `AlreadyExists` and is left
+unchanged; retries do not overwrite it.
 
 ---
 
 #### Error: AMLFS cluster creation timed out
 
-**Symptoms:**
+A `DeadlineExceeded` or `create did not complete` message does not prove that
+Azure stopped creating the filesystem. Creation can take longer than one
+request, and the driver checks Azure state again on retry.
 
-- PVC remains in `Pending` status for extended period (>20 minutes)
-- Controller logs show messages such as:
-  - `AMLFS cluster myapp-lustre-cluster creation timed out. Deleted failed cluster, retrying cluster creation`
-  - `AMLFS cluster myapp-lustre-cluster creation did not complete correctly, waiting for deletion to complete before retrying cluster creation`
+1. Keep the pending PVC and driver in place. Check
+   [PVC events and controller logs](csi-debug.md#dynamic-provisioning-amlfs-cluster-creation).
+2. Check the filesystem in Azure. If it is still `Creating`, allow provisioning
+   to continue. If it is `Failed` or repeatedly recreated, follow
+   [AMLFS provisioning failed](#error-amlfs-provisioning-failed).
+3. Correct any reported connectivity, permission, or service issue. A timeout
+   alone is not a reason to delete the PVC or filesystem, or to start another
+   request in a different region.
 
-**Possible Causes:**
+---
 
-- Temporary Azure service issues
-- Network connectivity problems during cluster creation
-- Insufficient resources in the specified region/zone
+#### Error: AMLFS provisioning failed
 
-**Debugging Steps:**
+During unfinished provisioning, the driver replaces a matching `Failed`
+filesystem after its deletion completes. Recovery can repeat if the underlying
+problem persists; retries do not repair network configuration or service issues.
 
-```bash
-# Check controller logs for timeout details
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i 'creation timed out'
+PVC events and controller logs may show only `Failed` or a generic health
+message rather than the original service failure, particularly after a timeout
+or controller restart. To investigate:
 
-# This error should be resolved by the automatic cluster creation retry, if given time to complete. If this issue repeats
-# multiple times, or other errors are present, try the following steps:
+1. Note the filesystem name/resource ID and the failure time from the controller
+   logs or PVC events.
+2. Open the filesystem's resource group in the Azure portal and select
+   **Activity log**. Set the time range to include the attempt and find the
+   failed create/update event for that filesystem.
+3. Read the event's JSON, including `statusMessage`, for the service error code
+   and details. The resource-group log also covers a filesystem that the driver
+   has already deleted or recreated. See
+   [View and retrieve the activity log](https://learn.microsoft.com/en-us/azure/azure-monitor/fundamentals/activity-log#view-and-retrieve-the-activity-log).
+4. Address the reported cause. For networking failures, check
+   [AMLFS network prerequisites](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/amlfs-prerequisites#network-prerequisites),
+   including outbound access from the filesystem subnet. For other failures, use
+   [AMLFS deployment troubleshooting](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/troubleshoot-deployment)
+   or contact Azure support with the resource ID, time, and correlation ID.
 
-# Verify Azure service health in your region
-# Check Azure portal Service Health dashboard
-# Check Azure portal for failed AMLFS cluster resources
-# Navigate to: Resource Groups → [your-rg] → Look for failed deployments
+Keep the claim and driver in place while correcting the problem. Do not use the
+unfinished filesystem for data: recovery may replace it.
 
-# Check for quota limitations
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i quota
+---
 
-# Check controller logs for detailed error messages
-kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "amlfs\|creation"
-```
+#### Deleted pending PVC or untracked filesystem
 
-**Resolution:**
+Deleting a pending PVC or its namespace does not cancel an Azure creation
+request. The provisioner may still finish creating a PV and apply its reclaim
+policy, but this is not guaranteed. If the claim is gone and the controller loses
+the unfinished request before the PV is saved, a filesystem can remain billable
+without a Kubernetes volume. A controller restart while the PVC still exists
+can resume provisioning; deleting the claim and also losing the unfinished
+request is the case which can leave behind an untracked cluster.
 
-- Wait for automatic cleanup and retry
-- Manually delete any stuck AMLFS resources in Azure portal
-- Verify network and permissions configuration
-- Wait for Azure service issues to resolve if applicable
-- Try creating the volume in a different zone or region
-- Contact Azure support if timeouts persist
+After an interrupted provisioning attempt whose claim was deleted:
+
+1. Keep the driver available and inspect controller logs and the Azure Activity
+   Log. Use the StorageClass's `resource-group-name`, or the AKS infrastructure
+   resource group when that parameter was omitted, to inventory filesystems:
+
+   ```shell
+   az amlfs list --subscription <subscription-id> --resource-group <filesystem-resource-group> --output json
+   kubectl get pv -o json
+   kubectl get pvc --all-namespaces -o json
+   ```
+
+2. Compare full filesystem resource IDs with PV mappings and PVC UIDs. With the
+   default provisioner settings, the filesystem name is `pvc-<PVC-UID>`.
+   Azure tags such as `kubernetes.io-created-for-pvc-name` help identify a request,
+   but a newly created PVC with the same name has a different UID.
+3. Treat an unmatched filesystem as a candidate for investigation, not automatic
+   deletion. Confirm ownership, current Azure operation state, any deliberate
+   `Retain` decision, and use by other clusters or static mounts. Preserve data
+   that is still needed. Missing Kubernetes objects or matching tags alone do
+   not establish that deletion is safe.
+
+Keep the driver installed until tracked provisioning and deletion have finished.
+Do not remove PV finalizers to force cleanup.
 
 ---
 
 #### Error: Resource not found
+
+Check the Azure error code and affected resource, not just words in the message.
+A failed lookup of a configured resource group or network is not evidence that
+an AMLFS filesystem is absent. Address the reported configuration or permission
+error rather than assuming no Azure work remains.
 
 **Symptoms:**
 
@@ -128,7 +297,14 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
   - `Resource group 'myapp-rg/myapp-vnet-rg' could not be found.`
   - `The Resource '.../myapp-vnet' under resource group 'myapp-rg' was not found.`
   - `subnet ../myapp-subnet not found in vnet myapp-vnet, resource group myapp-rg. Ensure permissions are correct for configuration`
-- Error code: `FailedPrecondition`
+- The status depends on the operation:
+  - Failed filesystem observation or polling after accepted creation remains
+    retryable, normally as `Unavailable`. See
+    [Uncertain Azure creation outcome](#error-uncertain-azure-creation-outcome).
+  - New-create or subnet-check errors can report `NotFound`, `PermissionDenied`,
+    or `Unauthenticated`.
+  - `FailedPrecondition` means the requested subnet is absent from the returned
+    usage inventory.
 
 **Possible Causes:**
 
@@ -150,7 +326,7 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 - Verify subnet name and virtual network configuration
 - Ensure the vnet and subnet exist in the correct resource group
-- Check Azure RBAC permissions for the kubelet identity
+- Check the required Azure RBAC permissions for the identity used by the controller
 
 ---
 
@@ -164,7 +340,6 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 **Possible Causes:**
 
 - The specified subnet has insufficient available IP addresses
-- AMLFS clusters require a contiguous block of IP addresses
 
 **Debugging Steps:**
 
@@ -314,6 +489,36 @@ kubectl logs -n kube-system -l app=csi-azurelustre-node -c azurelustre | grep -i
 
 #### Error: Could not mount target
 
+`node mount services are not initialized on this driver instance` returns
+`Unavailable` without mounting or unmounting. Check that kubelet is connected to
+the node plugin and inspect its startup logs; the controller does not initialize
+host mount services.
+
+`node path ... must be an absolute, non-root path without NUL characters` returns
+`InvalidArgument` before publish or unpublish filesystem work. CSI
+callers must provide a valid absolute target. Custom kubelet root directories are
+supported; this validation does not impose a fixed host directory allowlist.
+
+If the driver cannot determine whether a target is mounted, cannot unmount an
+existing target, or cannot remove a target after a failed mount, it returns
+`Unavailable`. Kubelet keeps the mount state uncertain so it can retry or clean up
+the volume when the Pod is removed. This error is not proof that the volume is
+unmounted. A failed mount whose target is confirmed removed or absent can return
+`Internal` instead.
+
+Keep the driver running, inspect the node logs for the original mount error and
+any cleanup error, and correct the reported node or filesystem problem. Do not
+remove kubelet volume metadata or force-delete storage objects to hide the error.
+
+For `temporary mount cleanup incomplete`, the driver could not finish removing
+the temporary mount used to create a subdirectory. The publish call does not
+report success. A later publish retries that cleanup before target preparation or
+the MGS probe, and unpublishing also checks for a leftover temporary mount. This
+keeps a later probe or preparation failure from hiding unfinished cleanup. An
+already-mounted public target still does not require an MGS probe.
+The message includes both errors if subdirectory creation and cleanup failed.
+Unmounting preserves the filesystem's data; it does not delete the subdirectory.
+
 **Symptoms:**
 
 - Pod fails to start with mount errors
@@ -435,6 +640,23 @@ kubectl logs -n kube-system csi-azurelustre-node-<pod> -c azurelustre --tail=300
 
 - Validate subdirectory path doesn't escape the filesystem root
 - Use valid subdirectory paths without `../` patterns
+
+---
+
+#### Error: Subdirectory contains a symlink
+
+`FailedPrecondition` with `sub-dir ... contains symlink component ...` means the
+driver found a symlink while preparing a new writable subdirectory mount. Lustre
+cannot mount through that path. The driver leaves the link unchanged and does not
+create directories through it.
+
+Use a directory-only `sub-dir` path, or coordinate a filesystem correction with
+its owner. Do not delete shared entries simply to clear the error. See
+[subdirectory creation](driver-parameters.md#subdirectory-creation) for readonly
+behavior.
+
+If the error reports `Unavailable` because temporary mount cleanup is incomplete,
+keep the driver running so cleanup can be retried.
 
 ---
 
@@ -597,46 +819,51 @@ kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --t
 
 ---
 
-#### Error: SKU retrieval failures
+#### Warning: SKU retrieval failures
 
 **Symptoms:**
 
-- Dynamic provisioning fails during SKU validation
+- The driver cannot use the requested SKU's metadata and defers SKU, zone and capacity validation
+  to ARM during creation
 - Controller logs show one or more of the following:
+  - `cannot retrieve SKU metadata for <sku> in location <location>: ...; continuing creation ...`
   - `error retrieving SKUs: ...`
   - `found no AMLFS SKUs for location <location>`
   - `could not find location info for sku <sku> in location <location>`
+  - `received incomplete SKU response ...` or `received invalid SKU response ...`
 
 **Possible Causes:**
 
 - Azure API connectivity issues
 - Insufficient permissions to list Azure SKUs
 - Invalid or unsupported Azure region
-- SKU not available in the specified location
+- Missing or malformed SKU response fields
 
 **Debugging Steps:**
 
 ```bash
-# Check controller logs for SKU retrieval errors
+# Check controller logs for SKU retrieval warnings
 kubectl logs -n kube-system -l app=csi-azurelustre-controller -c azurelustre --tail=300 | grep -i "sku\|retrieving"
 
 # Verify location parameter in StorageClass
 kubectl get storageclass <storageclass> -o yaml | grep location
-
-# Check Azure permissions for kubelet identity
-# Ensure the identity has the correct permissions for the subscription
 
 ```
 
 **Resolution:**
 
 - Verify Azure region name is correct (e.g., `eastus`, `westus2`)
-- Ensure kubelet identity has sufficient permissions to list Azure SKUs
-  - See [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity)
-
-- Check if AMLFS service is available in your target region
-- Retry the operation to handle temporary Azure API issues
-- Contact Azure support if SKUs are consistently unavailable in supported regions
+- No subscription-wide permission grant is required to proceed. Optional SKU
+  discovery permissions enable earlier validation; see
+  [optional fail-fast checks](driver-parameters.md#optional-fail-fast-checks).
+- Check that the SKU, zone and PVC capacity are supported in the target region.
+  Without SKU metadata, capacity uses the driver's 4-TiB fallback increment
+  rather than the SKU-specific increment.
+- If creation fails, inspect the subsequent ARM creation or subnet-check error.
+- Permission denials from subnet sizing or VNet usage are also warnings; other
+  subnet errors and known insufficient capacity still stop creation.
+- See [SKU discovery and capacity validation](dynamic-provisioning.md#sku-discovery-and-capacity-validation)
+  for capacity rounding.
 
 ---
 

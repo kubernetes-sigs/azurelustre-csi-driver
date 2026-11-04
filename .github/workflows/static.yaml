@@ -27,11 +27,23 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+      - name: Read Go release series
+        id: go-version
+        shell: bash
+        run: |
+          version=$(hack/ci-go-version.sh)
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
-          go-version-file: 'go.mod'
+          go-version: ${{ steps.go-version.outputs.version }}
+          check-latest: true
+      - name: Read tool versions
+        id: tool-versions
+        shell: bash
+        run: |
+          echo "golangci_lint=$(hack/verify-golangci-lint.sh --tool-version)" >> "${GITHUB_OUTPUT}"
       - name: Run linter
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20  # v9.2.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
         with:
-          # Keep in sync with hack/verify-golangci-lint.sh
-          version: v2.7.2
+          version: ${{ steps.tool-versions.outputs.golangci_lint }}

@@ -19,6 +19,7 @@ package credentials
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 	"text/template"
 
@@ -66,31 +67,13 @@ func TestCreateAzureCredentialFileOnAzurePublicCloud(t *testing.T) {
 	})
 }
 
-func TestCreateAzureCredentialFileOnAzureStackCloud(t *testing.T) {
-	t.Run("WithEnvironmentVariables", func(t *testing.T) {
-		t.Setenv(cloudNameEnvVar, "AzureStackCloud")
-		t.Setenv(tenantIDEnvVar, testTenantID)
-		t.Setenv(subscriptionIDEnvVar, testSubscriptionID)
-		t.Setenv(aadClientIDEnvVar, testAadClientID)
-		t.Setenv(aadClientSecretEnvVar, testAadClientSecret)
-		t.Setenv(resourceGroupEnvVar, testResourceGroup)
-		t.Setenv(locationEnvVar, testLocation)
-		withEnvironmentVariables(t)
-	})
-}
-
 func withAzureCredentials(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "azure.toml")
+	t.Helper()
+	credentialPath := filepath.Join(t.TempDir(), "azure.toml")
+	err := os.WriteFile(credentialPath, []byte(fakeAzureCredentials), 0o600)
 	require.NoError(t, err)
-	defer func() {
-		err := os.Remove(tempFile.Name())
-		require.NoError(t, err)
-	}()
 
-	t.Setenv("AZURE_CREDENTIALS", tempFile.Name())
-
-	_, err = tempFile.Write([]byte(fakeAzureCredentials))
-	require.NoError(t, err)
+	t.Setenv("AZURE_CREDENTIALS", credentialPath)
 
 	creds, err := CreateAzureCredentialFile()
 	require.NoError(t, err)
@@ -138,6 +121,7 @@ func withAzureCredentials(t *testing.T) {
 }
 
 func withEnvironmentVariables(t *testing.T) {
+	t.Helper()
 	creds, err := CreateAzureCredentialFile()
 	defer func() {
 		err := DeleteAzureCredentialFile()

@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -31,6 +30,7 @@ const (
 	TiB                  = 1024 * GiB
 	tagsDelimiter        = ","
 	tagKeyValueDelimiter = "="
+	MaxAzureResourceTags = 50
 )
 
 // RoundUpBytes rounds up the volume size in bytes up to multiplications of GiB
@@ -100,7 +100,7 @@ func (r *DefaultCommandRunner) RunWithTimeout(ctx context.Context, timeout time.
 	cmdTimeout, cmdCancel := context.WithTimeout(ctx, timeout)
 	defer cmdCancel()
 
-	command := exec.CommandContext(cmdTimeout, cmd, args...)
+	command := exec.CommandContext(cmdTimeout, cmd, args...) // #nosec G204 -- Production callers provide a fixed executable name, and os/exec does not invoke a shell.
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), err
@@ -108,62 +108,14 @@ func (r *DefaultCommandRunner) RunWithTimeout(ctx context.Context, timeout time.
 	return string(output), nil
 }
 
-// LockMap used to lock on entries
-type LockMap struct {
-	sync.Mutex
-	mutexMap map[string]*sync.Mutex
-}
-
-// NewLockMap returns a new lock map
-func NewLockMap() *LockMap {
-	return &LockMap{
-		mutexMap: make(map[string]*sync.Mutex),
-	}
-}
-
-// LockEntry acquires a lock associated with the specific entry
-func (lm *LockMap) LockEntry(entry string) {
-	lm.Lock()
-	// check if entry does not exists, then add entry
-	if _, exists := lm.mutexMap[entry]; !exists {
-		lm.addEntry(entry)
-	}
-
-	lm.Unlock()
-	lm.lockEntry(entry)
-}
-
-// UnlockEntry release the lock associated with the specific entry
-func (lm *LockMap) UnlockEntry(entry string) {
-	lm.Lock()
-	defer lm.Unlock()
-
-	if _, exists := lm.mutexMap[entry]; !exists {
-		return
-	}
-	lm.unlockEntry(entry)
-}
-
-func (lm *LockMap) addEntry(entry string) {
-	lm.mutexMap[entry] = &sync.Mutex{}
-}
-
-func (lm *LockMap) lockEntry(entry string) {
-	lm.mutexMap[entry].Lock()
-}
-
-func (lm *LockMap) unlockEntry(entry string) {
-	lm.mutexMap[entry].Unlock()
-}
-
 func ConvertTagsToMap(tags string) (map[string]string, error) {
 	m := make(map[string]string)
 	if tags == "" {
 		return m, nil
 	}
-	s := strings.Split(tags, tagsDelimiter)
-	for _, tag := range s {
-		kv := strings.Split(tag, tagKeyValueDelimiter)
+	s := strings.SplitSeq(tags, tagsDelimiter)
+	for tag := range s {
+		kv := strings.SplitN(tag, tagKeyValueDelimiter, 3)
 		if len(kv) != 2 {
 			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
@@ -172,7 +124,10 @@ func ConvertTagsToMap(tags string) (map[string]string, error) {
 			return nil, fmt.Errorf("tags '%s' are invalid, the format should be: 'key1=value1,key2=value2'", tags)
 		}
 		value := strings.TrimSpace(kv[1])
-		m[key] = value
+		SetKeyValueInMap(m, key, value)
+		if len(m) > MaxAzureResourceTags {
+			return nil, fmt.Errorf("tags exceed Azure's maximum of %d name-value pairs", MaxAzureResourceTags)
+		}
 	}
 	return m, nil
 }
@@ -203,8 +158,7 @@ func SetKeyValueInMap(m map[string]string, key, value string) {
 	m[key] = value
 }
 
-// GetValueInMap get value from map by key
-// key in the map is case insensitive
+// GetValueInMap looks up a value using a case-insensitive key.
 func GetValueInMap(m map[string]string, key string) string {
 	if m == nil {
 		return ""
