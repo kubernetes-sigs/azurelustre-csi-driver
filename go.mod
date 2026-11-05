@@ -16,13 +16,13 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/stretchr/testify v1.12.0
 	go.uber.org/mock v0.6.0
+	golang.org/x/sys v0.49.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	k8s.io/api v0.36.3
 	k8s.io/apimachinery v0.36.3
-	k8s.io/client-go v1.5.2
+	k8s.io/client-go v0.36.3
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kubernetes v1.36.3
 	k8s.io/mount-utils v0.36.3
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	sigs.k8s.io/cloud-provider-azure v1.36.5
@@ -32,7 +32,6 @@ require (
 )
 
 require (
-	cyphar.com/go-pathrs v0.2.5 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7 v7.3.0 // indirect
@@ -57,7 +56,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
@@ -94,7 +92,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo/v2 v2.32.1 // indirect
 	github.com/onsi/gomega v1.42.1 // indirect
-	github.com/opencontainers/selinux v1.15.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
@@ -121,7 +118,6 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -131,82 +127,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.36.3 // indirect
-	k8s.io/apiserver v0.36.3 // indirect
 	k8s.io/cloud-provider v0.36.3 // indirect
 	k8s.io/component-base v0.36.3 // indirect
 	k8s.io/component-helpers v0.36.3 // indirect
-	k8s.io/controller-manager v0.36.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
-
-replace k8s.io/api => k8s.io/api v0.36.3
-
-replace k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.36.3
-
-replace k8s.io/apimachinery => k8s.io/apimachinery v0.36.3
-
-replace k8s.io/apiserver => k8s.io/apiserver v0.36.3
-
-replace k8s.io/cli-runtime => k8s.io/cli-runtime v0.36.3
-
-replace k8s.io/client-go => k8s.io/client-go v0.36.3
-
-replace k8s.io/cloud-provider => k8s.io/cloud-provider v0.36.3
-
-replace k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.36.3
-
-replace k8s.io/code-generator => k8s.io/code-generator v0.36.3
-
-replace k8s.io/component-base => k8s.io/component-base v0.36.3
-
-replace k8s.io/component-helpers => k8s.io/component-helpers v0.36.3
-
-replace k8s.io/controller-manager => k8s.io/controller-manager v0.36.3
-
-replace k8s.io/cri-api => k8s.io/cri-api v0.36.3
-
-replace k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.36.3
-
-replace k8s.io/dynamic-resource-allocation => k8s.io/dynamic-resource-allocation v0.36.3
-
-replace k8s.io/kms => k8s.io/kms v0.36.3
-
-replace k8s.io/kube-aggregator => k8s.io/kube-aggregator v0.36.3
-
-replace k8s.io/kube-controller-manager => k8s.io/kube-controller-manager v0.36.3
-
-replace k8s.io/kube-proxy => k8s.io/kube-proxy v0.36.3
-
-replace k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.36.3
-
-replace k8s.io/kubectl => k8s.io/kubectl v0.36.3
-
-replace k8s.io/kubelet => k8s.io/kubelet v0.36.3
-
-replace k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.30.4
-
-replace k8s.io/metrics => k8s.io/metrics v0.36.3
-
-replace k8s.io/mount-utils => k8s.io/mount-utils v0.36.3
-
-replace k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.36.3
-
-replace k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.36.3
-
-replace k8s.io/sample-cli-plugin => k8s.io/sample-cli-plugin v0.36.3
-
-replace k8s.io/sample-controller => k8s.io/sample-controller v0.36.3
-
-replace k8s.io/endpointslice => k8s.io/endpointslice v0.36.3
-
-replace k8s.io/cri-client => k8s.io/cri-client v0.36.3
-
-replace k8s.io/externaljwt => k8s.io/externaljwt v0.36.3
-
-replace k8s.io/cri-streaming => k8s.io/cri-streaming v0.36.3
-
-replace k8s.io/streaming => k8s.io/streaming v0.36.3

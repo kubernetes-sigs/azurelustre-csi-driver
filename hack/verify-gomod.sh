@@ -20,6 +20,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${ROOT}"
 
 echo "Verifying gomod"
+module_paths=$(go list -mod=readonly -m -f '{{.Path}}{{if .Replace}} {{.Replace.Path}}{{end}}' all)
+if grep -Eq '(^| )k8s[.]io/kubernetes($| )' <<< "${module_paths}"; then
+  echo "Go module verification failed: k8s.io/kubernetes is in the dependency graph." >&2
+  echo "Use published Kubernetes modules instead of the Kubernetes monorepo." >&2
+  exit 1
+fi
+
 echo "go mod tidy -diff"
 if ! go mod tidy -diff; then
   echo

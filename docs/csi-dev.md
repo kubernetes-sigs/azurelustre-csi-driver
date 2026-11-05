@@ -107,6 +107,27 @@ synthetic constructor tests; they do not authenticate or contact Azure.
 
 &nbsp;
 
+### Volume statistics
+
+Use the published Kubernetes modules rather than importing `k8s.io/kubernetes`.
+The driver implements `NodeGetVolumeStats` with `golang.org/x/sys/unix.Statfs`,
+returning filesystem byte and inode counters through CSI. These are the mounted
+filesystem's counters, not a directory traversal or per-PVC quota measurement.
+Keep used space based on free blocks, not blocks available to users, so reserved
+blocks are not counted as used.
+
+### Kubernetes dependencies
+
+[Module verification](../hack/verify-gomod.sh), run by `make verify`, rejects
+`k8s.io/kubernetes` anywhere in the resolved dependency graph, including
+transitive dependencies and replacement targets. Other replacement directives
+are not prohibited.
+
+Use ordinary `go get` commands for dependency updates, followed by
+`go mod tidy` and `go mod vendor`. Keep Kubernetes release-family versions
+compatible with the Azure cloud-provider modules and review Go/tool requirements.
+Then run `make verify` and `make sanity-test-local`.
+
 ### Verify Helm chart source changes
 
 The repository stores one unpackaged chart source at
