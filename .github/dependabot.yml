@@ -27,11 +27,21 @@ updates:
     labels:
       - "dependencies"
       - "go"
+    open-pull-requests-limit: 10
     ignore:
       # Keep Kubernetes release-family upgrades coordinated with the Azure
       # cloud provider. Use published module versions and verify compatibility;
       # staging-module replace directives are no longer needed.
       - dependency-name: "k8s.io/*"
+      # Provider/client minor upgrades can change the Azure SDK types they share.
+      - dependency-name: "sigs.k8s.io/cloud-provider-azure"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "sigs.k8s.io/cloud-provider-azure/*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     groups:
       azure-sdk:
         patterns:
@@ -47,12 +57,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      golang-minor-and-patch:
+      azure-cloud-provider:
+        patterns:
+          - "sigs.k8s.io/cloud-provider-azure"
+          - "sigs.k8s.io/cloud-provider-azure/*"
         update-types:
-          - "minor"
           - "patch"
-        exclude-patterns:
-          - "github.com/Azure/azure-sdk-for-go/*"
-          - "github.com/Azure/go-autorest/*"
-          - "github.com/kubernetes-csi/*"
-          - "github.com/container-storage-interface/*"
