@@ -44,7 +44,6 @@ import (
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader"
-	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
 
@@ -171,7 +170,7 @@ type Driver struct {
 	volumeLocks      *volumeLocks
 	kernelModuleLock sync.Mutex
 
-	cloud              *azure.Cloud
+	cloud              *azureconfig.Config
 	resourceGroup      string
 	location           string
 	dynamicProvisioner DynamicProvisionerInterface
@@ -209,8 +208,6 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 		d.podRole = nodePod
 	}
 
-	az := &azure.Cloud{}
-
 	credFile := azureConfigFilePath()
 	config, err := configloader.Load[azureconfig.Config](ctx, nil, &configloader.FileLoaderConfig{
 		FilePath: credFile,
@@ -223,7 +220,7 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 		if d.enableAzureLustreMockDynProv {
 			klog.V(2).Infof("no cloud config provided, driver running with mock dynamic provisioning")
 			d.dynamicProvisioner = &DynamicProvisioner{}
-			d.cloud = az
+			d.cloud = &azureconfig.Config{}
 		} else {
 			return nil, errors.New("no cloud config provided")
 		}
@@ -234,10 +231,7 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 				return nil, err
 			}
 		}
-		if err = az.InitializeCloudFromConfig(ctx, config, false, false); err != nil {
-			klog.Warningf("InitializeCloudFromConfig failed with error: %v", err)
-		}
-		d.cloud = az
+		d.cloud = config
 		d.resourceGroup = config.ResourceGroup
 		d.location = config.Location
 		// Get kubernetes client for taint removal functionality

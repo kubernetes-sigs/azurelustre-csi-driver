@@ -128,6 +128,14 @@ Use ordinary `go get` commands for dependency updates, followed by
 compatible with the Azure cloud-provider modules and review Go/tool requirements.
 Then run `make verify` and `make sanity-test-local`.
 
+The driver reuses the Azure cloud-provider configuration, cache and operation
+metrics packages, but does not instantiate the full cloud provider. Keep
+`sigs.k8s.io/cloud-provider-azure/pkg/provider` out of production and test imports:
+its cloud-controller implementation brings unrelated VM, load-balancer and route
+clients into the build. Driver authentication and ARM clients are constructed
+directly through the Azure SDK. The root cloud-provider module remains required
+for the reused packages, so its dependency and Go-version requirements still apply.
+
 #### Automated dependency updates
 
 [Dependabot](../.github/dependabot.yml) opens routine Go version updates against

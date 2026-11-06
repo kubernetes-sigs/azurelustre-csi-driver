@@ -30,11 +30,9 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
-	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
 func TestControllerGetCapabilities(t *testing.T) {
@@ -134,9 +132,7 @@ func TestCreateVolume_Success_DoesNotCallDynamicProvisioner(t *testing.T) {
 
 func TestDynamicCreateVolume_Success(t *testing.T) {
 	d := NewFakeDriver(t)
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
@@ -262,9 +258,7 @@ func TestDynamicCreateVolume_Success_SendsCorrectProperties(t *testing.T) {
 	d := NewFakeDriver(t)
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	rep, err := d.CreateVolume(t.Context(), req)
 	require.NoError(t, err)
@@ -286,9 +280,7 @@ func TestDynamicCreateVolume_Success_ZonesSynonym(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "zone")
 	req.Parameters["zones"] = expectedZone
@@ -305,9 +297,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "location")
 	rep, err := d.CreateVolume(t.Context(), req)
@@ -321,9 +311,7 @@ func TestDynamicCreateVolume_Success_DefaultLocation(t *testing.T) {
 
 func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
 	d := NewFakeDriver(t)
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "resource-group-name")
 	rep, err := d.CreateVolume(t.Context(), req)
@@ -335,9 +323,7 @@ func TestDynamicCreateVolume_Success_DefaultResourceGroup(t *testing.T) {
 
 func TestDynamicCreateVolume_Success_UsesReturnedIPAddress(t *testing.T) {
 	d := NewFakeDriver(t)
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "resource-group-name")
 	rep, err := d.CreateVolume(t.Context(), req)
@@ -396,9 +382,7 @@ func TestDynamicCreateVolume_Err_CreateError(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Name = clusterRequestFailureName
 	_, err := d.CreateVolume(t.Context(), req)
@@ -415,9 +399,7 @@ func TestParseAmlfilesystemProperties_Err_MissingZone(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	delete(req.GetParameters(), "zone")
 	_, err := d.CreateVolume(t.Context(), req)
@@ -433,9 +415,7 @@ func TestParseAmlfilesystemProperties_Err_InvalidZone(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["zone"] = "invalid-zone"
 	_, err := d.CreateVolume(t.Context(), req)
@@ -452,9 +432,7 @@ func TestParseAmlfilesystemProperties_Err_CannotUseZone(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["location"] = emptyZonesLocation
 	req.Parameters["zone"] = "invalid-zone"
@@ -473,9 +451,7 @@ func TestDynamicCreateVolume_Success_AllowUnadvertisedZone(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["location"] = emptyZonesLocation
 	req.Parameters["zone"] = "3"
@@ -493,9 +469,7 @@ func TestDynamicCreateVolume_Err_AllowUnadvertisedZoneDoesNotSkipAdvertisedValid
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Parameters["zone"] = "invalid-zone"
 
@@ -513,9 +487,7 @@ func TestDynamicCreateVolume_Err_VolNameTooLong(t *testing.T) {
 
 	tooLongName := strings.Repeat("a", 81)
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := buildDynamicProvCreateVolumeRequest()
 	req.Name = tooLongName
 	_, err := d.CreateVolume(t.Context(), req)
@@ -901,9 +873,7 @@ func TestDynamicDeleteVolume_Success(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	createReq := buildDynamicProvCreateVolumeRequest()
 	rep, err := d.CreateVolume(t.Context(), createReq)
 	require.NoError(t, err)
@@ -927,9 +897,7 @@ func TestDynamicDeleteVolume_Err_DeleteError(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	req := &csi.DeleteVolumeRequest{
 		VolumeId: fmt.Sprintf(volumeIDTemplate,
 			clusterRequestFailureName, "testFs", "127.0.0.1", "testSubDir", "t", "testResourceGroupName"),
@@ -989,9 +957,7 @@ func TestDynamicDeleteVolume_Err_NoResourceGroup(t *testing.T) {
 	fakeDynamicProvisioner := &FakeDynamicProvisioner{}
 	d.dynamicProvisioner = fakeDynamicProvisioner
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	d.cloud = azure.GetTestCloud(ctrl)
+	d.cloud = newFakeCloudConfig()
 	_, err := d.DeleteVolume(t.Context(), req)
 	require.Error(t, err)
 	grpcStatus, ok := status.FromError(err)

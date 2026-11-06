@@ -21,11 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -44,7 +47,6 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/azurelustre-csi-driver/pkg/util"
-	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	azureconfig "sigs.k8s.io/cloud-provider-azure/pkg/provider/config"
 )
 
@@ -76,7 +78,7 @@ func NewFakeDriver(t *testing.T) *Driver {
 	driver, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	driver.Version = vendorVersion
-	driver.cloud = &azure.Cloud{}
+	driver.cloud = &azureconfig.Config{}
 	driver.cloud.SubscriptionID = "defaultFakeSubID"
 	driver.location = driverDefaultLocation
 	driver.resourceGroup = "defaultFakeResourceGroup"
@@ -99,6 +101,19 @@ func writeFakeCloudConfig(t *testing.T) string {
 }`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	return path
+}
+
+func newFakeCloudConfig() *azureconfig.Config {
+	config := &azureconfig.Config{
+		ResourceGroup:     "rg",
+		Location:          "westus",
+		VnetResourceGroup: "rg",
+		VnetName:          "vnet",
+		SubnetName:        "subnet",
+	}
+	config.SubscriptionID = "subscription"
+	config.TenantID = "TenantID"
+	return config
 }
 
 type FakeCommandRunner struct {
@@ -360,6 +375,106 @@ func TestNewDriverIdentityModes(t *testing.T) {
 	}
 }
 
+func TestNewDriverPreservesCloudConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      string
+		expectedSub string
+		expectedRG  string
+	}{
+		{
+			name: "JSON network subscription and resource group",
+			config: `{
+    "tenantId": "test-tenant",
+    "subscriptionId": "filesystem-sub",
+    "networkResourceSubscriptionID": "network-sub",
+    "resourceGroup": "filesystem-rg",
+    "location": "test-location",
+    "vnetResourceGroup": "network-rg",
+    "vnetName": "test-vnet",
+    "subnetName": "test-subnet"
+}`,
+			expectedSub: "network-sub",
+			expectedRG:  "network-rg",
+		},
+		{
+			name: "YAML subscription and resource group fallbacks",
+			config: `tenantId: test-tenant
+subscriptionId: filesystem-sub
+resourceGroup: filesystem-rg
+location: test-location
+vnetName: test-vnet
+subnetName: test-subnet
+`,
+			expectedSub: "filesystem-sub",
+			expectedRG:  "filesystem-rg",
+		},
+		{
+			name: "unrelated cloud-controller settings do not discard driver configuration",
+			config: `{
+    "tenantId": "test-tenant",
+    "subscriptionId": "filesystem-sub",
+    "resourceGroup": "filesystem-rg",
+    "location": "test-location",
+    "vnetName": "test-vnet",
+    "subnetName": "test-subnet",
+    "vmType": "standard",
+    "disableAvailabilitySetNodes": true
+}`,
+			expectedSub: "filesystem-sub",
+			expectedRG:  "filesystem-rg",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "azure.json")
+			require.NoError(t, os.WriteFile(path, []byte(test.config), 0o600))
+			t.Setenv(DefaultAzureConfigFileEnv, path)
+			t.Setenv("AZURE_TOKEN_CREDENTIALS", "ManagedIdentityCredential")
+			t.Setenv("AZURE_CLIENT_ID", "")
+			t.Setenv("AZURE_TENANT_ID", "")
+			t.Setenv("AZURE_CLIENT_SECRET", "")
+			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", "")
+
+			driver, err := NewDriver(t.Context(), &DriverOptions{DriverName: fakeDriverName})
+			require.NoError(t, err)
+			require.NotNil(t, driver.cloud)
+			require.NotNil(t, driver.dynamicProvisioner)
+			assert.Equal(t, "filesystem-sub", driver.cloud.SubscriptionID)
+			assert.Equal(t, "test-tenant", driver.cloud.TenantID)
+			assert.Equal(t, "filesystem-rg", driver.resourceGroup)
+			assert.Equal(t, "test-location", driver.location)
+			assert.Equal(t, GetUserAgent(fakeDriverName, "", ""), driver.cloud.UserAgent)
+			assert.Equal(t, SubnetProperties{
+				VnetResourceGroup: test.expectedRG,
+				VnetName:          "test-vnet",
+				SubnetName:        "test-subnet",
+				SubnetID:          fmt.Sprintf(subnetTemplate, test.expectedSub, test.expectedRG, "test-vnet", "test-subnet"),
+			}, driver.populateSubnetPropertiesFromCloudConfig(SubnetProperties{}))
+		})
+	}
+}
+
+func TestNewDriverNodeDoesNotResolveARMEndpoint(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		http.Error(w, "node initialization must not query ARM metadata", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	path := filepath.Join(t.TempDir(), "azure.json")
+	config := fmt.Sprintf(`{"subscriptionId":"test-subscription","resourceManagerEndpoint":%q}`, server.URL)
+	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
+	t.Setenv(DefaultAzureConfigFileEnv, path)
+	driver, err := NewDriver(t.Context(), &DriverOptions{NodeID: fakeNodeID, DriverName: fakeDriverName})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), requests.Load())
+	assert.Nil(t, driver.dynamicProvisioner)
+	assert.Equal(t, "test-subscription", driver.cloud.SubscriptionID)
+	assert.Equal(t, server.URL, driver.cloud.ResourceManagerEndpoint)
+}
+
 func TestGetAzureClientOptionsForClouds(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -530,7 +645,7 @@ func TestNewDriverInvalidConfigFileLocation(t *testing.T) {
 	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
-	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &azureconfig.Config{}, d.cloud)
 	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
 }
 
@@ -561,7 +676,7 @@ func TestNewDriverInvalidConfigFileContents(t *testing.T) {
 	d, err := NewDriver(t.Context(), &driverOptions)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
-	assert.Equal(t, &azure.Cloud{}, d.cloud)
+	assert.Equal(t, &azureconfig.Config{}, d.cloud)
 	assert.Equal(t, &DynamicProvisioner{}, d.dynamicProvisioner)
 }
 
@@ -821,7 +936,7 @@ func TestPopulateSubnetPropertiesFromCloudConfig(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			driver := NewFakeDriver(t)
-			driver.cloud = &azure.Cloud{}
+			driver.cloud = &azureconfig.Config{}
 			driver.cloud.SubscriptionID = testCase.subscriptionID
 			driver.cloud.NetworkResourceSubscriptionID = testCase.networkResourceSubscriptionID
 			driver.cloud.ResourceGroup = testCase.resourceGroup
