@@ -1,0 +1,131 @@
+/*
+Copyright 2021 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package node
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"time"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	clientset "k8s.io/client-go/kubernetes"
+
+	"sigs.k8s.io/cloud-provider-azure/pkg/log"
+)
+
+type nodeForCIDRMergePatch struct {
+	Spec nodeSpecForMergePatch `json:"spec"`
+}
+
+type nodeSpecForMergePatch struct {
+	PodCIDR  string   `json:"podCIDR"`
+	PodCIDRs []string `json:"podCIDRs,omitempty"`
+}
+
+type nodeForConditionPatch struct {
+	Status nodeStatusForPatch `json:"status"`
+}
+
+type nodeStatusForPatch struct {
+	Conditions []v1.NodeCondition `json:"conditions"`
+}
+
+// PreserveExternalIPs returns a new slice containing all fresh addresses unchanged,
+// followed by the ExternalIP addresses from recorded that are not already present
+// in the result. Neither input is mutated.
+func PreserveExternalIPs(recorded, fresh []v1.NodeAddress) []v1.NodeAddress {
+	result := make([]v1.NodeAddress, len(fresh), len(fresh)+len(recorded))
+	copy(result, fresh)
+	for _, addr := range recorded {
+		if addr.Type != v1.NodeExternalIP {
+			continue
+		}
+		if !slices.Contains(result, addr) {
+			result = append(result, addr)
+		}
+	}
+	return result
+}
+
+// PatchNodeCIDR patches the specified node's CIDR to the given value.
+func PatchNodeCIDR(c clientset.Interface, node types.NodeName, cidr string) error {
+	patch := nodeForCIDRMergePatch{
+		Spec: nodeSpecForMergePatch{
+			PodCIDR: cidr,
+		},
+	}
+	patchBytes, err := json.Marshal(&patch)
+	if err != nil {
+		return fmt.Errorf("failed to json.Marshal CIDR: %w", err)
+	}
+
+	if _, err := c.CoreV1().Nodes().Patch(context.TODO(), string(node), types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("failed to patch node CIDR: %w", err)
+	}
+	return nil
+}
+
+// PatchNodeCIDRs patches the specified node.CIDR=cidrs[0] and node.CIDRs to the given value.
+func PatchNodeCIDRs(c clientset.Interface, node types.NodeName, cidrs []string) error {
+	logger := log.Background().WithName("PatchNodeCIDRs")
+	// set the pod cidrs list and set the old pod cidr field
+	patch := nodeForCIDRMergePatch{
+		Spec: nodeSpecForMergePatch{
+			PodCIDR:  cidrs[0],
+			PodCIDRs: cidrs,
+		},
+	}
+
+	patchBytes, err := json.Marshal(&patch)
+	if err != nil {
+		return fmt.Errorf("failed to json.Marshal CIDR: %w", err)
+	}
+	logger.V(4).Info("cidrs patch bytes for node", "node", string(node), "cidrsPatchBytes", string(patchBytes))
+	if _, err := c.CoreV1().Nodes().Patch(context.TODO(), string(node), types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("failed to patch node CIDR: %w", err)
+	}
+	return nil
+}
+
+// SetNodeCondition updates specific node condition with patch operation.
+func SetNodeCondition(c clientset.Interface, node types.NodeName, condition v1.NodeCondition) error {
+	generatePatch := func(condition v1.NodeCondition) ([]byte, error) {
+		patch := nodeForConditionPatch{
+			Status: nodeStatusForPatch{
+				Conditions: []v1.NodeCondition{
+					condition,
+				},
+			},
+		}
+		patchBytes, err := json.Marshal(&patch)
+		if err != nil {
+			return nil, err
+		}
+		return patchBytes, nil
+	}
+	condition.LastHeartbeatTime = metav1.NewTime(time.Now())
+	patch, err := generatePatch(condition)
+	if err != nil {
+		return nil
+	}
+	_, err = c.CoreV1().Nodes().PatchStatus(context.TODO(), string(node), patch)
+	return err
+}
