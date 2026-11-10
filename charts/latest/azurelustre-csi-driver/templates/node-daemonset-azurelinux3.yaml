@@ -36,6 +36,7 @@ spec:
       hostNetwork: true
       dnsPolicy: Default
       serviceAccountName: {{ include "azurelustre.serviceAccountNameNode" . }}
+      automountServiceAccountToken: false
       nodeSelector:
         {{- toYaml .Values.node.azurelinux3.nodeSelector | nindent 8 }}
       securityContext:
@@ -224,6 +225,9 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             - mountPath: /csi
               name: socket-dir
             - mountPath: {{ .Values.paths.kubelet }}/
@@ -243,6 +247,24 @@ spec:
           resources:
             {{- toYaml .Values.node.azurelinux3.resources | nindent 12 }}
       volumes:
+        - name: kube-api-access
+          projected:
+            defaultMode: 0644
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: 3600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
         - hostPath:
             path: {{ .Values.paths.kubelet }}/plugins/{{ .Values.csidriver.name }}
             type: DirectoryOrCreate

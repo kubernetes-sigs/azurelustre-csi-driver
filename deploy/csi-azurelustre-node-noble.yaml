@@ -34,6 +34,7 @@ spec:
       hostNetwork: true
       dnsPolicy: Default
       serviceAccountName: csi-azurelustre-node-sa
+      automountServiceAccountToken: false
       nodeSelector:
         kubernetes.io/os: linux
       securityContext:
@@ -276,6 +277,9 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
+            - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              name: kube-api-access
+              readOnly: true
             - mountPath: /csi
               name: socket-dir
             - mountPath: /var/lib/kubelet/
@@ -300,6 +304,24 @@ spec:
               cpu: 10m
               memory: 20Mi
       volumes:
+        - name: kube-api-access
+          projected:
+            defaultMode: 0644
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: 3600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
         - hostPath:
             path: /var/lib/kubelet/plugins/azurelustre.csi.azure.com
             type: DirectoryOrCreate
