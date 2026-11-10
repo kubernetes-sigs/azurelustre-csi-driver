@@ -539,9 +539,14 @@ does not change the driver version reported by `appVersion` or selected by
 driver image family.
 
 Prepare any version-specific changes to the
-[Microsoft Learn Azure Managed Lustre docs](https://learn.microsoft.com/azure/azure-managed-lustre/)
+[Microsoft Learn CSI driver docs](https://learn.microsoft.com/azure/aks/azure-managed-lustre-overview)
 during release validation. Their source is in
-[azure-stack-docs-pr](https://github.com/MicrosoftDocs/azure-stack-docs-pr)
-under `azure-managed-lustre/`, including `use-csi-driver-kubernetes.md`.
+[azure-aks-docs-pr](https://github.com/MicrosoftDocs/azure-aks-docs-pr)
+under `articles/aks/azure-managed-lustre-*.md`. Keep installation, upgrade,
+uninstall, image-security examples, and provisioning references consistent with
+the released chart and driver. Preserve historical compatibility rows.
+Coordinate legacy AMLFS-page redirects and navigation in
+[azure-stack-docs-pr](https://github.com/MicrosoftDocs/azure-stack-docs-pr);
+do not maintain a second copy of the CSI procedures there.
 Publish those changes in coordination with the stable extension and `main`
 update; do not leave them as a post-release cleanup task.
