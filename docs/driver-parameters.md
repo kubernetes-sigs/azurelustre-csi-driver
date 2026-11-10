@@ -3,7 +3,7 @@
 This reference covers driver installation settings, dynamic provisioning, and
 connections to existing filesystems.
 
-For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/use-csi-driver-kubernetes).
+For more information, see the [Azure Managed Lustre Filesystem (AMLFS) service documentation](https://learn.microsoft.com/en-us/azure/azure-managed-lustre/) and the [AMLFS CSI documentation](https://learn.microsoft.com/azure/aks/azure-managed-lustre-overview).
 
 ## CSI Driver Configuration Parameters
 
