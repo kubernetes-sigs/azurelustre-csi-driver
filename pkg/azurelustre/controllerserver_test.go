@@ -1497,6 +1497,61 @@ func TestParseAmlfilesystemProperties_Success(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
+func TestParseAmlfilesystemProperties_ZoneAliases(t *testing.T) {
+	tests := []struct {
+		name         string
+		parameters   map[string]string
+		expectedZone string
+		wantConflict bool
+	}{
+		{name: "zone only", parameters: map[string]string{"zone": "zone1"}, expectedZone: "zone1"},
+		{name: "zones only", parameters: map[string]string{"zones": "zone2"}, expectedZone: "zone2"},
+		{name: "zone omitted"},
+		{name: "matching aliases", parameters: map[string]string{"zone": "zone1", "zones": "zone1"}, expectedZone: "zone1"},
+		{name: "matching mixed case aliases", parameters: map[string]string{"Zone": "zone1", "ZONES": "zone1"}, expectedZone: "zone1"},
+		{name: "conflicting aliases", parameters: map[string]string{"zone": "zone1", "zones": "zone2"}, wantConflict: true},
+		{name: "matching empty aliases", parameters: map[string]string{"zone": "", "zones": ""}},
+		{name: "empty zone conflicts", parameters: map[string]string{"zone": "", "zones": "zone1"}, wantConflict: true},
+		{name: "empty zones conflicts", parameters: map[string]string{"zone": "zone1", "zones": ""}, wantConflict: true},
+		{name: "mixed case aliases conflict", parameters: map[string]string{"Zone": "zone1", "ZONES": "zone2"}, wantConflict: true},
+		{name: "case variants of one alias conflict", parameters: map[string]string{"zone": "zone1", "ZONE": "zone2"}, wantConflict: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := buildDynamicProvCreateVolumeRequest()
+			delete(request.GetParameters(), VolumeContextZone)
+			maps.Copy(request.GetParameters(), test.parameters)
+
+			result, err := parseAmlFilesystemProperties(request.GetParameters())
+
+			if test.wantConflict {
+				require.Equal(t, codes.InvalidArgument, status.Code(err))
+				require.ErrorContains(t, err, "conflicting zone values")
+				assert.Nil(t, result)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedZone, result.Zone)
+		})
+	}
+}
+
+func TestCreateVolumeRejectsConflictingZoneAliasesBeforeAzureCalls(t *testing.T) {
+	driver := NewFakeDriver(t)
+	provisioner := &FakeDynamicProvisioner{}
+	driver.dynamicProvisioner = provisioner
+	request := buildDynamicProvCreateVolumeRequest()
+	request.Parameters[VolumeContextZonesSynonym] = "zone2"
+
+	response, err := driver.CreateVolume(t.Context(), request)
+
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "conflicting zone values")
+	assert.Nil(t, response)
+	assert.Empty(t, provisioner.fakeCallCount, "zone conflicts must fail before Azure work")
+	assert.Empty(t, provisioner.Filesystems)
+}
+
 func TestParseAmlfilesystemProperties_Err_InvalidParameters(t *testing.T) {
 	properties := map[string]string{
 		"invalid-param":               "invalid",
