@@ -1,6 +1,7 @@
 ---
 apiVersion: v1
 kind: ServiceAccount
+automountServiceAccountToken: false
 metadata:
   name: csi-azurelustre-node-sa
   namespace: kube-system

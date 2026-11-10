@@ -723,6 +723,76 @@ check_service_account_names() {
   echo "ServiceAccount names render correctly (fixed, not overridable)"
 }
 
+check_node_service_account_tokens() {
+  local version=${1}
+  local chart_dir="./charts/${version}/azurelustre-csi-driver"
+  local rendered="${DIFF_TEMP_DIR}/node-tokens-chart.yaml"
+  local deployed="${DIFF_TEMP_DIR}/node-tokens-deploy.yaml"
+  local flavor_count
+  flavor_count=$(wc -w <<<"${ALL_FLAVORS}")
+
+  echo "== Checking driver-only node ServiceAccount credentials for version: ${version} =="
+
+  if ! helm template --kube-version "${KUBE_VERSION}" \
+    --namespace token-test chart-test "${chart_dir}" > "${rendered}"; then
+    return 1
+  fi
+  if ! yq eval '.' deploy/rbac-csi-azurelustre-node.yaml deploy/csi-azurelustre-node-*.yaml > "${deployed}"; then
+    return 1
+  fi
+
+  local manifest checks sa_disabled
+  for manifest in "${rendered}" "${deployed}"; do
+    sa_disabled=$(yq eval 'select(.kind == "ServiceAccount" and .metadata.name == "csi-azurelustre-node-sa")
+      | .automountServiceAccountToken == false' "${manifest}")
+    if [[ "${sa_disabled}" != "true" ]]; then
+      echo "ERROR: node ServiceAccount must disable token automount in ${manifest}"
+      return 1
+    fi
+
+    # Preserve the in-cluster credential bundle and its rotation, without
+    # exposing it to any sidecar or init container.
+    # shellcheck disable=SC2016 # Dollar-prefixed variables belong to yq, not Bash.
+    if ! checks=$(yq eval -N '
+      select(.kind == "DaemonSet") |
+      .spec.template.spec as $pod |
+      [$pod.volumes[] | select(.name == "kube-api-access")] as $volumes |
+      $volumes[0].projected.sources as $sources |
+      .metadata.name + ": " + ((
+        $pod.automountServiceAccountToken == false and
+        ($volumes | length) == 1 and
+        ([$pod.volumes[].projected.sources[]? | select(has("serviceAccountToken"))] | length) == 1 and
+        ([$sources[]? | select(
+          .serviceAccountToken.path == "token" and
+          .serviceAccountToken.audience == null and
+          .serviceAccountToken.expirationSeconds >= 600
+        )] | length) == 1 and
+        ([$sources[]? | select(.configMap.name == "kube-root-ca.crt") |
+          .configMap.items[] | select(.key == "ca.crt" and .path == "ca.crt")] | length) == 1 and
+        ([$sources[]?.downwardAPI.items[]? |
+          select(.path == "namespace" and .fieldRef.fieldPath == "metadata.namespace")] | length) == 1 and
+        ([$pod.containers[] | select(.name == "azurelustre") | .volumeMounts[] |
+          select(.name == "kube-api-access" and
+            .mountPath == "/var/run/secrets/kubernetes.io/serviceaccount" and
+            .readOnly == true and .subPath == null and .subPathExpr == null)] | length) == 1 and
+        ([$pod.containers[] | select(.name != "azurelustre") | .volumeMounts[]? |
+          select(.name == "kube-api-access")] | length) == 0 and
+        ([$pod.initContainers[]?.volumeMounts[]? |
+          select(.name == "kube-api-access")] | length) == 0
+      ) | tostring)' "${manifest}"); then
+      echo "ERROR: could not inspect node credentials in ${manifest}"
+      return 1
+    fi
+    if [[ $(grep -c ': true$' <<<"${checks}") -ne "${flavor_count}" ]] || grep -qv ': true$' <<<"${checks}"; then
+      echo "ERROR: node credentials must be projected only into the driver in ${manifest}:"
+      echo "${checks}"
+      return 1
+    fi
+  done
+
+  echo "Node credentials are driver-only in every chart and deploy flavor"
+}
+
 check_chart_source_layout() {
   local layout_issues=false
   local packaged_charts unexpected_dirs
@@ -823,6 +893,11 @@ else
   if ! check_service_account_names "${version}"; then
     issues_found=true
     failures+=("ServiceAccount name check (version: ${version})")
+  fi
+
+  if ! check_node_service_account_tokens "${version}"; then
+    issues_found=true
+    failures+=("Driver-only node ServiceAccount credentials check (version: ${version})")
   fi
 
   if ! check_driver_identity "${version}"; then
