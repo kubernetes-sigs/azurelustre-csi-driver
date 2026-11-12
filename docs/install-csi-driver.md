@@ -96,6 +96,44 @@ For the full list of configurable values, version history, and advanced Helm usa
     ./deploy/install-driver.sh
     ```
 
+> [!NOTE]
+> Both `install-driver.sh` and `uninstall-driver.sh` install into `kube-system`
+> by default. To use a different namespace, set the `NAMESPACE` environment
+> variable (the script creates the namespace if it does not exist and rewrites
+> the manifests' namespace at apply time):
+>
+> ```shell
+> NAMESPACE=azurelustre-system ./deploy/install-driver.sh local
+> ```
+>
+> Caveats when using a non-default namespace:
+>
+> - **Use the same `NAMESPACE` to uninstall.** `uninstall-driver.sh` also
+>   defaults to `kube-system`; run it with the same value you installed with, or
+>   it will refuse (to avoid deleting the shared cluster-scoped CSIDriver/RBAC
+>   that a live install depends on).
+> - **One install per cluster.** The CSIDriver object and ClusterRoles are
+>   cluster-global singletons, so switching namespaces is a move, not an
+>   in-place migration: uninstall the existing namespace first (`install-driver.sh`
+>   refuses if the driver is already installed in another namespace).
+>   The scripts search controller Deployments, node DaemonSets, and Pods across
+>   **all namespaces**, using either standard driver label
+>   (`app.kubernetes.io/name` or `app.kubernetes.io/part-of`) and legacy `app`
+>   labels. This also protects partial installs with no controller.
+>   Install checks the cluster-scoped `azurelustre.csi.azure.com` CSIDriver by
+>   name; if it exists without matching workloads, inspect and uninstall the
+>   leftovers before reinstalling, since its namespace cannot be determined.
+>   Discovery errors abort before any changes. Uninstall refuses to delete
+>   shared resources whenever matching workloads remain in another namespace,
+>   even if the target namespace also contains a controller. `FORCE=1` overrides
+>   that conflict check for deliberate cleanup, but not discovery errors.
+> - **Privileged/critical scheduling.** The pods use the `system-node-critical` /
+>   `system-cluster-critical` priority classes. Clusters that restrict those
+>   classes to `kube-system` (via a `ResourceQuota` scopeSelector) will reject the
+>   pods in another namespace.
+> - If you use workload identity, the federated credential subject must match the
+>   namespace — see [workload-identity.md](./workload-identity.md).
+
 - Upgrade in place:
 
     **Stop every workload using Lustre on the affected nodes before upgrading.**
