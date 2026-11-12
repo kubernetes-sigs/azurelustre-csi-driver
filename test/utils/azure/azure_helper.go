@@ -18,33 +18,48 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
+	"maps"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/Azure/go-autorest/autorest/azure"
+	azureutils "sigs.k8s.io/cloud-provider-azure/pkg/azclient/utils"
 )
 
 type Client struct {
-	environment    azure.Environment
 	subscriptionID string
 	groupsClient   *armresources.ResourceGroupsClient
 }
 
-func GetClient(cloud, subscriptionID, clientID, tenantID, clientSecret string) (*Client, error) {
-	env, err := azure.EnvironmentFromName(cloud)
+func GetClient(cloudName, subscriptionID, clientID, tenantID, clientSecret string) (*Client, error) {
+	configuration, err := cloudConfigurationFromName(cloudName)
 	if err != nil {
 		return nil, err
 	}
-	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret,
+		&azidentity.ClientSecretCredentialOptions{ClientOptions: azcore.ClientOptions{Cloud: configuration}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	return getClient(env, subscriptionID, credential, nil)
+	return getClient(configuration, subscriptionID, credential, nil)
+}
+
+func cloudConfigurationFromName(name string) (cloud.Configuration, error) {
+	name = strings.ToUpper(name)
+	if configuration, ok := azureutils.EnvironmentMapping[name]; ok {
+		result := *configuration
+		result.Services = maps.Clone(configuration.Services)
+		return result, nil
+	}
+	return cloud.Configuration{}, fmt.Errorf("no Azure cloud environment matching the name %q", name)
 }
 
 func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string, managedBy *string) (*armresources.ResourceGroup, error) {
@@ -78,28 +93,34 @@ func (az *Client) EnsureResourceGroup(ctx context.Context, name, location string
 
 func (az *Client) DeleteResourceGroup(ctx context.Context, groupName string) error {
 	_, err := az.groupsClient.Get(ctx, groupName, nil)
-	if err == nil {
-		pollerResp, err := az.groupsClient.BeginDelete(ctx, groupName, nil)
-		if err != nil {
-			return fmt.Errorf("cannot delete resource group %v: %w", groupName, err)
+	if err != nil {
+		var responseError *azcore.ResponseError
+		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound && responseError.ErrorCode == "ResourceGroupNotFound" {
+			return nil
 		}
-		_, err = pollerResp.PollUntilDone(ctx, nil)
-		if err != nil {
-			// Skip the teardown errors because of https://github.com/Azure/go-autorest/issues/357
-			// TODO(feiskyer): fix the issue by upgrading go-autorest version >= v11.3.2.
-			log.Printf("Warning: failed to delete resource group %q with error %v", groupName, err)
-		}
+		return fmt.Errorf("cannot check resource group %q before deletion: %w", groupName, err)
+	}
+	poller, err := az.groupsClient.BeginDelete(ctx, groupName, nil)
+	if err != nil {
+		return fmt.Errorf("cannot delete resource group %q: %w", groupName, err)
+	}
+	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+		return fmt.Errorf("cannot confirm deletion of resource group %q: %w", groupName, err)
 	}
 	return nil
 }
 
-func getClient(env azure.Environment, subscriptionID string, credential *azidentity.ClientSecretCredential, options *arm.ClientOptions) (*Client, error) {
-	groupsClientFactory, err := armresources.NewClientFactory(subscriptionID, credential, options)
+func getClient(configuration cloud.Configuration, subscriptionID string, credential azcore.TokenCredential, options *arm.ClientOptions) (*Client, error) {
+	var clientOptions arm.ClientOptions
+	if options != nil {
+		clientOptions = *options
+	}
+	clientOptions.Cloud = configuration
+	groupsClientFactory, err := armresources.NewClientFactory(subscriptionID, credential, &clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource groups client: %w", err)
 	}
 	c := &Client{
-		environment:    env,
 		subscriptionID: subscriptionID,
 		groupsClient:   groupsClientFactory.NewResourceGroupsClient(),
 	}
