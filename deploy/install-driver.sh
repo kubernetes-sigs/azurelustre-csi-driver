@@ -110,18 +110,32 @@ echo
 echo "Installing Azure Lustre CSI Driver branch: ${branch}, repo: ${repo} ..."
 echo "Target namespace: ${NAMESPACE}"
 
-# Guard against stacking a second install in a different namespace. The CSI node
-# DaemonSets bind-mount shared host paths and register against a single kubelet
-# plugin socket, so two installs on one cluster collide. Re-running in the SAME
-# namespace is a supported in-place upgrade and is allowed.
-existing_ns="$(kubectl get deploy -A -l app=csi-azurelustre-controller \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' 2>/dev/null \
-  | sort -u | grep -vx "${NAMESPACE}" || true)"
-if [[ -n "${existing_ns}" ]]; then
-  echo "Error: Azure Lustre CSI driver already installed in namespace(s): ${existing_ns//$'\n'/ }" >&2
+# CSIDriver is cluster-scoped and has no install namespace. Check workloads too,
+# including node-only/partial installs and older releases without standard labels.
+# Do not suppress discovery errors: an unreadable cluster is not an empty cluster.
+existing_driver="$(kubectl get csidrivers.storage.k8s.io azurelustre.csi.azure.com \
+  --ignore-not-found -o name)"
+existing_ns=""
+for selector in \
+  "app.kubernetes.io/name=azurelustre-csi-driver" \
+  "app.kubernetes.io/part-of=azurelustre-csi-driver" \
+  "app in (csi-azurelustre-controller,csi-azurelustre-node)"; do
+  namespaces="$(kubectl get deployments.apps,daemonsets.apps,pods --all-namespaces \
+    -l "${selector}" -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}')"
+  existing_ns+="${namespaces}"$'\n'
+done
+existing_ns="$(printf '%s' "${existing_ns}" | sort -u | sed '/^$/d')"
+other_ns="$(printf '%s\n' "${existing_ns}" | grep -Fvx -- "${NAMESPACE}" || true)"
+if [[ -n "${other_ns}" ]]; then
+  echo "Error: Azure Lustre CSI driver already installed in namespace(s): ${other_ns//$'\n'/ }" >&2
   echo "Uninstall it first (NAMESPACE=<ns> ./deploy/uninstall-driver.sh) or set" >&2
   echo "NAMESPACE to that namespace to upgrade in place. Concurrent installs in" >&2
   echo "multiple namespaces are not supported (cluster-scoped CSIDriver/RBAC are shared)." >&2
+  exit 1
+fi
+if [[ -n "${existing_driver}" && -z "${existing_ns}" ]]; then
+  echo "Error: CSIDriver azurelustre.csi.azure.com exists, but its install namespace cannot be determined." >&2
+  echo "Inspect the existing install and remove any leftovers with uninstall-driver.sh before installing." >&2
   exit 1
 fi
 

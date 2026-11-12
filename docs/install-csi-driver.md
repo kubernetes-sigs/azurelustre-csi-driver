@@ -116,6 +116,17 @@ For the full list of configurable values, version history, and advanced Helm usa
 >   cluster-global singletons, so switching namespaces is a move, not an
 >   in-place migration: uninstall the existing namespace first (`install-driver.sh`
 >   refuses if the driver is already installed in another namespace).
+>   The scripts search controller Deployments, node DaemonSets, and Pods across
+>   **all namespaces**, using either standard driver label
+>   (`app.kubernetes.io/name` or `app.kubernetes.io/part-of`) and legacy `app`
+>   labels. This also protects partial installs with no controller.
+>   Install checks the cluster-scoped `azurelustre.csi.azure.com` CSIDriver by
+>   name; if it exists without matching workloads, inspect and uninstall the
+>   leftovers before reinstalling, since its namespace cannot be determined.
+>   Discovery errors abort before any changes. Uninstall refuses to delete
+>   shared resources whenever matching workloads remain in another namespace,
+>   even if the target namespace also contains a controller. `FORCE=1` overrides
+>   that conflict check for deliberate cleanup, but not discovery errors.
 > - **Privileged/critical scheduling.** The pods use the `system-node-critical` /
 >   `system-cluster-critical` priority classes. Clusters that restrict those
 >   classes to `kube-system` (via a `ResourceQuota` scopeSelector) will reject the
