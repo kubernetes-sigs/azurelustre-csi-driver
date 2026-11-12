@@ -28,13 +28,13 @@ import (
 )
 
 func ParseEndpoint(ep string) (string, string, error) {
-	if strings.HasPrefix(strings.ToLower(ep), "unix://") || strings.HasPrefix(strings.ToLower(ep), "tcp://") {
+	if strings.HasPrefix(strings.ToLower(ep), "unix://") {
 		s := strings.SplitN(ep, "://", 2)
 		if s[1] != "" {
 			return strings.ToLower(s[0]), s[1], nil
 		}
 	}
-	return "", "", fmt.Errorf("invalid endpoint: %v", ep)
+	return "", "", fmt.Errorf("invalid endpoint %q: only Unix domain sockets (unix://...) are supported", ep)
 }
 
 func NewVolumeCapabilityAccessMode(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability_AccessMode {

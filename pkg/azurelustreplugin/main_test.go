@@ -222,6 +222,23 @@ func TestHandleFailure(t *testing.T) {
 	require.ErrorContains(t, err, "invalid endpoint")
 }
 
+func TestHandleTCPEndpointPolicy(t *testing.T) {
+	t.Setenv(azurelustre.DefaultAzureConfigFileEnv, filepath.Join(t.TempDir(), "missing.json"))
+	originalMock := *enableAzureLustreMockDynProv
+	originalEndpoint := *endpoint
+	t.Cleanup(func() {
+		*enableAzureLustreMockDynProv = originalMock
+		*endpoint = originalEndpoint
+	})
+	*enableAzureLustreMockDynProv = true
+	for _, address := range []string{"127.0.0.1", "[::1]", "[::ffff:127.0.0.1]", "0.0.0.0", "192.0.2.1", "localhost"} {
+		t.Run(address, func(t *testing.T) {
+			*endpoint = "tcp://" + address + ":invalid-port"
+			require.ErrorContains(t, handle(t.Context()), "only Unix domain sockets")
+		})
+	}
+}
+
 func TestRunSignalProcess(t *testing.T) {
 	if os.Getenv("CSI_LIFECYCLE_CHILD") != "1" {
 		return
