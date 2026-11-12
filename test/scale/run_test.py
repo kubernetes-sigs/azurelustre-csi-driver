@@ -200,16 +200,20 @@ class PerfScaleTest:
                 target_file.write("".join(output_line_parts))
 
         logger.info("generated workload yaml:")
-        self.run_command(f"cat {self._generated_workload_yaml}")
+        self.run_command(["cat", self._generated_workload_yaml])
 
-    def run_command(self, command: str, need_stdout=False, raise_error=True, retries=5):
+    def run_command(self, command: list, need_stdout=False, raise_error=True,
+                    retries=5, stdout_file=None):
         logger.info("run command %s", command)
-        stdout = None
-        if need_stdout:
-            stdout = subprocess.PIPE
+        stdout = subprocess.PIPE if need_stdout else stdout_file
         total_retries = retries # used for calculating sleep later
         while retries > 0:
-            process = subprocess.run(command, shell=True, text=True, stdout=stdout, check=False)
+            if stdout_file is not None:
+                # Shell redirection previously truncated the log on every retry.
+                stdout_file.seek(0)
+                stdout_file.truncate()
+            process = subprocess.run(command, shell=False, text=True,
+                                     stdout=stdout, check=False)
             retries -=1
             if process.returncode == 0:
                 break
@@ -227,8 +231,9 @@ class PerfScaleTest:
 
     def setup(self, current_scale):
         logger.info("reinstalling CSI driver")
-        self.run_command(f"{ROOT_PATH}/deploy/uninstall-driver.sh")
-        self.run_command(f"{ROOT_PATH}/deploy/install-driver.sh local")
+        self.run_command([os.path.join(ROOT_PATH, "deploy", "uninstall-driver.sh")])
+        self.run_command([os.path.join(ROOT_PATH, "deploy", "install-driver.sh"),
+                          "local"])
         if os.path.exists(self._csi_log_path):
             pass
         else:
@@ -244,13 +249,12 @@ class PerfScaleTest:
     def deploy_workload(self):
         logger.info("deploying workload")
         self.run_command(
-            f"kubectl apply -f {self._generated_workload_yaml}"
+            ["kubectl", "apply", "-f", self._generated_workload_yaml]
         )
         logger.info("waiting for workload ready")
         self.run_command(
-            "kubectl rollout status deployment"
-            " scale-test-set"
-            " --timeout=600s"
+            ["kubectl", "rollout", "status", "deployment", "scale-test-set",
+             "--timeout=600s"]
         )
         logger.info("workload was ready")
 
@@ -264,45 +268,43 @@ class PerfScaleTest:
         """
         logger.info("deleting workload")
         self.run_command(
-            f"kubectl delete"
-            f" -f {self._generated_workload_yaml}"
-            f" --ignore-not-found"
-            f" --wait=true"
-            f" --timeout=600s"
+            ["kubectl", "delete", "-f", self._generated_workload_yaml,
+             "--ignore-not-found", "--wait=true", "--timeout=600s"]
         )
         logger.info("workload was deleted")
 
     def collection_logs(self):
         logger.info("collecting CSI log")
         controller_pods = self.run_command(
-            "kubectl get pods"
-            " -nkube-system"
-            " --selector=app=csi-azurelustre-controller"
-            " --no-headers"
-            " | awk '{print $1}'",
+            ["kubectl", "get", "pods", "-nkube-system",
+             "--selector=app=csi-azurelustre-controller", "-o", "json"],
             need_stdout=True
         )
-        controller_pods = controller_pods.strip('\n').split('\n')
+        controller_pods = [pod["metadata"]["name"]
+                           for pod in json.loads(controller_pods)["items"]]
         logger.info("got controller pods %s", controller_pods)
 
         node_pods = self.run_command(
-            "kubectl get pods"
-            " -nkube-system"
-            " --selector=app=csi-azurelustre-node"
-            " --no-headers"
-            " | awk '{print $1}'",
+            ["kubectl", "get", "pods", "-nkube-system",
+             "--selector=app=csi-azurelustre-node", "-o", "json"],
             need_stdout=True
         )
-        node_pods = node_pods.strip('\n').split('\n')
+        node_pods = [pod["metadata"]["name"]
+                     for pod in json.loads(node_pods)["items"]]
         logger.info("got node pods %s", node_pods)
 
         for pod in chain(controller_pods, node_pods):
             logger.info("collecting pod %s", pod)
-            self.run_command(f"kubectl logs {pod}"
-                             f" -nkube-system"
-                             f" -cazurelustre"
-                             f" >{self._csi_log_path}/{pod}",
-                             raise_error=False)
+            log_path = os.path.join(self._csi_log_path, pod)
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_file:
+                    self.run_command(
+                        ["kubectl", "logs", pod, "-nkube-system", "-cazurelustre"],
+                        raise_error=False, stdout_file=log_file,
+                    )
+            except OSError as error:
+                logger.warning("failed to collect logs for pod %s into %s: %s",
+                               pod, log_path, error)
 
     def parse_result_from_log(self):
         logger.info("parsing log file for perf result")
