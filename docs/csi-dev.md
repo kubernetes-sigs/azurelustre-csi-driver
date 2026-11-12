@@ -218,6 +218,10 @@ make build
 
 - Setup variables
 
+The `/tmp/azurelustre-csi.sock` endpoint below is only a local-development
+example. Shipped deployments retain `/csi/csi.sock` inside the driver container;
+existing Unix-socket users do not need to change their socket paths.
+
 ```sh
 readonly volname="testvolume-$(date +%s)"
 readonly cap="MULTI_NODE_MULTI_WRITER,mount,,,"
