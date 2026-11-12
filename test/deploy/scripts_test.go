@@ -66,7 +66,7 @@ func TestNamespaceGuards(t *testing.T) {
 				t.Run(script, func(t *testing.T) {
 					dir := t.TempDir()
 					log := filepath.Join(dir, "mutations")
-					require.NoError(t, os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fakeKubectl), 0o755))
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fakeKubectl), 0o700)) // #nosec G306 -- executable test stub in t.TempDir
 					t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 					t.Setenv("NAMESPACE", "azurelustre-system")
 					namespace := "azurelustre-system"
@@ -86,7 +86,7 @@ func TestNamespaceGuards(t *testing.T) {
 					if script == "install" {
 						args = append(args, "local")
 					}
-					cmd := exec.Command("bash", args...)
+					cmd := exec.CommandContext(t.Context(), "bash", args...) // #nosec G204 -- only runs the repository's deployment scripts
 					cmd.Dir = root
 					output, runErr := cmd.CombinedOutput()
 					wantErr := tt.installErr
@@ -101,7 +101,7 @@ func TestNamespaceGuards(t *testing.T) {
 						return
 					}
 					require.NoError(t, runErr, "%s", output)
-					mutations, readErr := os.ReadFile(log)
+					mutations, readErr := os.ReadFile(log) // #nosec G304 -- log path is inside t.TempDir
 					require.NoError(t, readErr)
 					require.Contains(t, string(mutations), "namespace: "+namespace)
 					if !tt.defaultNS {
@@ -122,8 +122,9 @@ func TestNamespaceGuards(t *testing.T) {
 	}
 }
 
-// Reject unexpected reads so tests cannot silently miss a discovery path.
-const fakeKubectl = `#!/usr/bin/env bash
+const (
+	// Reject unexpected reads so tests cannot silently miss a discovery path.
+	fakeKubectl = `#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ "$1" == get ]]; then
@@ -180,3 +181,4 @@ case "$1" in
   *) echo "unexpected mutation: $*" >&2; exit 1 ;;
 esac
 `
+)
