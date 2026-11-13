@@ -47,23 +47,12 @@ func TestParseEndpoint(t *testing.T) {
 	assert.Equal(t, "unix", sockType)
 	assert.Equal(t, "fake.sock", addr)
 
-	// Valid TCP endpoint with ip
-	sockType, addr, err = ParseEndpoint("tcp://127.0.0.1:80")
-	require.NoError(t, err)
-	assert.Equal(t, "tcp", sockType)
-	assert.Equal(t, "127.0.0.1:80", addr)
-
-	// Normalize the uppercase transport scheme without changing the TCP address.
-	sockType, addr, err = ParseEndpoint("TCP://127.0.0.1:80")
-	require.NoError(t, err)
-	assert.Equal(t, "tcp", sockType)
-	assert.Equal(t, "127.0.0.1:80", addr)
-
-	// Valid TCP endpoint with hostname
-	sockType, addr, err = ParseEndpoint("tcp://fakehost:80")
-	require.NoError(t, err)
-	assert.Equal(t, "tcp", sockType)
-	assert.Equal(t, "fakehost:80", addr)
+	for _, endpoint := range []string{"tcp://127.0.0.1:80", "TCP://127.0.0.1:80", "tcp://fakehost:80"} {
+		sockType, addr, err = ParseEndpoint(endpoint)
+		require.ErrorContains(t, err, "only Unix domain sockets")
+		assert.Empty(t, sockType)
+		assert.Empty(t, addr)
+	}
 
 	_, _, err = ParseEndpoint("unix:/fake.sock/")
 	require.Error(t, err)

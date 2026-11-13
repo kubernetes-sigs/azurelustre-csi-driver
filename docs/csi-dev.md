@@ -218,11 +218,15 @@ make build
 
 - Setup variables
 
+The `/tmp/azurelustre-csi.sock` endpoint below is only a local-development
+example. Shipped deployments retain `/csi/csi.sock` inside the driver container;
+existing Unix-socket users do not need to change their socket paths.
+
 ```sh
 readonly volname="testvolume-$(date +%s)"
 readonly cap="MULTI_NODE_MULTI_WRITER,mount,,,"
 readonly target_path="/tmp/lustre-pv"
-readonly endpoint="tcp://127.0.0.1:10000"
+readonly endpoint="unix:///tmp/azurelustre-csi.sock"
 
 readonly lustre_fs_name=""
 readonly lustre_fs_ip=""
@@ -236,6 +240,10 @@ readonly lustre_fs_ip=""
 cd $GOPATH/src/sigs.k8s.io/azurelustre-csi-driver
 ./_output/azurelustreplugin --endpoint $endpoint --nodeid CSINode -v=5 &
 ```
+
+The CSI endpoint must use a Unix domain socket. TCP endpoints, including
+loopback addresses, are rejected before opening a listener, with no override.
+Existing local scripts using TCP must switch to a `unix://` endpoint.
 
 > Before running CSI driver, create "/etc/kubernetes/azure.json" file under testing server(it's better copy `azure.json` file from a k8s cluster with service principle configured correctly) and set `AZURE_CREDENTIAL_FILE` as following:
 
