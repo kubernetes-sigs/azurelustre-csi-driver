@@ -94,6 +94,7 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 	var errorParameters []string
 
 	shouldCreateAmlfsCluster := true
+	zoneProvided := false
 	amlFilesystemProperties.Tags = map[string]string{
 		createdByTag: azureLustreDriverTag,
 	}
@@ -141,7 +142,12 @@ func parseAmlFilesystemProperties(properties map[string]string) (*AmlFilesystemP
 		case VolumeContextSkuName:
 			amlFilesystemProperties.SKUName = propertyValue
 		case VolumeContextZone, VolumeContextZonesSynonym:
+			if zoneProvided && amlFilesystemProperties.Zone != propertyValue {
+				return nil, status.Error(codes.InvalidArgument,
+					"CreateVolume parameters zone/zones contain conflicting zone values")
+			}
 			amlFilesystemProperties.Zone = propertyValue
+			zoneProvided = true
 		case VolumeContextTags:
 			tags, err := util.ConvertTagsToMap(propertyValue)
 			if err != nil {
