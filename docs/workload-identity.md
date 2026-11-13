@@ -61,10 +61,17 @@ az identity federated-credential create \
 > `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`.
 > The ServiceAccount name itself is fixed by the chart and cannot be changed.
 
-### 5. Install/upgrade the chart with the identity's client ID
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="5-installupgrade-the-chart-with-the-identitys-client-id"></a>
+
+### 5. Install the chart with the identity's client ID
+
+This example is for a new installation. For an existing direct Helm release,
+contact Microsoft Support before changing the driver version or identity
+settings. See the [update guidance](../charts/README.md#upgrade).
 
 ```bash
-helm upgrade --install azurelustre-csi-driver \
+helm install azurelustre-csi-driver \
   charts/latest/azurelustre-csi-driver \
   --namespace kube-system \
   --set IsWorkloadIdentityEnabled=Enabled \
