@@ -2149,7 +2149,7 @@ func TestDynamicProvisioner_CreateAmlFilesystem_DisablesBlindPUTRetries(t *testi
 	client, err := armstoragecache.NewAmlFilesystemsClient(expectedSubscriptionID, &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: scenario,
-			Retry:     policy.RetryOptions{MaxRetries: 3, RetryDelay: -1},
+			Retry:     policy.RetryOptions{MaxRetries: 3, RetryDelay: 1 * time.Millisecond},
 		},
 	})
 	require.NoError(t, err)
