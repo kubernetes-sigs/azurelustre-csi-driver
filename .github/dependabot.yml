@@ -27,12 +27,21 @@ updates:
     labels:
       - "dependencies"
       - "go"
+    open-pull-requests-limit: 10
     ignore:
-      # k8s.io staging modules use replace directives in go.mod that
-      # dependabot cannot update. Bumping require without updating
-      # replace produces a broken build. Handle these manually with
-      # hack/update-gomod.sh instead.
+      # Keep Kubernetes release-family upgrades coordinated with the Azure
+      # cloud provider. Select published module versions and verify compatibility
+      # deliberately rather than relying on staging-module replacement updates.
       - dependency-name: "k8s.io/*"
+      # Provider/client minor upgrades can change the Azure SDK types they share.
+      - dependency-name: "sigs.k8s.io/cloud-provider-azure"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "sigs.k8s.io/cloud-provider-azure/*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     groups:
       azure-sdk:
         patterns:
@@ -48,12 +57,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      golang-minor-and-patch:
+      azure-cloud-provider:
+        patterns:
+          - "sigs.k8s.io/cloud-provider-azure"
+          - "sigs.k8s.io/cloud-provider-azure/*"
         update-types:
-          - "minor"
           - "patch"
-        exclude-patterns:
-          - "github.com/Azure/azure-sdk-for-go/*"
-          - "github.com/Azure/go-autorest/*"
-          - "github.com/kubernetes-csi/*"
-          - "github.com/container-storage-interface/*"
