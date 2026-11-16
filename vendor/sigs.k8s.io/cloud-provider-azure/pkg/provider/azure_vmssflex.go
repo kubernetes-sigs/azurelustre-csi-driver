@@ -695,7 +695,8 @@ func (fs *FlexScaleSet) ensureVMSSFlexInPool(ctx context.Context, _ *v1.Service,
 			})
 		primaryIPConfig.Properties.LoadBalancerBackendAddressPools = loadBalancerBackendAddressPools
 		newVMSS := armcompute.VirtualMachineScaleSet{
-			Location: vmssFlex.Location,
+			Location:         vmssFlex.Location,
+			ExtendedLocation: vmssFlex.ExtendedLocation,
 			Properties: &armcompute.VirtualMachineScaleSetProperties{
 				VirtualMachineProfile: &armcompute.VirtualMachineScaleSetVMProfile{
 					NetworkProfile: &armcompute.VirtualMachineScaleSetNetworkProfile{
@@ -842,7 +843,8 @@ func (fs *FlexScaleSet) EnsureBackendPoolDeletedFromVMSets(ctx context.Context, 
 		vmssUpdaters = append(vmssUpdaters, func() error {
 			// Compose a new vmss with added backendPoolID.
 			newVMSS := armcompute.VirtualMachineScaleSet{
-				Location: vmss.Location,
+				Location:         vmss.Location,
+				ExtendedLocation: vmss.ExtendedLocation,
 				Properties: &armcompute.VirtualMachineScaleSetProperties{
 					VirtualMachineProfile: &armcompute.VirtualMachineScaleSetVMProfile{
 						NetworkProfile: &armcompute.VirtualMachineScaleSetNetworkProfile{
@@ -1014,7 +1016,7 @@ func (fs *FlexScaleSet) ensureBackendPoolDeletedFromNode(ctx context.Context, vm
 
 		nicUpdaters = append(nicUpdaters, func() error {
 			logger.V(2).Info("begins to CreateOrUpdate for NIC with backendPoolIDs", "resourceGroup", fs.ResourceGroup, "nicName", ptr.Deref(nic.Name, ""), "backendPoolIDs", backendPoolIDs)
-			_, rerr := fs.ComputeClientFactory.GetInterfaceClient().CreateOrUpdate(ctx, fs.ResourceGroup, ptr.Deref(nic.Name, ""), *nic)
+			_, rerr := fs.updateInterface(ctx, nic)
 			if rerr != nil {
 				logger.Error(rerr, "CreateOrUpdate NIC failed", "resourceGroup", fs.ResourceGroup, "nicName", ptr.Deref(nic.Name, ""))
 				return rerr

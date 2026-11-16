@@ -52,7 +52,8 @@ type AccessControl struct {
 }
 
 type accessControlOptions struct {
-	EventEmitter K8sEventEmitter
+	EventEmitter             K8sEventEmitter
+	SkipAnnotationValidation bool
 }
 
 var defaultAccessControlOptions = accessControlOptions{
@@ -64,6 +65,13 @@ type AccessControlOption func(*accessControlOptions)
 func WithEventEmitter(emitter K8sEventEmitter) AccessControlOption {
 	return func(o *accessControlOptions) {
 		o.EventEmitter = emitter
+	}
+}
+
+// SkipAnnotationValidation keeps a rejected annotation configuration from aborting the caller.
+func SkipAnnotationValidation() AccessControlOption {
+	return func(o *accessControlOptions) {
+		o.SkipAnnotationValidation = true
 	}
 }
 
@@ -81,32 +89,34 @@ func NewAccessControl(logger logr.Logger, svc *v1.Service, sg *armnetwork.Securi
 		logger.Error(err, "Failed to initialize RuleHelper")
 		return nil, err
 	}
-	sourceRanges, invalidSourceRanges, err := SourceRanges(svc)
-	if err != nil {
-		logger.Error(err, "Failed to parse SourceRange configuration")
-
-		// Backward compatibility: no error but emit a warning event.
-		eventEmitter(svc, v1.EventTypeWarning, "InvalidSourceRanges", EventMessageOfInvalidSourceRanges(invalidSourceRanges))
-	}
-	allowedIPRanges, invalidAllowedIPRanges, err := AllowedIPRanges(svc)
-	if err != nil {
-		logger.Error(err, "Failed to parse AllowedIPRanges configuration")
-
-		// Backward compatibility: no error but emit a warning event.
-		eventEmitter(svc, v1.EventTypeWarning, "InvalidAllowedIPRanges", EventMessageOfInvalidAllowedIPRanges(invalidAllowedIPRanges))
-	}
+	sourceRanges, invalidSourceRanges, sourceRangesErr := SourceRanges(svc)
+	allowedIPRanges, invalidAllowedIPRanges, allowedIPRangesErr := AllowedIPRanges(svc)
 	allowedServiceTags := AllowedServiceTags(svc)
 	securityRuleDestinationPortsByProtocol, err := SecurityRuleDestinationPortsByProtocol(svc)
 	if err != nil {
 		logger.Error(err, "Failed to parse service Spec.Ports")
 		return nil, err
 	}
-	if len(sourceRanges) > 0 && len(allowedIPRanges) > 0 {
+	if !options.SkipAnnotationValidation && len(sourceRanges) > 0 && len(allowedIPRanges) > 0 {
 		logger.Error(ErrSetBothLoadBalancerSourceRangesAndAllowedIPRanges, "Forbidden configuration")
 		return nil, ErrSetBothLoadBalancerSourceRangesAndAllowedIPRanges
 	}
 
-	if len(sourceRanges) > 0 && len(allowedServiceTags) > 0 {
+	// Emitted after the fatal checks so no event describes a security group change that an error prevents.
+	if sourceRangesErr != nil && !options.SkipAnnotationValidation {
+		logger.Error(sourceRangesErr, "Failed to parse SourceRange configuration")
+
+		// Backward compatibility: no error but emit a warning event.
+		eventEmitter(svc, v1.EventTypeWarning, "InvalidSourceRanges", EventMessageOfInvalidSourceRanges(invalidSourceRanges))
+	}
+	if allowedIPRangesErr != nil && !options.SkipAnnotationValidation {
+		logger.Error(allowedIPRangesErr, "Failed to parse AllowedIPRanges configuration")
+
+		// Backward compatibility: no error but emit a warning event.
+		eventEmitter(svc, v1.EventTypeWarning, "InvalidAllowedIPRanges", EventMessageOfInvalidAllowedIPRanges(invalidAllowedIPRanges))
+	}
+
+	if !options.SkipAnnotationValidation && len(sourceRanges) > 0 && len(allowedServiceTags) > 0 {
 		logger.Info(
 			"Service is using both of spec.loadBalancerSourceRanges and annotation service.beta.kubernetes.io/azure-allowed-service-tags",
 		)
@@ -115,7 +125,7 @@ func NewAccessControl(logger logr.Logger, svc *v1.Service, sg *armnetwork.Securi
 		eventEmitter(svc, v1.EventTypeWarning, "ConflictConfiguration", EventMessageOfConflictLoadBalancerSourceRangesAndAllowedIPRanges())
 	}
 
-	return &AccessControl{
+	ac := &AccessControl{
 		logger:                                 logger,
 		svc:                                    svc,
 		sgHelper:                               sgHelper,
@@ -124,7 +134,47 @@ func NewAccessControl(logger logr.Logger, svc *v1.Service, sg *armnetwork.Securi
 		AllowedServiceTags:                     allowedServiceTags,
 		invalidRanges:                          append(invalidSourceRanges, invalidAllowedIPRanges...),
 		securityRuleDestinationPortsByProtocol: securityRuleDestinationPortsByProtocol,
-	}, nil
+	}
+
+	if !options.SkipAnnotationValidation {
+		if mismatched := ac.mismatchedIPFamilyRanges(); len(mismatched) > 0 {
+			ranges := fnutil.Map(func(p netip.Prefix) string { return p.String() }, mismatched)
+			logger.V(2).Info("Found IP ranges that do not match the Service's IP families, no traffic from them can reach the Service",
+				"ip-ranges", ranges, "service-ip-families", ac.svc.Spec.IPFamilies)
+			eventEmitter(svc, v1.EventTypeWarning, "IPRangeFamilyMismatch", EventMessageOfIPRangeFamilyMismatch(ranges))
+		}
+	}
+
+	return ac, nil
+}
+
+// mismatchedIPFamilyRanges returns the configured ranges that do not match any of the Service's IP families.
+// Such a range can still appear in a security rule, targeting an additional public IP or a backend node IP
+// when the floating IP is disabled. kube-proxy programs rules only for the Service's own families, so no
+// traffic from the range can reach the Service.
+func (ac *AccessControl) mismatchedIPFamilyRanges() []netip.Prefix {
+	if len(ac.svc.Spec.IPFamilies) == 0 {
+		return nil
+	}
+
+	var hasIPv4, hasIPv6 bool
+	for _, family := range ac.svc.Spec.IPFamilies {
+		switch family {
+		case v1.IPv4Protocol:
+			hasIPv4 = true
+		case v1.IPv6Protocol:
+			hasIPv6 = true
+		}
+	}
+
+	var rv []netip.Prefix
+	if !hasIPv4 {
+		rv = append(rv, ac.AllowedIPv4Ranges()...)
+	}
+	if !hasIPv6 {
+		rv = append(rv, ac.AllowedIPv6Ranges()...)
+	}
+	return rv
 }
 
 // IsAllowFromInternet returns true if the given service is allowed to be accessed from internet.
@@ -154,10 +204,23 @@ func (ac *AccessControl) IsAllowFromInternet() bool {
 // DenyAllExceptSourceRanges returns true if it needs to block any VNet traffic not on the allow list.
 // By default, NSG allow traffic from the VNet.
 func (ac *AccessControl) DenyAllExceptSourceRanges() bool {
+	return denyAllExceptSourceRanges(ac.svc, ac.SourceRanges, ac.AllowedIPRanges, ac.invalidRanges)
+}
+
+// RequiresDenyAllExceptSourceRanges answers the same question as AccessControl.DenyAllExceptSourceRanges
+// for a service that is not being reconciled, so it has no precomputed ranges to read.
+func RequiresDenyAllExceptSourceRanges(svc *v1.Service) bool {
+	sourceRanges, invalidSourceRanges, _ := SourceRanges(svc)
+	allowedIPRanges, invalidAllowedIPRanges, _ := AllowedIPRanges(svc)
+
+	return denyAllExceptSourceRanges(svc, sourceRanges, allowedIPRanges, append(invalidSourceRanges, invalidAllowedIPRanges...))
+}
+
+func denyAllExceptSourceRanges(svc *v1.Service, sourceRanges, allowedIPRanges []netip.Prefix, invalidRanges []string) bool {
 	var (
-		annotationEnabled      = strings.EqualFold(ac.svc.Annotations[consts.ServiceAnnotationDenyAllExceptLoadBalancerSourceRanges], "true")
-		sourceRangeSpecified   = len(ac.SourceRanges) > 0 || len(ac.AllowedIPRanges) > 0
-		invalidRangesSpecified = len(ac.invalidRanges) > 0
+		annotationEnabled      = strings.EqualFold(svc.Annotations[consts.ServiceAnnotationDenyAllExceptLoadBalancerSourceRanges], "true")
+		sourceRangeSpecified   = len(sourceRanges) > 0 || len(allowedIPRanges) > 0
+		invalidRangesSpecified = len(invalidRanges) > 0
 	)
 	return (annotationEnabled && sourceRangeSpecified) || invalidRangesSpecified
 }
@@ -284,6 +347,22 @@ func (ac *AccessControl) PatchSecurityGroup(dstIPv4Addresses, dstIPv6Addresses [
 	}
 
 	logger.V(10).Info("Completed patching")
+
+	return nil
+}
+
+// EnsureDenyAllRules adds the given destinations to the deny all rules.
+func (ac *AccessControl) EnsureDenyAllRules(dstIPv4Addresses, dstIPv6Addresses []netip.Addr) error {
+	if len(dstIPv4Addresses) > 0 {
+		if err := ac.sgHelper.AddRuleForDenyAll(dstIPv4Addresses); err != nil {
+			return fmt.Errorf("add rule for deny all on IPv4: %w", err)
+		}
+	}
+	if len(dstIPv6Addresses) > 0 {
+		if err := ac.sgHelper.AddRuleForDenyAll(dstIPv6Addresses); err != nil {
+			return fmt.Errorf("add rule for deny all on IPv6: %w", err)
+		}
+	}
 
 	return nil
 }
