@@ -127,6 +127,7 @@ type DriverOptions struct {
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
 	StatusControllerOnly         bool
+	ExperimentalNodeTeardownDir  string
 	// AllowUnadvertisedZones allows an explicitly supplied zone when the SKU API advertises none.
 	AllowUnadvertisedZones bool
 }
@@ -173,6 +174,7 @@ type Driver struct {
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks      *volumeLocks
 	kernelModuleLock sync.Mutex
+	teardown         *nodeTeardown
 
 	cloud              *azure.Cloud
 	resourceGroup      string
@@ -237,6 +239,9 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 	d.podRole = controllerPod
 	if d.NodeID != "" {
 		d.podRole = nodePod
+	}
+	if options.ExperimentalNodeTeardownDir != "" && (d.podRole != nodePod || options.StatusControllerOnly) {
+		return nil, errors.New("experimental node teardown is only supported by the node driver")
 	}
 	if options.StatusControllerOnly {
 		d.podRole = statusControllerPod
@@ -321,6 +326,12 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 
 	if d.pingChecker, err = newPingCache(&util.DefaultCommandRunner{}); err != nil {
 		return nil, fmt.Errorf("failed to initialize ping cache: %w", err)
+	}
+
+	if options.ExperimentalNodeTeardownDir != "" {
+		if d.teardown, err = newNodeTeardown(options.ExperimentalNodeTeardownDir); err != nil {
+			return nil, err
+		}
 	}
 
 	return &d, nil

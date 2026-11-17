@@ -525,6 +525,30 @@ function install_lustre_client() {
 
 # ---- per-role flows ----
 
+function node_teardown_requested() {
+  [[ -n "${AZURELUSTRE_TEARDOWN_DIR:-}" && -e "${AZURELUSTRE_TEARDOWN_DIR}/request" ]]
+}
+
+function node_teardown_command() {
+  /app/azurelustreplugin --experimental-node-teardown-dir="${AZURELUSTRE_TEARDOWN_DIR}" "$@"
+}
+
+function wait_for_node_retirement() {
+  local result="$1"
+  trap 'exit "${result}"' TERM INT
+  while true; do
+    sleep 3600 &
+    wait $! || true
+  done
+}
+
+function run_requested_node_teardown() {
+  local result=0
+  node_teardown_command --experimental-node-teardown-worker || result=$?
+  echo "$(date -u) Node teardown worker exited ${result}; loader will remain drained without reloading modules."
+  wait_for_node_retirement "${result}"
+}
+
 # exec_csi_driver replaces the shell with the CSI driver binary passed as "$@".
 function exec_csi_driver() {
   echo "$(date -u) Entering Lustre CSI driver"
@@ -540,6 +564,13 @@ function exec_csi_driver() {
 # reconciles LNet configuration for the life of the pod. It never execs the
 # CSI driver.
 function run_loader() {
+  if node_teardown_requested; then
+    # A container restart must not undo an in-progress or completed teardown.
+    node_teardown_command --experimental-node-teardown-health || return $?
+    install_lustre_client "utils"
+    run_requested_node_teardown
+    return
+  fi
   install_lustre_client "full"
 
   load_lnet
@@ -548,14 +579,29 @@ function run_loader() {
   # Quiet xtrace for the steady-state loop; reconcile_lnet logs one line per
   # cycle and full detail only when it actually repairs.
   set +o xtrace
+  local poll_interval="${RECONCILE_INTERVAL_SECONDS}"
+  local next_reconcile=$((SECONDS + RECONCILE_INTERVAL_SECONDS))
+  if [[ -n "${AZURELUSTRE_TEARDOWN_DIR:-}" ]]; then
+    poll_interval=1
+  fi
   while true; do
+    if node_teardown_requested; then
+      run_requested_node_teardown
+      return
+    fi
     # Background the sleep and wait on it: bash defers a trap until the current
     # foreground command returns, so a bare "sleep" would delay exit by up to
     # one interval. A signal interrupts "wait"
     # immediately, runs the trap, and exits in well under a second.
-    sleep "${RECONCILE_INTERVAL_SECONDS}" &
+    sleep "${poll_interval}" &
     wait $! || true
-    reconcile_lnet || echo "$(date -u) LNet reconciliation did not complete this cycle; will retry in ${RECONCILE_INTERVAL_SECONDS}s."
+    if node_teardown_requested; then
+      continue
+    fi
+    if (( SECONDS >= next_reconcile )); then
+      reconcile_lnet || echo "$(date -u) LNet reconciliation did not complete this cycle; will retry in ${RECONCILE_INTERVAL_SECONDS}s."
+      next_reconcile=$((SECONDS + RECONCILE_INTERVAL_SECONDS))
+    fi
   done
   # Not reached.
 }

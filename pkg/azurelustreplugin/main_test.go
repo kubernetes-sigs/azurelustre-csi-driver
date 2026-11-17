@@ -309,3 +309,25 @@ func TestNewDriverOptions_StatusControllerOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestNewDriverOptions_NodeTeardown(t *testing.T) {
+	original := *nodeTeardownDir
+	t.Cleanup(func() {
+		*nodeTeardownDir = original
+	})
+	for _, test := range []struct {
+		name string
+		dir  string
+	}{
+		{"disabled", ""},
+		{"enabled", t.TempDir()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.NoError(t, flag.Set("experimental-node-teardown-dir", test.dir))
+
+			options := newDriverOptions()
+
+			assert.Equal(t, test.dir, options.ExperimentalNodeTeardownDir)
+		})
+	}
+}

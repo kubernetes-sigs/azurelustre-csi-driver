@@ -91,6 +91,11 @@ func (d *Driver) NodePublishVolume(
 	}
 	defer d.volumeLocks.Release(lockKey)
 
+	if d.teardown != nil {
+		d.teardown.mu.RLock()
+		defer d.teardown.mu.RUnlock()
+	}
+
 	isOperationSucceeded := false
 	defer func() {
 		mc.ObserveOperationWithResult(isOperationSucceeded)
@@ -121,6 +126,12 @@ func (d *Driver) NodePublishVolume(
 	}
 	if err := d.checkNodeMountAdmission(ctx); err != nil {
 		return nil, err
+	}
+
+	if d.teardown != nil {
+		if err := d.teardown.admitPublish(); err != nil {
+			return nil, status.Error(codes.Unavailable, err.Error())
+		}
 	}
 
 	if !d.enableAzureLustreMockMount {
@@ -293,7 +304,7 @@ func failedMountError(source, target string, mountErr error) error {
 
 // NodeUnpublishVolume unmount the volume from the target path
 func (d *Driver) NodeUnpublishVolume(
-	_ context.Context,
+	ctx context.Context,
 	req *csi.NodeUnpublishVolumeRequest,
 ) (*csi.NodeUnpublishVolumeResponse, error) {
 	if err := d.requireNodeMountServices(); err != nil {
@@ -335,7 +346,13 @@ func (d *Driver) NodeUnpublishVolume(
 
 	klog.V(2).Infof("NodeUnpublishVolume: unmounting volume %s on %s",
 		volumeID, targetPath)
-	err := unmountVolumeAtPath(d, targetPath)
+	err := func() error {
+		if d.teardown != nil {
+			d.teardown.mu.RLock()
+			defer d.teardown.mu.RUnlock()
+		}
+		return unmountVolumeAtPath(d, targetPath)
+	}()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"failed to unmount target %q: %v", targetPath, err)
@@ -343,6 +360,10 @@ func (d *Driver) NodeUnpublishVolume(
 	if err := d.cleanupInternalMountIfPresent(targetPath); err != nil {
 		return nil, status.Errorf(codes.Unavailable,
 			"temporary mount cleanup incomplete for %q: %v", targetPath, err)
+	}
+	if err := d.finishNodeTeardown(ctx); err != nil {
+		return nil, status.Errorf(codes.Unavailable,
+			"target %q is unmounted but node teardown is incomplete: %v", targetPath, err)
 	}
 	klog.V(2).Infof(
 		"NodeUnpublishVolume: unmount volume %s on %s successfully",
@@ -357,7 +378,7 @@ func (d *Driver) NodeUnpublishVolume(
 
 func (d *Driver) requireNodeMountServices() error {
 	if d.cloud == nil || d.mounter == nil || d.mounter.Interface == nil ||
-		d.forceMounter == nil || *d.forceMounter == nil {
+		(d.teardown == nil && (d.forceMounter == nil || *d.forceMounter == nil)) {
 		return status.Error(codes.Unavailable, "node mount services are not initialized on this driver instance")
 	}
 	return nil
@@ -375,6 +396,10 @@ func unmountVolumeAtPath(d *Driver, targetPath string) error {
 
 	d.kernelModuleLock.Lock()
 	defer d.kernelModuleLock.Unlock()
+
+	if d.teardown != nil {
+		return mount.CleanupMountPoint(targetPath, d.mounter.Interface, true)
+	}
 
 	parent := filepath.Dir(targetPath)
 	klog.V(2).Infof("Listing dir: %s", parent)
@@ -790,7 +815,11 @@ func (d *Driver) internalUnmount(mountPath string) error {
 
 	klog.V(4).Infof("internally unmounting %v", target)
 
-	err = mount.CleanupMountWithForce(target, *d.forceMounter, true, 10*time.Second)
+	if d.teardown != nil {
+		err = mount.CleanupMountPoint(target, d.mounter.Interface, true)
+	} else {
+		err = mount.CleanupMountWithForce(target, *d.forceMounter, true, 10*time.Second)
+	}
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to unmount staging target %q: %v", target, err)
 	}
