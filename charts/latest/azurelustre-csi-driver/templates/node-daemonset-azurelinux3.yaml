@@ -10,9 +10,11 @@ metadata:
     {{- include "azurelustre.labels" . | nindent 4 }}
 spec:
   updateStrategy:
+    type: {{ .Values.node.updateStrategy.type }}
+    {{- if eq .Values.node.updateStrategy.type "RollingUpdate" }}
     rollingUpdate:
-      maxUnavailable: {{ .Values.node.updateStrategy.maxUnavailable }}
-    type: RollingUpdate
+      maxUnavailable: {{ .Values.node.updateStrategy.rollingUpdate.maxUnavailable }}
+    {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/component: node
@@ -28,7 +30,7 @@ spec:
         app.kubernetes.io/component: node
         app: csi-azurelustre-node
         flavor: azurelinux3
-        {{- include "azurelustre.labels" . | nindent 8 }}
+        {{- include "azurelustre.nodePodLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

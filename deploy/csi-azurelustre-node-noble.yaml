@@ -27,7 +27,6 @@ spec:
         app.kubernetes.io/component: node
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: latest
         app: csi-azurelustre-node
         flavor: noble
     spec:
