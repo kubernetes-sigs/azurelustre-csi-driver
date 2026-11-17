@@ -50,6 +50,8 @@ if [[ "${1:-} ${2:-}" == "get persistentvolumes" ]]; then
     exit "${KUBECTL_GET_EXIT}"
   fi
   printf '%s' "${KUBECTL_PV_OUTPUT:-}"
+elif [[ "${1:-} ${2:-} ${3:-}" == "delete -f -" ]]; then
+  cat >/dev/null
 fi
 EOF
 chmod +x "${STUB_DIR}/kubectl"
@@ -217,6 +219,16 @@ run_uninstall_case "allow: no matching PVs" "" 0 0 0 1 "Uninstalled Azure Lustre
 run_uninstall_case "block: matching PVs" $'pv-a\npv-b\n' 0 0 1 0 "pv-a"
 run_uninstall_case "block: API failure" "" 1 0 1 0 "could not list PersistentVolumes"
 run_uninstall_case "allow: explicit force" "" 1 1 0 1 "--force skips the PersistentVolume safety check"
+
+# A 2 MiB YAML comment exceeds a pipe buffer, making an unread stdin fail
+# reliably without changing the production uninstall script or manifests.
+UNINSTALL_DIR="${WORK_DIR}/deploy"
+mkdir -p "${UNINSTALL_DIR}"
+cp "${UNINSTALL_SCRIPT}" "${PKG_ROOT}"/deploy/*.yaml "${UNINSTALL_DIR}/"
+printf '\n#%*s\n' "$((2 * 1024 * 1024))" '' \
+  >>"${UNINSTALL_DIR}/csi-azurelustre-controller.yaml"
+UNINSTALL_SCRIPT="${UNINSTALL_DIR}/uninstall-driver.sh"
+run_uninstall_case "allow: manifest larger than a pipe buffer" "" 0 0 0 1 "Uninstalled Azure Lustre CSI driver successfully."
 
 echo
 if [[ "${FAILURES}" -ne 0 ]]; then
