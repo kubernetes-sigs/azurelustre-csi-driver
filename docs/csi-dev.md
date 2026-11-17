@@ -128,6 +128,23 @@ Use ordinary `go get` commands for dependency updates, followed by
 compatible with the Azure cloud-provider modules and review Go/tool requirements.
 Then run `make verify` and `make sanity-test-local`.
 
+#### Automated dependency updates
+
+[Dependabot](../.github/dependabot.yml) opens routine Go version updates against
+`development`, with at most ten open PRs. Azure SDK and CSI minor/patch updates
+remain grouped by family; other dependencies receive individual PRs.
+
+The Azure cloud provider and its submodules have a separate patch-only group.
+Minor and major version updates are explicitly ignored, including minor updates
+of the `v0` client modules, because their shared Azure SDK types can change.
+Kubernetes updates and larger provider-family updates require deliberate version
+selection and compatibility verification.
+
+Patch-only updates are not guaranteed compatible and do not impose a Go-version
+ceiling. CI still checks every candidate. This policy does not change the GitHub
+Actions configuration or security-update behavior; the non-default target branch
+scopes these settings to routine version updates.
+
 ### Verify Helm chart source changes
 
 The repository stores one unpackaged chart source at
