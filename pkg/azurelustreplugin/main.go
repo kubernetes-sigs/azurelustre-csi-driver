@@ -127,6 +127,7 @@ func newDriverOptions() azurelustre.DriverOptions {
 		WorkingMountDir:              *workingMountDir,
 		RemoveNotReadyTaint:          *removeNotReadyTaint,
 		StatusControllerOnly:         *statusControllerOnly,
+		NodeStartupDir:               os.Getenv("AZURELUSTRE_NODE_STARTUP_DIR"),
 	}
 }
 

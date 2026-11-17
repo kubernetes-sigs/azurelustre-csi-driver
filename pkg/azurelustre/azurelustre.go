@@ -127,6 +127,7 @@ type DriverOptions struct {
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
 	StatusControllerOnly         bool
+	NodeStartupDir               string
 	// AllowUnadvertisedZones allows an explicitly supplied zone when the SKU API advertises none.
 	AllowUnadvertisedZones bool
 }
@@ -173,6 +174,7 @@ type Driver struct {
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks      *volumeLocks
 	kernelModuleLock sync.Mutex
+	nodeStartup      *nodeStartup
 
 	cloud              *azure.Cloud
 	resourceGroup      string
@@ -188,6 +190,7 @@ type Driver struct {
 	nodeFactInterval                  time.Duration
 	nodeFactReadFile                  func(string) ([]byte, error)
 	nodeFactDesiredClient             string
+	nodeFlavor                        string
 	statusControllerInterval          time.Duration
 	statusControllerElectionNamespace string
 	statusControllerCursor            string
@@ -223,6 +226,7 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 		nodeFactInterval:                  defaultNodeFactInterval,
 		nodeFactReadFile:                  os.ReadFile,
 		nodeFactDesiredClient:             desiredClientIdentity(os.Getenv("LUSTRE_VERSION"), os.Getenv("CLIENT_SHA_SUFFIX")),
+		nodeFlavor:                        os.Getenv("NODE_FLAVOR"),
 		statusControllerInterval:          defaultStatusControllerInterval,
 		statusControllerElectionNamespace: os.Getenv("STATUS_CONTROLLER_ELECTION_NAMESPACE"),
 		compatibilityPolicyConfigMap:      os.Getenv("COMPATIBILITY_POLICY_CONFIGMAP"),
@@ -237,6 +241,9 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 	d.podRole = controllerPod
 	if d.NodeID != "" {
 		d.podRole = nodePod
+	}
+	if options.NodeStartupDir != "" && (d.podRole != nodePod || options.StatusControllerOnly) {
+		return nil, errors.New("cleanup-capable startup is only supported by the node driver")
 	}
 	if options.StatusControllerOnly {
 		d.podRole = statusControllerPod
@@ -321,6 +328,13 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 
 	if d.pingChecker, err = newPingCache(&util.DefaultCommandRunner{}); err != nil {
 		return nil, fmt.Errorf("failed to initialize ping cache: %w", err)
+	}
+
+	if options.NodeStartupDir != "" {
+		if d.nodeStartup, err = newNodeStartup(options.NodeStartupDir, d.nodeFactDesiredClient); err != nil {
+			return nil, err
+		}
+		d.nodeStartup.observe = d.observeNodeStartupRuntime
 	}
 
 	return &d, nil
@@ -493,7 +507,11 @@ func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	d.AddVolumeCapabilityAccessModes(volumeCapabilities)
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
-	d.removeNotReadyTaintIfNeeded()
+	stopStartup := d.startNodeStartup(ctx)
+	defer stopStartup()
+	if d.nodeStartup == nil {
+		d.removeNotReadyTaintIfNeeded()
+	}
 	reporterCtx, stopReporter := context.WithCancel(ctx)
 	defer stopReporter()
 	d.startNodeFactReporter(reporterCtx)
@@ -641,7 +659,10 @@ func removeTaintInBackground(k8sClient kubernetes.Interface, nodeName, driverNam
 // This taint can be optionally applied by users to prevent startup race conditions such as
 // https://github.com/kubernetes/kubernetes/issues/95911
 func removeNotReadyTaint(clientset kubernetes.Interface, nodeName, driverName string) error {
-	ctx := context.Background()
+	return removeNotReadyTaintContext(context.Background(), clientset, nodeName, driverName)
+}
+
+func removeNotReadyTaintContext(ctx context.Context, clientset kubernetes.Interface, nodeName, driverName string) error {
 	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return err

@@ -156,7 +156,7 @@ function run_loader_termination_scenario() (
   }
 
   trap 'assert_termination' EXIT
-  AZURELUSTRE_CSI_ROLE="loader"
+  local AZURELUSTRE_CSI_ROLE="loader"
   AZURELUSTRE_CSI_LNET_RECONCILE_INTERVAL=0
   main >/dev/null
   fail "loader continued after ${signal} during ${phase}"
@@ -171,4 +171,138 @@ run_loader_termination_scenario TERM install busy " install:full"
 run_loader_termination_scenario TERM load idle " install:full load"
 run_loader_termination_scenario TERM reconcile busy " install:full load check reconcile"
 
-echo "Entrypoint package-eviction and routine-termination safety checks passed."
+mkdir -p "${PKG_ROOT}/_output"
+startup_fixture=$(mktemp -d "${PKG_ROOT}/_output/startup-safety.XXXXXX")
+trap 'rm -f "${startup_fixture}/loader-started" "${startup_fixture}/loader-ready" "${startup_fixture}/driver-ready"; rmdir "${startup_fixture}"' EXIT
+
+function run_driver_startup_scenario() (
+  local enabled="$1"
+  local expected="$2"
+  local calls=""
+  local AZURELUSTRE_NODE_STARTUP_DIR=""
+  if [[ "${enabled}" == true ]]; then
+    AZURELUSTRE_NODE_STARTUP_DIR="${startup_fixture}"
+    printf 'stale\n' > "${startup_fixture}/driver-ready"
+  fi
+  function install_lustre_client() {
+    calls+=" install:$1"
+  }
+  function exec_csi_driver() {
+    calls+=" exec:$1"
+  }
+  run_driver mock-driver
+  assert_equal "${expected}" "${calls}" "driver startup dispatch"
+  [[ ! -e "${startup_fixture}/driver-ready" ]] || fail "stale driver readiness survived startup"
+)
+
+run_driver_startup_scenario false " install:utils exec:mock-driver"
+run_driver_startup_scenario true " exec:mock-driver"
+
+function run_startup_probe_scenario() (
+  local AZURELUSTRE_NODE_STARTUP_DIR="${startup_fixture}"
+  local AZURELUSTRE_CSI_ROLE=driver
+  export AZURELUSTRE_NODE_STARTUP_DIR AZURELUSTRE_CSI_ROLE
+  export POD_UID="11111111-2222-4333-8444-555555555555" LUSTRE_VERSION CLIENT_SHA_SUFFIX
+  begin_loader_startup
+  if loader_startup_ready 2>/dev/null; then fail "startup was ready before package setup"; fi
+  loader_startup_live 2>/dev/null || fail "setup allowance must not depend on loaded modules"
+  finish_loader_startup
+  loader_startup_ready || fail "successful loader setup did not publish readiness"
+  begin_loader_startup
+  if loader_startup_ready 2>/dev/null; then fail "loader restart inherited stale readiness"; fi
+  printf '%s 1\n' "${LOADER_STARTUP_RECORD% *}" > "${startup_fixture}/loader-started"
+  if loader_startup_live 2>/dev/null; then fail "stalled setup exceeded its ten-minute allowance"; fi
+  begin_loader_startup
+  finish_loader_startup
+
+  # shellcheck disable=SC2329 # Exported for the child readiness script; never call host LNet tools.
+  function lnetctl() {
+    if [[ "$1" == net ]]; then
+      printf 'nid: 127.0.0.1@tcp\nstatus: up\n'
+    fi
+  }
+  # shellcheck disable=SC2329 # Exported for the child readiness script's mocked LNet calls.
+  function timeout() {
+    shift
+    "$@"
+  }
+  # shellcheck disable=SC2329 # The child readiness script checks this mocked helper's availability.
+  function mount.lustre() {
+    fail "readiness must never mount a filesystem"
+  }
+  # shellcheck disable=SC2329 # Exported so the child probe never reads real host modules.
+  function cat() {
+    if [[ "$*" == /sys/module/lustre/version ]]; then
+      wanted_module_version
+    else
+      command cat "$@"
+    fi
+  }
+  # shellcheck disable=SC2329 # Exported for the child probe's projected-policy identity check.
+  function sha256sum() {
+    printf '%064d  /etc/azurelustre/compatibility/policy.yaml\n' 0
+  }
+  export -f lnetctl timeout mount.lustre cat sha256sum wanted_module_version
+  if bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null 2>&1; then
+    fail "driver readiness ignored incomplete userspace setup"
+  fi
+  bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" --runtime >/dev/null
+  printf '%s %s %064d %s\n' "$(startup_identity)" "$(wanted_module_version)" 0 "$(date +%s)" \
+    > "${startup_fixture}/driver-ready"
+  bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null
+  clear_loader_startup
+  bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" --runtime >/dev/null
+  bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null
+  if AZURELUSTRE_CSI_ROLE=loader bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null 2>&1; then
+    fail "loader readiness ignored incomplete loader setup"
+  fi
+  printf '%s %s %064d %s\n' "$(startup_identity)" "$(wanted_module_version)" 0 "$(( $(date +%s) - 91 ))" \
+    > "${startup_fixture}/driver-ready"
+  if bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null 2>&1; then
+    fail "driver readiness accepted an expired runtime observation"
+  fi
+  printf '%s wrong-module %064d %s\n' "$(startup_identity)" 0 "$(date +%s)" \
+    > "${startup_fixture}/driver-ready"
+  if bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null 2>&1; then
+    fail "driver readiness accepted a changed resident module"
+  fi
+  printf '%s %s %064d %s\n' "$(startup_identity)" "$(wanted_module_version)" 1 "$(date +%s)" \
+    > "${startup_fixture}/driver-ready"
+  if bash "${PKG_ROOT}/pkg/azurelustreplugin/readinessProbe.sh" >/dev/null 2>&1; then
+    fail "driver readiness accepted a changed compatibility policy"
+  fi
+)
+run_startup_probe_scenario
+
+# A fresh Bash process is important: testing main in an if/function context
+# would disable errexit inside the installer and hide repository-setup errors.
+result=0
+bash -c '
+  source "$1/pkg/azurelustreplugin/entrypoint.sh"
+  set +o xtrace
+  function detect_os_family() { osFamily=ubuntu; }
+  function update_ca_trust() { :; }
+  function setup_pmc_repo() { return 42; }
+  function install_pkg() { echo "unexpected install after repository failure" >&2; exit 99; }
+  export LUSTRE_VERSION=2.17.0 CLIENT_SHA_SUFFIX=24-gf517bc4
+  export AZURELUSTRE_CSI_ROLE=driver-utils
+  main
+' bash "${PKG_ROOT}" >/dev/null 2>&1 || result=$?
+assert_equal 42 "${result}" "worker must preserve repository-setup failure"
+
+result=0
+bash -c '
+  source "$1/pkg/azurelustreplugin/entrypoint.sh"
+  set +o xtrace
+  function detect_os_family() { osFamily=ubuntu; }
+  function update_ca_trust() { :; }
+  function install_lustre_client() { return 42; }
+  export AZURELUSTRE_NODE_STARTUP_DIR="$2" AZURELUSTRE_CSI_ROLE=loader
+  export POD_UID=11111111-2222-4333-8444-555555555555
+  export LUSTRE_VERSION=2.17.0 CLIENT_SHA_SUFFIX=24-gf517bc4
+  main
+' bash "${PKG_ROOT}" "${startup_fixture}" >/dev/null 2>&1 || result=$?
+assert_equal 42 "${result}" "loader package failure must still trigger a Kubernetes restart"
+[[ ! -e "${startup_fixture}/loader-ready" ]] || fail "failed loader left a ready marker"
+
+echo "Entrypoint package, termination and cleanup-startup safety checks passed."

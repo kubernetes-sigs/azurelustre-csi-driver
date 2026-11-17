@@ -14,17 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# readinessProbe.sh - LNet health check for the Azure Lustre loader sidecar.
-# Used as the loader sidecar's startupProbe and readinessProbe: the startupProbe
-# gates the driver and registrar containers on LNet being up, and the
-# readinessProbe feeds pod readiness. It is deliberately NOT the sidecar's
-# livenessProbe -- that is a narrower "is the lnet module still loaded" check,
-# so recoverable LNet config drift (which the reconcile loop repairs in place)
-# cannot trigger a restart.
-# The CSI driver container's own health is covered by the livenessprobe sidecar
-# (gRPC Probe over the socket) and node-driver-registrar, so it needs no script.
+# readinessProbe.sh checks LNet health for the loader and driver. The driver's
+# worker also binds its result to a supported resident client and current policy;
+# loader completion is not a prerequisite for driver host-runtime readiness.
+# This is not a liveness check: recoverable LNet drift must not restart CSI.
+# Legacy startup additionally uses this as the loader's blocking startupProbe.
 
 set -euo pipefail
+
+# shellcheck source=pkg/azurelustreplugin/startupState.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/startupState.sh"
+
+if [[ -n "${AZURELUSTRE_NODE_STARTUP_DIR:-}" ]]; then
+    if [[ "${AZURELUSTRE_CSI_ROLE:-}" == driver ]]; then
+        # The driver-owned worker checks runtime first, then publishes this
+        # marker. Kubelet checks must wait for that handoff, not just packages.
+        if [[ "${1:-}" != --runtime ]]; then
+            driver_startup_ready || { echo "Driver runtime observation is unavailable or stale"; exit 1; }
+        fi
+        for tool in mount umount mount.lustre lnetctl; do
+            command -v "${tool}" >/dev/null || exit 1
+        done
+    else
+        loader_startup_ready || { echo "Loader setup is incomplete"; exit 1; }
+    fi
+fi
 
 # LNet must respond.
 if ! lnetctl net show >/dev/null 2>&1; then

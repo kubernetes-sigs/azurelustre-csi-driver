@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -140,6 +141,23 @@ func TestPublishNodeFact(t *testing.T) {
 		nodeFactAnnotationPrefix + "reporter-version":     "v0.7.0",
 	}
 	assert.Equal(t, expectedAnnotations, lease.Annotations)
+
+	driver.nodeStartup = testNodeStartup(t)
+	for _, ready := range []bool{false, true} {
+		driver.nodeStartup.ready.Store(nil)
+		if ready {
+			writeTestRuntimeReady(t, driver.nodeStartup)
+		}
+		require.NoError(t, driver.publishNodeFact(t.Context()))
+		updated, err := client.CoordinationV1().Leases(pod.Namespace).Get(t.Context(), leaseName, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, strconv.FormatBool(ready), updated.Annotations[nodeFactAnnotationPrefix+"startup-ready"])
+		if ready {
+			assert.NotEmpty(t, updated.Annotations[nodeFactAnnotationPrefix+"startup-observed-at"])
+			assert.NotEmpty(t, updated.Annotations[nodeFactAnnotationPrefix+"startup-policy-fingerprint"])
+			assert.Equal(t, "2.17.0_test", updated.Annotations[nodeFactAnnotationPrefix+"startup-loaded-client"])
+		}
+	}
 }
 
 func TestPublishNodeFactRequiresReporterPod(t *testing.T) {

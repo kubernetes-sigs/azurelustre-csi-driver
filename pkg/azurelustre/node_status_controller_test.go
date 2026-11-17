@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,192 @@ func TestStatusControllerRunRequiresClients(t *testing.T) {
 	}
 	err := driver.Run(t.Context(), "")
 	require.ErrorContains(t, err, "node status controller requires Kubernetes clients")
+}
+
+func TestNodeStatusRequiresCleanupStartupReadiness(t *testing.T) {
+	for _, test := range []struct {
+		name               string
+		fact               string
+		driverReady        bool
+		loaderReady        bool
+		loaderStopped      bool
+		invalidObservation string
+		allowed            bool
+	}{
+		{name: "missing startup fact"},
+		{name: "packages still installing", fact: "false"},
+		{name: "driver not ready", fact: "true", loaderReady: true},
+		{name: "loader not ready", fact: "true", driverReady: true, allowed: true},
+		{name: "loader stopped", fact: "true", driverReady: true, loaderStopped: true, allowed: true},
+		{name: "runtime ready", fact: "true", driverReady: true, loaderReady: true, allowed: true},
+		{name: "missing observation", fact: "true", driverReady: true, invalidObservation: "missing"},
+		{name: "expired observation", fact: "true", driverReady: true, invalidObservation: "expired"},
+		{name: "future observation", fact: "true", driverReady: true, invalidObservation: "future"},
+		{name: "changed policy", fact: "true", driverReady: true, invalidObservation: "policy"},
+		{name: "changed module", fact: "true", driverReady: true, invalidObservation: "module"},
+		{name: "unsupported module", fact: "true", driverReady: true, invalidObservation: "unsupported"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node, pod, lease, _, _ := testNodeStatusObjects("test")
+			pod.Spec.Containers = []corev1.Container{{Name: "azurelustre", Env: []corev1.EnvVar{{
+				Name: nodeStartupDirEnv, Value: "/run/azurelustre/startup",
+			}}}}
+			for _, states := range [][]corev1.ContainerStatus{pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses} {
+				states[0].State.Running = &corev1.ContainerStateRunning{}
+			}
+			pod.Status.ContainerStatuses[0].Ready = test.driverReady
+			pod.Status.InitContainerStatuses[0].Ready = test.loaderReady
+			if test.loaderStopped {
+				pod.Status.InitContainerStatuses[0].State.Running = nil
+				pod.Status.InitContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}
+			}
+			lease.Annotations[nodeFactAnnotationPrefix+"startup-ready"] = test.fact
+			policy, err := parseCompatibilityPolicy([]byte(testCompatibilityPolicy))
+			require.NoError(t, err)
+			lease.Annotations[nodeFactAnnotationPrefix+"startup-observed-at"] = time.Now().UTC().Format(time.RFC3339Nano)
+			lease.Annotations[nodeFactAnnotationPrefix+"startup-loaded-client"] = lease.Annotations[nodeFactAnnotationPrefix+"loaded-client"]
+			lease.Annotations[nodeFactAnnotationPrefix+"startup-policy-fingerprint"] = policy.fingerprint
+			switch test.invalidObservation {
+			case "missing":
+				delete(lease.Annotations, nodeFactAnnotationPrefix+"startup-observed-at")
+			case "expired":
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-observed-at"] = time.Now().Add(-nodeStartupMaxAge - time.Second).Format(time.RFC3339Nano)
+			case "future":
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-observed-at"] = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
+			case "policy":
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-policy-fingerprint"] = "previous-policy"
+			case "module":
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-loaded-client"] = "previous-module"
+			case "unsupported":
+				lease.Annotations[nodeFactAnnotationPrefix+"loaded-client"] = "2.16.0_unsupported"
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-loaded-client"] = "2.16.0_unsupported"
+			}
+			driver := &Driver{}
+			result := driver.computeNodeStatus(node, pod, lease, policy, nil, map[string]string{"node-ds": "desired-hash"})
+			assert.Equal(t, "Current", result.reporterFreshness)
+			assert.Equal(t, "Current", result.csiDelivery)
+			if test.invalidObservation == "unsupported" {
+				assert.Equal(t, "UnsafeResidentMismatch", result.clientCompatibility)
+			} else {
+				assert.Equal(t, "Exact", result.clientCompatibility)
+			}
+			assert.Equal(t, test.fact, result.observed[nodeFactAnnotationPrefix+"startup-ready"])
+			assert.Equal(t, string(pod.UID), result.activation["podUID"])
+			if test.allowed {
+				assert.Equal(t, mountAdmissionAllowed, result.mountAdmission)
+			} else {
+				assert.Equal(t, mountAdmissionDenied, result.mountAdmission)
+				assert.Equal(t, "RuntimeNotReady", result.reason)
+			}
+		})
+	}
+}
+
+func TestNodeStatusStartupDenialPreservesEvidenceValidity(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		freshness string
+		reason    string
+	}{
+		{name: "stale heartbeat", freshness: "Stale", reason: "RuntimeNotReady"},
+		{name: "previous pod", freshness: "Stale", reason: "RuntimeNotReady"},
+		{name: "missing lease", freshness: "Missing", reason: "RuntimeNotReady"},
+		{name: "missing policy", freshness: "Current", reason: "RuntimeNotReady"},
+		{name: "quiesced", freshness: "Current", reason: "AdministrativeQuiescence"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node, pod, lease, daemonset, _ := testNodeStatusObjects("kube-system")
+			pod.Spec.Containers = []corev1.Container{{Name: "azurelustre", Env: []corev1.EnvVar{{
+				Name: nodeStartupDirEnv, Value: "/run/azurelustre/startup",
+			}}}}
+			lease.Annotations[nodeFactAnnotationPrefix+"startup-ready"] = "false"
+			policy, err := parseCompatibilityPolicy([]byte(testCompatibilityPolicy))
+			require.NoError(t, err)
+			switch test.name {
+			case "stale heartbeat":
+				lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now().Add(-2 * time.Minute)}
+			case "previous pod":
+				lease.Annotations[nodeFactAnnotationPrefix+"pod-uid"] = "previous-pod"
+			case "missing lease":
+				lease = nil
+			case "missing policy":
+				policy = nil
+			case "quiesced":
+				node.Annotations = map[string]string{mountAdmissionAnnotation: "denied"}
+			}
+			driver := &Driver{}
+			result := driver.computeNodeStatus(node, pod, lease, policy, nil,
+				map[string]string{daemonset.Name: "desired-hash"})
+			assert.Equal(t, mountAdmissionDenied, result.mountAdmission)
+			assert.Equal(t, test.reason, result.reason)
+			assert.Equal(t, test.freshness, result.reporterFreshness)
+			if lease == nil {
+				assert.Empty(t, result.observed)
+			} else {
+				assert.Equal(t, lease.Annotations[nodeFactAnnotationPrefix+"loaded-client"],
+					result.observed[nodeFactAnnotationPrefix+"loaded-client"])
+				assert.NotEmpty(t, result.observed["factRenewTime"])
+			}
+			if test.freshness != "Current" {
+				assert.Empty(t, result.activation)
+				assert.Equal(t, nodeClientUnknown, result.clientCompatibility)
+			} else {
+				assert.Equal(t, string(pod.UID), result.activation["podUID"])
+			}
+		})
+	}
+}
+
+func TestNodeStatusHostRuntimePreservesImageIdentityChecks(t *testing.T) {
+	for _, enforce := range []bool{false, true} {
+		for _, scenario := range []string{"current loader", "missing loader", "restarted loader"} {
+			t.Run(fmt.Sprintf("%s/enforce=%t", scenario, enforce), func(t *testing.T) {
+				node, pod, lease, _, _ := testNodeStatusObjects("test")
+				pod.Spec.Containers = []corev1.Container{{Name: "azurelustre", Env: []corev1.EnvVar{{
+					Name: nodeStartupDirEnv, Value: "/run/azurelustre/startup",
+				}}}}
+				pod.Status.ContainerStatuses[0].Ready = true
+				pod.Status.ContainerStatuses[0].State.Running = &corev1.ContainerStateRunning{}
+				policy, err := parseCompatibilityPolicy([]byte(testCompatibilityPolicy))
+				require.NoError(t, err)
+				policy.MountAdmission.Enforce = enforce
+				driverDigest := "sha256:" + strings.Repeat("a", 64)
+				loaderDigest := "sha256:" + strings.Repeat("b", 64)
+				policy.Images.Driver["jammy"] = compatibilityPolicyImage{DesiredDigest: driverDigest, ApprovedDigests: []string{driverDigest}}
+				policy.Images.Loader["jammy"] = compatibilityPolicyImage{DesiredDigest: loaderDigest, ApprovedDigests: []string{loaderDigest}}
+				raw, err := json.Marshal(policy)
+				require.NoError(t, err)
+				policy, err = parseCompatibilityPolicy(raw)
+				require.NoError(t, err)
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-ready"] = "true"
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-observed-at"] = time.Now().UTC().Format(time.RFC3339Nano)
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-loaded-client"] = lease.Annotations[nodeFactAnnotationPrefix+"loaded-client"]
+				lease.Annotations[nodeFactAnnotationPrefix+"startup-policy-fingerprint"] = policy.fingerprint
+				switch scenario {
+				case "missing loader":
+					pod.Status.InitContainerStatuses[0].ContainerID = ""
+				case "restarted loader":
+					pod.Status.InitContainerStatuses[0].ContainerID = "containerd://loader-1"
+					pod.Status.InitContainerStatuses[0].RestartCount++
+				}
+				result := (&Driver{}).computeNodeStatus(node, pod, lease, policy, nil, map[string]string{"node-ds": "desired-hash"})
+				if scenario == "current loader" {
+					assert.Equal(t, mountAdmissionAllowed, result.mountAdmission)
+					assert.Equal(t, "Approved", result.securityCompliance)
+				} else {
+					assert.False(t, factMatchesPodAndNode(lease, pod, node), "image admission must still reject missing/stale loader identity")
+					assert.Equal(t, nodeStatusUnknown, result.securityCompliance, "old image evidence must not be reported as current approval")
+					if enforce {
+						assert.Equal(t, mountAdmissionDenied, result.mountAdmission)
+					} else {
+						assert.Equal(t, mountAdmissionAllowed, result.mountAdmission)
+						assert.Equal(t, "Current", result.reporterFreshness)
+						assert.Equal(t, "Exact", result.clientCompatibility)
+					}
+				}
+			})
+		}
+	}
 }
 
 func TestLoadCompatibilityPolicyCachesTemporaryReadFailure(t *testing.T) {

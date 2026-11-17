@@ -46,6 +46,10 @@ const (
 	statusControllerLeaseName       = "azurelustre-node-status-controller"
 	compatibilityPolicyKey          = "policy.yaml"
 	mountAdmissionAnnotation        = "azurelustre.csi.azure.com/mount-admission"
+	mountAdmissionAllowed           = "Allowed"
+	mountAdmissionDenied            = "Denied"
+	nodeStatusUnknown               = "Unknown"
+	nodeClientUnknown               = "ClientUnknown"
 )
 
 var nodeStatusGVR = schema.GroupVersionResource{
@@ -469,6 +473,16 @@ func (d *Driver) computeNodeStatus(
 	desiredRevisions map[string]string,
 ) computedNodeStatus {
 	status := d.computeNodeHealth(node, pod, lease, policy, policyErr, desiredRevisions)
+	if nodeStartupEnabled(pod) {
+		driver := findContainerStatus(pod.Status.ContainerStatuses, "azurelustre")
+		if status.reporterFreshness != "Current" || !startupObservationMatchesPolicy(lease, policy, time.Now()) ||
+			!driver.Ready || driver.State.Running == nil ||
+			(status.clientCompatibility != "Exact" && status.clientCompatibility != "CompatibleNonCurrent") {
+			status.mountAdmission = mountAdmissionDenied
+			status.reason = "RuntimeNotReady"
+			status.message = "Fresh compatible host-runtime and driver-utility readiness is not established; new mounts remain gated."
+		}
+	}
 	// Quiescence denies new mounts without hiding the evidence needed to decide
 	// whether a drained node can safely return to service.
 	if strings.EqualFold(strings.TrimSpace(node.Annotations[mountAdmissionAnnotation]), "denied") {
@@ -477,6 +491,19 @@ func (d *Driver) computeNodeStatus(
 		status.message = fmt.Sprintf("Node annotation %s=denied blocks new mounts.", mountAdmissionAnnotation)
 	}
 	return status
+}
+
+func startupObservationMatchesPolicy(lease *coordinationv1.Lease, policy *compatibilityPolicy, now time.Time) bool {
+	if lease == nil || policy == nil {
+		return false
+	}
+	facts := lease.Annotations
+	observed, err := time.Parse(time.RFC3339Nano, facts[nodeFactAnnotationPrefix+"startup-observed-at"])
+	return err == nil && now.Sub(observed) <= nodeStartupMaxAge && !observed.After(now.Add(30*time.Second)) &&
+		facts[nodeFactAnnotationPrefix+"startup-ready"] == "true" &&
+		facts[nodeFactAnnotationPrefix+"startup-policy-fingerprint"] == policy.fingerprint &&
+		facts[nodeFactAnnotationPrefix+"startup-loaded-client"] != "" &&
+		facts[nodeFactAnnotationPrefix+"startup-loaded-client"] == facts[nodeFactAnnotationPrefix+"loaded-client"]
 }
 
 func (d *Driver) computeNodeHealth(
@@ -541,7 +568,14 @@ func (d *Driver) computeNodeHealth(
 
 	status.observed = stringMapToInterfaceMap(lease.Annotations)
 	status.observed["factRenewTime"] = renewTime(lease).UTC().Format(time.RFC3339Nano)
-	if !factMatchesPodAndNode(lease, pod, node) || !factIsFresh(lease, time.Now()) {
+	fullIdentityCurrent := factMatchesPodAndNode(lease, pod, node)
+	identityCurrent := fullIdentityCurrent
+	if !identityCurrent && nodeStartupEnabled(pod) && policy != nil && !policy.MountAdmission.Enforce {
+		// A loader restart does not invalidate host observations from the same
+		// driver. Image enforcement still requires both container identities.
+		identityCurrent = factMatchesHostRuntime(lease, pod, node)
+	}
+	if !identityCurrent || !factIsFresh(lease, time.Now()) {
 		status.reporterFreshness = "Stale"
 		status.reason = "ReporterStale"
 		status.message = "The node fact heartbeat or its Node/Pod identity is stale."
@@ -596,6 +630,9 @@ func (d *Driver) computeNodeHealth(
 	}
 
 	status.securityCompliance = classifySecurityCompliance(lease, flavor, policy.Images)
+	if !fullIdentityCurrent {
+		status.securityCompliance = nodeStatusUnknown
+	}
 	if !policy.MountAdmission.Enforce {
 		status.mountAdmission = "Allowed"
 		status.reason = "AdmissionNotEnforced"
@@ -1103,6 +1140,18 @@ func (d *Driver) garbageCollectNodeStatus(
 }
 
 func factMatchesPodAndNode(lease *coordinationv1.Lease, pod *corev1.Pod, node *corev1.Node) bool {
+	if !factMatchesHostRuntime(lease, pod, node) {
+		return false
+	}
+	annotations := lease.Annotations
+	loaderStatus := findContainerStatus(pod.Status.InitContainerStatuses, "lustre-loader")
+	return loaderStatus.ImageID != "" && loaderStatus.ContainerID != "" &&
+		annotations[nodeFactAnnotationPrefix+"loader-image-id"] == loaderStatus.ImageID &&
+		annotations[nodeFactAnnotationPrefix+"loader-container-id"] == loaderStatus.ContainerID &&
+		annotations[nodeFactAnnotationPrefix+"loader-restart-count"] == strconv.Itoa(int(loaderStatus.RestartCount))
+}
+
+func factMatchesHostRuntime(lease *coordinationv1.Lease, pod *corev1.Pod, node *corev1.Node) bool {
 	annotations := lease.Annotations
 	if node.UID == "" || pod.UID == "" || pod.DeletionTimestamp != nil || node.DeletionTimestamp != nil {
 		return false
@@ -1138,11 +1187,7 @@ func factMatchesPodAndNode(lease *coordinationv1.Lease, pod *corev1.Pod, node *c
 		annotations[nodeFactAnnotationPrefix+"driver-restart-count"] != strconv.Itoa(int(driverStatus.RestartCount)) {
 		return false
 	}
-	loaderStatus := findContainerStatus(pod.Status.InitContainerStatuses, "lustre-loader")
-	return loaderStatus.ImageID != "" && loaderStatus.ContainerID != "" &&
-		annotations[nodeFactAnnotationPrefix+"loader-image-id"] == loaderStatus.ImageID &&
-		annotations[nodeFactAnnotationPrefix+"loader-container-id"] == loaderStatus.ContainerID &&
-		annotations[nodeFactAnnotationPrefix+"loader-restart-count"] == strconv.Itoa(int(loaderStatus.RestartCount))
+	return true
 }
 
 func factIsFresh(lease *coordinationv1.Lease, now time.Time) bool {

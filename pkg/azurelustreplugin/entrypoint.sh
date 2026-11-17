@@ -24,6 +24,15 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+startup_helpers="$(dirname -- "${BASH_SOURCE[0]}")/startupState.sh"
+if [[ ! -f "${startup_helpers}" ]]; then
+  # A ConfigMap override lives in a different directory from image helpers.
+  startup_helpers="/app/startupState.sh"
+fi
+# shellcheck source=pkg/azurelustreplugin/startupState.sh
+source "${startup_helpers}"
+unset startup_helpers
+
 # add_net_interfaces discovers the host ethernet interfaces and adds any that
 # are missing from the LNet tcp network. Pass "quiet" to suppress the per-cycle
 # diagnostics (route table, per-interface decisions, "already added") for the
@@ -491,12 +500,9 @@ function retry_install() {
 }
 
 # install_lustre_client installs the package set for the role and logs the
-# outcome. It returns non-zero if the install could not be completed, and both
-# roles call it bare so errexit aborts the container: without the client
-# packages the loader cannot load the modules and the driver has no
-# mount.lustre, so opening the CSI socket anyway would advertise the node as
-# able to serve mounts that are guaranteed to fail. Exiting instead lets the
-# kubelet restart the container and retry.
+# outcome. Call it bare so errexit preserves failures from repository setup too.
+# Normally failure aborts the container. Cleanup-capable startup instead runs
+# the utils installer as a driver-owned child and gates new mounts separately.
 #   $1 - "full" (loader: kmod+kernel+utils) or "utils" (driver: userspace only)
 function install_lustre_client() {
   local kind="$1"
@@ -543,6 +549,7 @@ function run_loader() {
 
   load_lnet
   check_loaded_module_version
+  finish_loader_startup
   echo "$(date -u) Loader ready; entering LNet reconcile loop (interval ${RECONCILE_INTERVAL_SECONDS}s)."
   # Quiet xtrace for the steady-state loop; reconcile_lnet logs one line per
   # cycle and full detail only when it actually repairs.
@@ -559,11 +566,14 @@ function run_loader() {
   # Not reached.
 }
 
-# run_driver installs only the kernel-agnostic userspace utils, then execs the
-# CSI driver. It relies on the loader sidecar having already loaded the kernel
-# modules into the shared host kernel.
+# run_driver normally installs userspace utils after the loader's startup gate.
+# In cleanup-capable mode the Go driver owns installation and mount admission.
 function run_driver() {
-  install_lustre_client "utils"
+  if [[ -n "${AZURELUSTRE_NODE_STARTUP_DIR:-}" ]]; then
+    rm -f "${AZURELUSTRE_NODE_STARTUP_DIR}/driver-ready"
+  else
+    install_lustre_client "utils"
+  fi
   exec_csi_driver "$@"
 }
 
@@ -585,6 +595,11 @@ function main() {
   # As PID 1 the shell gets no default SIGTERM action.
   trap 'echo "$(date -u) Termination signal received; exiting without unloading resident Lustre/LNet modules."; exit 0' TERM INT
 
+  role="${AZURELUSTRE_CSI_ROLE:-}"
+  if [[ "${role}" == loader && -n "${AZURELUSTRE_NODE_STARTUP_DIR:-}" ]]; then
+    begin_loader_startup
+    trap 'clear_loader_startup' EXIT
+  fi
   detect_os_family
   update_ca_trust
 
@@ -594,16 +609,16 @@ function main() {
 
   # Role is REQUIRED; an unset or unknown value is a deployment error, not a
   # silent no-op. See the per-role functions above.
-  role="${AZURELUSTRE_CSI_ROLE:-}"
   echo "role: ${role:-<unset>}"
   echo "$(date -u) Command line arguments: $*"
   case "${role}" in
     loader)     run_loader ;;
     driver)     run_driver "$@" ;;
+    driver-utils) install_lustre_client "utils" ;;
     controller) run_controller "$@" ;;
     status-controller) run_status_controller "$@" ;;
     *)
-      echo "$(date -u) Error: AZURELUSTRE_CSI_ROLE must be one of loader, driver, controller, status-controller (got '${role}')."
+      echo "$(date -u) Error: Unknown AZURELUSTRE_CSI_ROLE '${role}'."
       exit 1
       ;;
   esac

@@ -425,6 +425,88 @@ check_node_rollout_safety() {
     rollout_issues=true
   fi
 
+  local ondelete_rendered ondelete_issues
+  if ! ondelete_rendered=$(helm template \
+    --set "fullnameOverride=csi-azurelustre" \
+    --set "node.updateStrategy.type=OnDelete" \
+    --namespace kube-system chart-test "${chart_dir}" 2>&1); then
+    echo "ERROR: helm template failed for explicit OnDelete staging: ${ondelete_rendered}"
+    return 1
+  fi
+  ondelete_issues=$(printf '%s\n' "${ondelete_rendered}" | yq eval '
+    select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+    | select(.spec.updateStrategy.type != "OnDelete" or .spec.updateStrategy.rollingUpdate != null)
+    | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${ondelete_issues}" ]]; then
+    echo "ERROR: explicit OnDelete staging must omit rollingUpdate settings:"
+    echo "${ondelete_issues}"
+    rollout_issues=true
+  fi
+  if [[ "$(printf '%s\n' "${rendered}" | yq 'select(.kind == "DaemonSet") | .spec.template' -)" != \
+    "$(printf '%s\n' "${ondelete_rendered}" | yq 'select(.kind == "DaemonSet") | .spec.template' -)" ]]; then
+    echo "ERROR: choosing OnDelete must not change the desired node pod templates"
+    rollout_issues=true
+  fi
+
+  local startup_issues legacy_rendered
+  # shellcheck disable=SC2016 # Dollar-prefixed names belong to yq, not Bash.
+  startup_issues=$(printf '%s\n' "${rendered}" | yq eval '
+    select(.kind == "DaemonSet") |
+    .spec.template.spec.initContainers[0] as $loader |
+    (.spec.template.spec.containers[] | select(.name == "azurelustre")) as $driver |
+    select(
+      $loader.restartPolicy != "Always" or $loader.startupProbe != null or
+      $loader.livenessProbe.exec.command[0] != "/app/startupState.sh" or
+      $loader.readinessProbe.exec.command[0] != "/app/readinessProbe.sh" or
+      $driver.readinessProbe.exec.command[2] != "test -S /csi/csi.sock && /app/readinessProbe.sh" or
+      $driver.livenessProbe.httpGet.path != "/healthz" or
+      ([($loader.env + $driver.env)[] | select(.name == "AZURELUSTRE_NODE_STARTUP_DIR" and .value == "/run/azurelustre/startup")] | length) != 2 or
+      ([($loader.env + $driver.env)[] | select(.name == "POD_UID" and .valueFrom.fieldRef.fieldPath == "metadata.uid")] | length) != 2 or
+      ([$driver.env[] | select(.name == "NODE_FLAVOR" and .valueFrom.fieldRef.fieldPath == "metadata.labels['\''flavor'\'']")] | length) != 1 or
+      ([($loader.volumeMounts + $driver.volumeMounts)[] | select(.name == "node-startup" and .mountPath == "/run/azurelustre/startup")] | length) != 2 or
+      ([.spec.template.spec.volumes[] | select(.name == "node-startup" and .emptyDir != null)] | length) != 1
+    ) | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${startup_issues}" ]]; then
+    echo "ERROR: default cleanup-capable startup lost a readiness or lifecycle guard:"
+    echo "${startup_issues}"
+    rollout_issues=true
+  fi
+  if ! legacy_rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
+    --set node.cleanupCapableStartup=false 2>&1); then
+    echo "ERROR: legacy startup opt-out failed rendering: ${legacy_rendered}"
+    return 1
+  fi
+  startup_issues=$(printf '%s\n' "${legacy_rendered}" | yq eval '
+    select(.kind == "DaemonSet")
+    | select(.spec.template.spec.initContainers[0].startupProbe == null or
+        ([.spec.template.spec.volumes[] | select(.name == "node-startup")] | length) > 0 or
+        ([.spec.template.spec.containers[].env[] | select(.name == "AZURELUSTRE_NODE_STARTUP_DIR" or .name == "NODE_FLAVOR")] | length) > 0)
+    | .metadata.name' - | sed '/^---$/d')
+  if [[ -n "${startup_issues}" ]]; then
+    echo "ERROR: legacy startup opt-out must retain the existing loader gate:"
+    echo "${startup_issues}"
+    rollout_issues=true
+  fi
+  local startup_values edited_startup_rendered
+  startup_values="${DIFF_TEMP_DIR}/${version}-startup-values.yaml"
+  # Exercise editing the shipped declaration rather than adding the right key.
+  sed 's/cleanupCapableStartup: true/cleanupCapableStartup: false/' \
+    "${chart_dir}/values.yaml" > "${startup_values}"
+  if ! edited_startup_rendered=$(helm template --namespace kube-system chart-test "${chart_dir}" \
+    -f "${startup_values}" 2>&1); then
+    echo "ERROR: edited startup defaults failed rendering: ${edited_startup_rendered}"
+    return 1
+  fi
+  if [[ "$(printf '%s\n' "${legacy_rendered}" | yq 'select(.kind == "DaemonSet")' -)" != \
+    "$(printf '%s\n' "${edited_startup_rendered}" | yq 'select(.kind == "DaemonSet")' -)" ]]; then
+    echo "ERROR: editing the shipped cleanupCapableStartup declaration differs from --set"
+    rollout_issues=true
+  fi
+  if helm template chart-test "${chart_dir}" --set-string node.cleanupCapableStartup=invalid >/dev/null 2>&1; then
+    echo "ERROR: cleanupCapableStartup must be boolean"
+    rollout_issues=true
+  fi
+
   if [[ "${rollout_issues}" == true ]]; then
     echo
     return 1
