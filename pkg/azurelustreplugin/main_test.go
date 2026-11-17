@@ -283,3 +283,29 @@ func testRunSignal(t *testing.T, signal os.Signal) {
 	<-finished
 	require.NoError(t, waitErr, "%s", output.String())
 }
+func TestNewDriverOptions_StatusControllerOnly(t *testing.T) {
+	originalStatusControllerOnly := *statusControllerOnly
+	originalAllowUnadvertisedZones := *allowUnadvertisedZones
+	t.Cleanup(func() {
+		*statusControllerOnly = originalStatusControllerOnly
+		*allowUnadvertisedZones = originalAllowUnadvertisedZones
+	})
+	*allowUnadvertisedZones = true
+
+	for _, test := range []struct {
+		name    string
+		enabled bool
+	}{
+		{"disabled", false},
+		{"enabled", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			*statusControllerOnly = test.enabled
+
+			options := newDriverOptions()
+
+			assert.Equal(t, test.enabled, options.StatusControllerOnly)
+			assert.True(t, options.AllowUnadvertisedZones)
+		})
+	}
+}

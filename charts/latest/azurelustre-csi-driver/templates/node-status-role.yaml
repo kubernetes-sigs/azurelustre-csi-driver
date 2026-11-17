@@ -13,4 +13,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update", "patch"]
+  - apiGroups: ["azurelustre.csi.azure.com"]
+    resources: ["azurelustrenodestatuses"]
+    verbs: ["get"]
 {{- end }}
