@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: azurelustre-control-f78b1d92acb5c8bd47911576df92b345
+  labels:
+    app.kubernetes.io/managed-by: azurelustre-static
+    app.kubernetes.io/component: status-controller-election
+    app.kubernetes.io/name: azurelustre-csi-driver
+    app.kubernetes.io/part-of: azurelustre-csi-driver

@@ -69,8 +69,9 @@ NAMESPACE="${NAMESPACE:-kube-system}"
 # configured NAMESPACE so namespaced objects are removed from the right place.
 function delete_manifest {
   local src="$1"
+  shift
   sed "s/namespace: kube-system/namespace: ${NAMESPACE}/g" "${src}" \
-    | kubectl delete -f - --ignore-not-found
+    | kubectl delete -f - --ignore-not-found "$@"
 }
 
 # The manifests include cluster-scoped, cluster-global singletons (the CSIDriver
@@ -97,19 +98,33 @@ if [[ -n "${other_ns}" && "${FORCE:-0}" != "1" ]]; then
   exit 1
 fi
 
+# Refuse to delete or modify a shared/Helm-owned election namespace.
+namespace_owner=$(kubectl get -f "${repo}/namespace-csi-azurelustre-status-controller.yaml" --ignore-not-found \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}{"|"}{.metadata.labels.app\.kubernetes\.io/component}{"|"}{.metadata.annotations.meta\.helm\.sh/release-name}')
+if [[ -n "${namespace_owner}" && "${namespace_owner}" != "azurelustre-static|status-controller-election|" ]]; then
+  echo "Refusing uninstall with a non-exclusive or Helm-owned election namespace." >&2
+  exit 1
+fi
+
 for i in $(kubectl get daemonsets.apps -n "${NAMESPACE}" -l app=csi-azurelustre-node -o name); do
   kubectl delete -n "${NAMESPACE}" "${i}"
 done
 
 echo "Uninstalling Azure Lustre CSI driver, repo: ${repo}, namespace: ${NAMESPACE} ..."
 delete_manifest "${repo}/csi-azurelustre-controller.yaml"
+delete_manifest "${repo}/csi-azurelustre-status-controller.yaml" \
+  --cascade=foreground --wait=true --timeout=90s
 delete_manifest "${repo}/pdb-csi-azurelustre-controller.yaml"
+delete_manifest "${repo}/pdb-csi-azurelustre-status-controller.yaml"
 delete_manifest "${repo}/csi-azurelustre-node-jammy.yaml"
 delete_manifest "${repo}/csi-azurelustre-node-noble.yaml"
 delete_manifest "${repo}/csi-azurelustre-node-azurelinux3.yaml"
 delete_manifest "${repo}/csi-azurelustre-driver.yaml"
+delete_manifest "${repo}/azurelustre-compatibility-policy.yaml"
 delete_manifest "${repo}/rbac-csi-azurelustre-controller.yaml"
 delete_manifest "${repo}/rbac-csi-azurelustre-node.yaml"
+delete_manifest "${repo}/rbac-csi-azurelustre-status-controller.yaml"
+delete_manifest "${repo}/namespace-csi-azurelustre-status-controller.yaml"
 kubectl delete configmap csi-azurelustre-entrypoint -n "${NAMESPACE}" --ignore-not-found
 
 # Clean up legacy RBAC resources from older installs.

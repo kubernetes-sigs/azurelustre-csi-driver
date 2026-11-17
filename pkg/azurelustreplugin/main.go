@@ -43,6 +43,7 @@ var (
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
 	preDeleteCheckFunc           = azurelustre.CheckPersistentVolumesBeforeUninstall
+	statusControllerOnly         = flag.Bool("status-controller-only", false, "run only the Azure Lustre node status controller")
 
 	errDriverInitFailed       = errors.New("failed to initialize Azure Lustre CSI driver")
 	errDriverRunReturnedEarly = errors.New("driver.Run returned unexpectedly")
@@ -125,6 +126,7 @@ func newDriverOptions() azurelustre.DriverOptions {
 		AllowUnadvertisedZones:       *allowUnadvertisedZones,
 		WorkingMountDir:              *workingMountDir,
 		RemoveNotReadyTaint:          *removeNotReadyTaint,
+		StatusControllerOnly:         *statusControllerOnly,
 	}
 }
 

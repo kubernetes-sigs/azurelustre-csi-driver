@@ -1,0 +1,12 @@
+{{- $name := include "azurelustre.statusControllerElectionNamespace" . -}}
+{{- if eq $name .Release.Namespace -}}
+{{- fail "status-controller election namespace must differ from the driver namespace" -}}
+{{- end -}}
+{{- include "azurelustre.validateElectionNamespaceOwner" (dict "existing" (lookup "v1" "Namespace" "" $name) "release" .Release) -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/component: status-controller-election
+    {{- include "azurelustre.labels" . | nindent 4 }}

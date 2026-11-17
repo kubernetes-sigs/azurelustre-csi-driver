@@ -131,6 +131,9 @@ spec:
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
               readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
+              readOnly: true
           resources:
             limits:
               cpu: 1
@@ -285,6 +288,8 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            - name: MOUNT_ADMISSION_POLICY_ENABLED
+              value: "false"
           securityContext:
             privileged: true
           volumeMounts:
@@ -306,6 +311,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             limits:
@@ -361,4 +369,8 @@ spec:
           configMap:
             name: csi-azurelustre-entrypoint
             defaultMode: 0755
+            optional: true
+        - name: compatibility-policy
+          configMap:
+            name: csi-azurelustre-compatibility-policy
             optional: true

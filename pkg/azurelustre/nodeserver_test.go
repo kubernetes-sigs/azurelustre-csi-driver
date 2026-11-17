@@ -1160,6 +1160,71 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 		},
 		{
+			desc: "Success already mounted",
+			setup: func(t *testing.T, d *Driver) {
+				t.Helper()
+				require.NoError(t, d.mounter.Mount("1.1.1.1@tcp:/lustrefs/testSubDir", targetTest, "lustre", []string{"ro"}))
+				d.mountAdmissionPolicyEnabled = true
+				d.mountAdmissionReadFile = func(string) ([]byte, error) {
+					return []byte(testEnforcedCompatibilityPolicy), nil
+				}
+				d.NodeID = "node-0"
+				d.podNamespace = "kube-system"
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
+				Readonly:         true,
+			},
+			expectedErr:          nil,
+			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: targetTest, Type: "lustre", Opts: []string{"ro"}}},
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
+			desc: "New mount denied when admission status is unavailable",
+			setup: func(_ *testing.T, d *Driver) {
+				d.mountAdmissionPolicyEnabled = true
+				d.mountAdmissionPolicyPath = "test-policy"
+				d.mountAdmissionReadFile = func(string) ([]byte, error) {
+					return []byte(testEnforcedCompatibilityPolicy), nil
+				}
+				d.NodeID = "node-0"
+				d.podNamespace = "kube-system"
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs"},
+			},
+			expectedErr: status.Error(
+				codes.FailedPrecondition,
+				"new Azure Lustre mounts are denied on node \"node-0\": StatusUnavailable: the node status client or node identity is unavailable; inspect AzureLustreNodeStatus \"node-0\" in the driver namespace",
+			),
+			expectedMountpoints:  nil,
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
+			desc: "Success already mounted returns OK even when cluster ping is unreachable",
+			setup: func(t *testing.T, d *Driver) {
+				t.Helper()
+				require.NoError(t, d.mounter.Mount("1.1.1.1@tcp:/lustrefs/testSubDir", targetTest, "lustre", []string{"ro"}))
+				d.pingChecker = &fakePingChecker{err: status.Error(codes.FailedPrecondition, "MGS IP address is not reachable")}
+			},
+			req: csi.NodePublishVolumeRequest{
+				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},
+				VolumeId:         "vol_1#lustrefs#1.1.1.1#testSubDir",
+				TargetPath:       targetTest,
+				VolumeContext:    map[string]string{"mgs-ip-address": "1.1.1.1", "fs-name": "lustrefs", "sub-dir": subDir},
+				Readonly:         true,
+			},
+			expectedErr:          nil,
+			expectedMountpoints:  []mount.MountPoint{{Device: "1.1.1.1@tcp:/lustrefs/testSubDir", Path: targetTest, Type: "lustre", Opts: []string{"ro"}}},
+			expectedMountActions: []mount.FakeAction{},
+		},
+		{
 			desc: "mount syscall failure removes the empty target and returns Internal",
 			req: csi.NodePublishVolumeRequest{
 				VolumeCapability: &csi.VolumeCapability{AccessMode: &volumeCap},

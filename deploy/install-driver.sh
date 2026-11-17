@@ -180,6 +180,28 @@ if [[ "${NAMESPACE}" != "kube-system" ]]; then
   kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 fi
 
+# Never adopt a namespace (including a Helm-owned namespace) on static install.
+# The create is atomic: a concurrent namespace creation is a hard failure.
+namespace_manifest="${repo}/namespace-csi-azurelustre-status-controller.yaml"
+election_namespace=$(kubectl create --dry-run=client -f "${namespace_manifest}" -o jsonpath='{.metadata.name}')
+namespace_owner=$(kubectl get namespace "${election_namespace}" --ignore-not-found \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}{"|"}{.metadata.labels.app\.kubernetes\.io/component}{"|"}{.metadata.annotations.meta\.helm\.sh/release-name}')
+if [[ -z "${namespace_owner}" ]]; then
+  kubectl create -f "${namespace_manifest}"
+elif [[ "${namespace_owner}" != "azurelustre-static|status-controller-election|" ]]; then
+  echo "Refusing adoption of non-exclusive or Helm-owned election namespace ${election_namespace}." >&2
+  exit 1
+fi
+
+# Changing lock namespaces must not overlap old and new writers. Foreground
+# deletion waits for the old status-controller pods, without touching nodes.
+existing_controller=$(kubectl get deployment csi-azurelustre-status-controller -n "${NAMESPACE}" --ignore-not-found \
+  -o jsonpath='{.metadata.name}{"|"}{.spec.template.spec.containers[?(@.name=="status-controller")].env[?(@.name=="STATUS_CONTROLLER_ELECTION_NAMESPACE")].value}')
+if [[ -n "${existing_controller}" && "${existing_controller}" != "csi-azurelustre-status-controller|${election_namespace}" ]]; then
+  kubectl delete deployment csi-azurelustre-status-controller -n "${NAMESPACE}" \
+    --cascade=foreground --wait=true --timeout=90s
+fi
+
 # Handle custom entrypoint ConfigMap
 configmap_changed="false"
 if [[ -n "${custom_entrypoint}" ]]; then
@@ -216,11 +238,16 @@ kubectl delete clusterrolebinding csi-azurelustre-controller-secret-binding --ig
 kubectl delete clusterrole csi-azurelustre-node-secret-role --ignore-not-found
 kubectl delete clusterrolebinding csi-azurelustre-node-secret-binding --ignore-not-found
 
+apply_manifest "${repo}/azurelustrenodestatus-crd.yaml"
+apply_manifest "${repo}/azurelustre-compatibility-policy.yaml"
 apply_manifest "${repo}/rbac-csi-azurelustre-controller.yaml"
 apply_manifest "${repo}/rbac-csi-azurelustre-node.yaml"
+apply_manifest "${repo}/rbac-csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/csi-azurelustre-driver.yaml"
 apply_manifest "${repo}/csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/pdb-csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/pdb-csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-jammy.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-noble.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-azurelinux3.yaml"
@@ -231,5 +258,6 @@ if [[ "${configmap_changed}" == "true" ]]; then
 fi
 
 kubectl rollout status deployment csi-azurelustre-controller -n "${NAMESPACE}" --timeout=300s
+kubectl rollout status deployment csi-azurelustre-status-controller -n "${NAMESPACE}" --timeout=300s
 wait_for_node_daemonsets_ready 1800
 echo 'Azure Lustre CSI driver desired state applied successfully.'
