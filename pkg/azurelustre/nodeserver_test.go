@@ -1515,24 +1515,59 @@ func TestNodeGetVolumeStats(t *testing.T) {
 		},
 	}
 
-	// Setup
 	d := NewFakeDriver(t)
 
 	for i := range tests {
 		test := &tests[i]
-		err := makeDir(fakePath)
-		require.NoError(t, err)
-
-		defer func() {
-			err = os.RemoveAll(fakePath)
-			require.NoError(t, err)
-		}()
-
 		t.Run(test.desc, func(t *testing.T) {
-			_, err := d.NodeGetVolumeStats(t.Context(), &test.req)
-			require.ErrorIs(t, err, test.expectedErr)
+			actual, err := d.NodeGetVolumeStats(t.Context(), &test.req)
+			if test.expectedErr != nil {
+				require.ErrorIs(t, err, test.expectedErr)
+				assert.Nil(t, actual)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, actual)
+			require.Len(t, actual.GetUsage(), 2)
+			assert.Equal(t, csi.VolumeUsage_BYTES, actual.GetUsage()[0].GetUnit())
+			assert.Equal(t, csi.VolumeUsage_INODES, actual.GetUsage()[1].GetUnit())
+			for _, usage := range actual.GetUsage() {
+				assert.GreaterOrEqual(t, usage.GetAvailable(), int64(0))
+				assert.GreaterOrEqual(t, usage.GetTotal(), int64(0))
+				assert.GreaterOrEqual(t, usage.GetUsed(), int64(0))
+			}
 		})
 	}
+}
+
+func TestNodeGetVolumeStatsStatfsFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dangling")
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "missing"), path))
+
+	d := NewFakeDriver(t)
+	actual, err := d.NodeGetVolumeStats(t.Context(), &csi.NodeGetVolumeStatsRequest{
+		VolumeId:   "vol_1",
+		VolumePath: path,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	require.ErrorContains(t, err, "failed to get metrics: statfs")
+	assert.Nil(t, actual)
+}
+
+func TestNodeGetVolumeStatsLstatFailure(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+
+	d := NewFakeDriver(t)
+	actual, err := d.NodeGetVolumeStats(t.Context(), &csi.NodeGetVolumeStatsRequest{
+		VolumeId:   "vol_1",
+		VolumePath: filepath.Join(file, "child"),
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	require.ErrorContains(t, err, "failed to stat file")
+	assert.Nil(t, actual)
 }
 
 func TestEnsureStrictSubpath(t *testing.T) {

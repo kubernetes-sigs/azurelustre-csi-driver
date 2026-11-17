@@ -28,10 +28,9 @@ updates:
       - "dependencies"
       - "go"
     ignore:
-      # k8s.io staging modules use replace directives in go.mod that
-      # dependabot cannot update. Bumping require without updating
-      # replace produces a broken build. Handle these manually with
-      # hack/update-gomod.sh instead.
+      # Keep Kubernetes release-family upgrades coordinated with the Azure
+      # cloud provider. Use published module versions and verify compatibility;
+      # staging-module replace directives are no longer needed.
       - dependency-name: "k8s.io/*"
     groups:
       azure-sdk:
