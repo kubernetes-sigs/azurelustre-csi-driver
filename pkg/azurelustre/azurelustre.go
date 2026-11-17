@@ -177,8 +177,13 @@ type Driver struct {
 	dynamicProvisioner DynamicProvisionerInterface
 	pingChecker        clusterPingChecker
 
-	removeNotReadyTaint bool
-	kubeClient          kubernetes.Interface
+	removeNotReadyTaint   bool
+	kubeClient            kubernetes.Interface
+	podName               string
+	podNamespace          string
+	nodeFactInterval      time.Duration
+	nodeFactReadFile      func(string) ([]byte, error)
+	nodeFactDesiredClient string
 	// taintRemovalInitialDelay is the initial delay for node taint removal
 	taintRemovalInitialDelay time.Duration
 	// taintRemovalBackoff is the exponential backoff configuration for node taint removal
@@ -199,6 +204,11 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 		allowUnadvertisedZones:       options.AllowUnadvertisedZones,
 		workingMountDir:              options.WorkingMountDir,
 		removeNotReadyTaint:          options.RemoveNotReadyTaint,
+		podName:                      os.Getenv("POD_NAME"),
+		podNamespace:                 os.Getenv("POD_NAMESPACE"),
+		nodeFactInterval:             defaultNodeFactInterval,
+		nodeFactReadFile:             os.ReadFile,
+		nodeFactDesiredClient:        desiredClientIdentity(os.Getenv("LUSTRE_VERSION"), os.Getenv("CLIENT_SHA_SUFFIX")),
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -430,6 +440,9 @@ func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
 	d.removeNotReadyTaintIfNeeded()
+	reporterCtx, stopReporter := context.WithCancel(ctx)
+	defer stopReporter()
+	d.startNodeFactReporter(reporterCtx)
 
 	return RunGRPCServer(ctx, endpoint, d, d, d)
 }
