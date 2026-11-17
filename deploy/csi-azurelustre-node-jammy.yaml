@@ -13,9 +13,9 @@ metadata:
     flavor: jammy
 spec:
   updateStrategy:
+    type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 10%
-    type: RollingUpdate
   selector:
     matchLabels:
       app.kubernetes.io/component: node

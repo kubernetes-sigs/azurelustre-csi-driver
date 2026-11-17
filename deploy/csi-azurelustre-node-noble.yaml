@@ -13,9 +13,9 @@ metadata:
     flavor: noble
 spec:
   updateStrategy:
+    type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 10%
-    type: RollingUpdate
   selector:
     matchLabels:
       app: csi-azurelustre-node

@@ -41,6 +41,11 @@ app.kubernetes.io/part-of: {{ template "azurelustre.name" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
+{{/* Preserve legacy budgets unless the structured override is explicitly set. */}}
+{{- define "azurelustre.nodeMaxUnavailable" -}}
+{{- dig "maxUnavailable" .Values.node.updateStrategy.maxUnavailable (default dict .Values.node.updateStrategy.rollingUpdate) -}}
+{{- end -}}
+
 {{/*
 Full entity names.
 */}}

@@ -30,23 +30,29 @@ wait_for_node_daemonsets_ready() {
     while (( SECONDS < deadline )); do
       local status
       status=$(kubectl get daemonset "${daemonset}" -n "${NAMESPACE}" \
-        -o go-template='{{or .status.observedGeneration 0}} {{or .metadata.generation 1}} {{or .status.desiredNumberScheduled 0}} {{or .status.numberReady 0}}' 2>/dev/null || true)
+        -o go-template='{{or .status.observedGeneration 0}} {{or .metadata.generation 1}} {{or .status.desiredNumberScheduled 0}} {{or .status.numberReady 0}} {{or .status.updatedNumberScheduled 0}} {{or .status.numberAvailable 0}} {{or .spec.updateStrategy.type "RollingUpdate"}}' 2>/dev/null || true)
 
-      local observed generation desired ready
-      read -r observed generation desired ready <<<"${status}"
+      local observed generation desired ready updated available strategy
+      read -r observed generation desired ready updated available strategy <<<"${status}"
       observed=${observed:-0}
       generation=${generation:-1}
       desired=${desired:-0}
       ready=${ready:-0}
+      updated=${updated:-0}
+      available=${available:-0}
+      strategy=${strategy:-RollingUpdate}
 
-      if (( observed >= generation && ready == desired )); then
+      # OnDelete intentionally retains old revisions; RollingUpdate must converge.
+      if (( observed >= generation && ready == desired && available == desired )) &&
+        { [[ "${strategy}" == OnDelete ]] ||
+          [[ "${strategy}" == RollingUpdate && "${updated}" -eq "${desired}" ]]; }; then
         break
       fi
       sleep 5
     done
 
     if (( SECONDS >= deadline )); then
-      echo "Timed out waiting for ${daemonset} pods to be ready." >&2
+      echo "Timed out waiting for ${daemonset} readiness and update-strategy convergence." >&2
       return 1
     fi
   done
@@ -253,8 +259,8 @@ apply_manifest "${repo}/csi-azurelustre-node-noble.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-azurelinux3.yaml"
 
 if [[ "${configmap_changed}" == "true" ]]; then
-  echo "Custom entrypoint configuration staged. Existing OnDelete node pods will"
-  echo "continue using their current entrypoint until they are safely replaced."
+  echo "Custom entrypoint configuration updated. ConfigMap-only changes do not"
+  echo "restart node pods; changed DaemonSet templates can trigger a rolling update."
 fi
 
 kubectl rollout status deployment csi-azurelustre-controller -n "${NAMESPACE}" --timeout=300s
