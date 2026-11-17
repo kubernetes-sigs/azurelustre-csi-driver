@@ -40,21 +40,26 @@ function assert_equal() {
   [[ "${actual}" == "${expected}" ]] || fail "${message}: expected ${expected}, got ${actual}"
 }
 
-function run_evict_scenario() {
+# shellcheck disable=SC2329 # Mocks include sentinels for forbidden recovery callbacks.
+function run_evict_scenario() (
   local fixture_loaded="$1"
-  local unload_result="$2"
+  local fixture_resident="$2"
   local expected_result="$3"
   local expected_removals="$4"
-  local removals=0
+  local removals=0 unload_attempts=0
 
   function loaded_lustre_version() {
     echo "${fixture_loaded}"
   }
-  function lustre_rmmod() {
-    :
+  function lustre_modules_loaded() {
+    [[ "${fixture_resident}" == true ]]
   }
+  function lustre_rmmod() {
+    unload_attempts=$((unload_attempts + 1))
+  }
+  # shellcheck disable=SC2329 # Sentinel for the removed recovery-time unload.
   function unload_lustre_modules() {
-    return "${unload_result}"
+    lustre_rmmod
   }
   function remove_installed_lustre_packages() {
     removals=$((removals + 1))
@@ -64,12 +69,13 @@ function run_evict_scenario() {
   evict_old_lustre >/dev/null 2>&1 || result=$?
   assert_equal "${expected_result}" "${result}" "unexpected eviction result for loaded version '${fixture_loaded:-none}'"
   assert_equal "${expected_removals}" "${removals}" "unexpected package removal count for loaded version '${fixture_loaded:-none}'"
-}
+  assert_equal "0" "${unload_attempts}" "ordinary recovery must never unload resident modules"
+)
 
-run_evict_scenario "$(wanted_module_version)" 0 1 0
-run_evict_scenario "2.15.7_33_g79ddf99" 1 1 0
-run_evict_scenario "2.15.7_33_g79ddf99" 0 0 1
-run_evict_scenario "" 0 0 1
+run_evict_scenario "$(wanted_module_version)" true 1 0
+run_evict_scenario "2.15.7_33_g79ddf99" true 1 0
+run_evict_scenario "" true 1 0
+run_evict_scenario "" false 0 1
 
 install_attempts=0
 eviction_attempts=0
@@ -93,6 +99,69 @@ retry_install refusing_eviction failing_install >/dev/null 2>&1 || result=$?
 assert_equal "1" "${result}" "retry_install should report exhausted attempts"
 assert_equal "3" "${install_attempts}" "retry_install attempt count"
 assert_equal "2" "${eviction_attempts}" "eviction should run only before a retry"
+
+# shellcheck disable=SC2329 # Full installation dispatches these mock callbacks indirectly.
+function run_failed_loader_install_scenario() (
+  local install_attempts=0 removals=0 unload_attempts=0
+  function setup_pmc_repo() { :; }
+  function full_package_spec() { echo test-package; }
+  function loaded_lustre_version() { echo "2.15.7_33_g79ddf99"; }
+  function lustre_modules_loaded() { return 0; }
+  function lustre_rmmod() { unload_attempts=$((unload_attempts + 1)); }
+  # shellcheck disable=SC2329 # An available unload helper must not be used by recovery.
+  function unload_lustre_modules() { lustre_rmmod; }
+  function remove_installed_lustre_packages() { removals=$((removals + 1)); }
+  function install_pkg() {
+    install_attempts=$((install_attempts + 1))
+    return 1
+  }
+  local result=0
+  install_lustre_client full >/dev/null 2>&1 || result=$?
+  assert_equal "1" "${result}" "failed loader setup must remain a failure"
+  assert_equal "3" "${install_attempts}" "full loader setup must retain bounded retries"
+  assert_equal "0" "${unload_attempts}" "failed full installs must preserve supported non-current runtime"
+  assert_equal "0" "${removals}" "failed full installs must preserve resident client packages"
+)
+
+run_failed_loader_install_scenario
+
+function run_supervised_apt_scenario() (
+  local AZURELUSTRE_CSI_ROLE="$1"
+  local journal_present="$2"
+  local repair_result="$3"
+  local install_result="$4"
+  local expected_repairs="$5"
+  local expected_pty="$6"
+  local repairs=0 installs=0 supervised_pty=false
+  function compgen() {
+    [[ "$*" == "-G /var/lib/dpkg/updates/[0-9]*" ]] || fail "unexpected journal query"
+    [[ "${journal_present}" == true ]]
+  }
+  function dpkg() {
+    [[ "$*" == "--force-confdef --force-confold --configure -a" ]] || fail "unsafe dpkg repair"
+    repairs=$((repairs + 1))
+    return "${repair_result}"
+  }
+  function apt-get() {
+    installs=$((installs + 1))
+    [[ " $* " != *" DPkg::Use-Pty=0 "* ]] || supervised_pty=true
+    [[ "${*: -1}" == test-package ]] || fail "lost requested package"
+    return "${install_result}"
+  }
+  local result=0
+  install_pkg test-package >/dev/null 2>&1 || result=$?
+  assert_equal "${expected_repairs}" "${repairs}" "interrupted transaction repair count"
+  assert_equal "1" "${installs}" "APT must get a chance to resolve pending dependencies"
+  assert_equal "${expected_pty}" "${supervised_pty}" "supervised package process-group policy"
+  assert_equal "${install_result}" "${result}" "package install failure propagation"
+)
+
+run_supervised_apt_scenario driver-utils true 0 0 1 true
+run_supervised_apt_scenario driver-utils true 1 0 1 true
+run_supervised_apt_scenario driver-utils true 1 42 1 true
+run_supervised_apt_scenario driver-utils false 0 0 0 true
+run_supervised_apt_scenario driver true 0 0 0 false
+run_supervised_apt_scenario loader true 0 0 0 false
 
 function run_loader_termination_scenario() (
   local signal="$1"

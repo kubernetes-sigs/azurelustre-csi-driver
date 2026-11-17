@@ -165,11 +165,6 @@ function reconcile_lnet() {
 
 # ---- OS / environment helpers ----
 
-# unload_lustre_modules bounds lustre_rmmod during package-install recovery.
-function unload_lustre_modules() {
-  timeout 15 lustre_rmmod
-}
-
 # detect_os_family sets osFamily ("azurelinux" or "ubuntu") from the container's
 # /etc/os-release, or exits if the OS is unsupported.
 function detect_os_family() {
@@ -246,14 +241,9 @@ function loaded_lustre_version() {
   fi
 }
 
-# lustre_module_refcnt prints the running lustre module's reference count, or
-# "unknown". Non-zero is why the kernel refuses to unload the module.
-function lustre_module_refcnt() {
-  if [[ -r /sys/module/lustre/refcnt ]]; then
-    cat /sys/module/lustre/refcnt
-  else
-    echo "unknown"
-  fi
+# A partial stack or unreadable version is still resident runtime.
+function lustre_modules_loaded() {
+  [[ -d /sys/module/lustre || -d /sys/module/lnet || -d /sys/module/libcfs ]]
 }
 
 # check_loaded_module_version warns when the running kernel module is not the
@@ -413,9 +403,20 @@ function install_pkg() {
   if [[ "${osFamily}" == "azurelinux" ]]; then
     tdnf install -y --disablerepo="*" --enablerepo="amlfs" --enablerepo="azurelinux-official-base" "$@"
   else
+    local -a supervised_options=()
+    if [[ "${AZURELUSTRE_CSI_ROLE:-}" == driver-utils ]]; then
+      # APT's PTY child starts a new session, escaping the worker's group kill.
+      supervised_options=(-o DPkg::Use-Pty=0)
+      if compgen -G '/var/lib/dpkg/updates/[0-9]*' >/dev/null; then
+        # A killed transaction leaves a journal that APT will refuse to open.
+        if ! DEBIAN_FRONTEND=noninteractive dpkg --force-confdef --force-confold --configure -a; then
+          echo "$(date -u) dpkg recovery left pending configuration; allowing APT to resolve the requested packages and dependencies."
+        fi
+      fi
+    fi
     # grub issue
     # https://stackoverflow.com/questions/40748363/virtual-machine-apt-get-grub-issue/40751712
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" "$@"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o DPkg::options::="--force-confdef" -o DPkg::options::="--force-confold" "${supervised_options[@]}" "$@"
   fi
 }
 
@@ -443,30 +444,21 @@ function remove_installed_lustre_packages() {
 }
 
 # evict_old_lustre is the loader's on-failure hook. It removes existing Lustre
-# packages only when no loaded module remains dependent on them. A matching
-# resident module is preserved because the install failure may be transient. A
-# mismatched resident module must unload successfully before its packages can be
-# removed; failure commonly means a Lustre mount is still active.
+# packages only when no resident Lustre/LNet modules remain. Even an idle,
+# non-current client may be serving the driver's supported-runtime contract;
+# a failed package install is not authority to replace that runtime.
 #
 # Returns non-zero when eviction is intentionally refused. retry_install treats
 # that as a safety decision and continues its remaining non-destructive retries.
 function evict_old_lustre() {
-  local loaded
-  loaded="$(loaded_lustre_version)"
-
-  if [[ -z "${loaded}" ]]; then
-    echo "$(date -u) No Lustre kernel module is loaded; existing packages may be safely replaced."
-  elif [[ "${loaded}" == "$(wanted_module_version)" ]]; then
-    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} already matches the requested version; the install failure may be transient."
-    return 1
-  elif ! type lustre_rmmod >/dev/null 2>&1; then
-    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} does not match the requested version and lustre_rmmod is unavailable."
-    return 1
-  elif ! unload_lustre_modules; then
-    echo "$(date -u) WARNING: preserving Lustre packages because loaded module ${loaded} could not be unloaded (module refcnt $(lustre_module_refcnt)); a Lustre filesystem may still be mounted."
+  if lustre_modules_loaded; then
+    local loaded
+    loaded="$(loaded_lustre_version)"
+    echo "$(date -u) WARNING: preserving resident Lustre/LNet modules and packages (client ${loaded:-unknown}); package recovery must not activate a different client."
     return 1
   fi
 
+  echo "$(date -u) No Lustre/LNet modules are loaded; removing existing packages before retrying installation."
   remove_installed_lustre_packages
 }
 
