@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -284,7 +283,7 @@ func TestLoadCompatibilityPolicyCachesTemporaryReadFailure(t *testing.T) {
 		compatibilityPolicyConfigMap: name,
 	}
 
-	policy, err := driver.loadCompatibilityPolicy(context.Background())
+	policy, err := driver.loadCompatibilityPolicy(t.Context())
 	if err != nil {
 		t.Fatalf("loadCompatibilityPolicy() error = %v", err)
 	}
@@ -294,14 +293,14 @@ func TestLoadCompatibilityPolicyCachesTemporaryReadFailure(t *testing.T) {
 	client.PrependReactor("get", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("temporary transport failure")
 	})
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err != nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err != nil {
 		t.Fatalf("cached loadCompatibilityPolicy() error = %v", err)
 	}
 
 	driver.compatibilityPolicyMu.Lock()
 	driver.cachedCompatibilityPolicyAt = time.Now().Add(-2 * time.Hour)
 	driver.compatibilityPolicyMu.Unlock()
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err == nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err == nil {
 		t.Fatal("expired compatibility policy cache unexpectedly succeeded")
 	}
 }
@@ -313,25 +312,25 @@ func TestLoadCompatibilityPolicyDoesNotCacheDeletion(t *testing.T) {
 		Data:       map[string]string{compatibilityPolicyKey: testCompatibilityPolicy},
 	})
 	driver := &Driver{kubeClient: client, podNamespace: namespace, compatibilityPolicyConfigMap: "policy"}
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err != nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.CoreV1().ConfigMaps(namespace).Delete(context.Background(), "policy", metav1.DeleteOptions{}); err != nil {
+	if err := client.CoreV1().ConfigMaps(namespace).Delete(t.Context(), "policy", metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err == nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err == nil {
 		t.Fatal("deleted policy was accepted from cache")
 	}
 	client.PrependReactor("get", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.New("temporary transport failure after deletion")
 	})
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err == nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err == nil {
 		t.Fatal("deleted policy was resurrected after a transport failure")
 	}
 }
 
 func TestDesiredDaemonSetRevisionsRequiresMatchingObservedTemplate(t *testing.T) {
-	_, _, _, daemonset, revision := testNodeStatusObjects("kube-system")
+	_, _, _, daemonset, revision := testNodeStatusObjects("kube-system") //nolint:dogsled // This policy test needs only the workload objects from the shared node fixture.
 	revisions := []appsv1.ControllerRevision{*revision}
 	if got := desiredDaemonSetRevisions([]appsv1.DaemonSet{*daemonset}, revisions)[daemonset.Name]; got != "desired-hash" {
 		t.Fatalf("matching template revision = %q", got)
@@ -371,7 +370,7 @@ func TestLoadCompatibilityPolicyRejectsUnknownSchema(t *testing.T) {
 		podNamespace:                 namespace,
 		compatibilityPolicyConfigMap: "policy",
 	}
-	if _, err := driver.loadCompatibilityPolicy(context.Background()); err == nil {
+	if _, err := driver.loadCompatibilityPolicy(t.Context()); err == nil {
 		t.Fatal("policy containing an unknown field unexpectedly succeeded")
 	}
 }
@@ -521,19 +520,21 @@ func TestReconcileNodeStatusesWritesStatusResource(t *testing.T) {
 		compatibilityPolicyConfigMap: "policy",
 	}
 
-	if err := driver.reconcileNodeStatuses(context.Background()); err != nil {
+	if err := driver.reconcileNodeStatuses(t.Context()); err != nil {
 		t.Fatalf("reconcileNodeStatuses() error = %v", err)
 	}
 	object, err := driver.dynamicClient.Resource(nodeStatusGVR).Namespace(namespace).Get(
-		context.Background(), node.Name, metav1.GetOptions{})
+		t.Context(), node.Name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("get reconciled status: %v", err)
 	}
-	clientState, _ := unstructuredString(object.Object, "status", "clientCompatibility")
+	clientState, _, err := unstructured.NestedString(object.Object, "status", "clientCompatibility")
+	require.NoError(t, err)
 	if clientState != "Exact" {
 		t.Fatalf("clientCompatibility = %q, want Exact", clientState)
 	}
-	reporterState, _ := unstructuredString(object.Object, "status", "reporterFreshness")
+	reporterState, _, err := unstructured.NestedString(object.Object, "status", "reporterFreshness")
+	require.NoError(t, err)
 	if reporterState != "Current" {
 		t.Fatalf("reporterFreshness = %q, want Current", reporterState)
 	}
@@ -674,11 +675,11 @@ func TestReconcileNodeStatusesContinuesAfterStatusWriteFailure(t *testing.T) {
 		compatibilityPolicyConfigMap: "policy",
 	}
 
-	if err := driver.reconcileNodeStatuses(context.Background()); err == nil {
+	if err := driver.reconcileNodeStatuses(t.Context()); err == nil {
 		t.Fatal("reconcileNodeStatuses() unexpectedly ignored the injected write failure")
 	}
 	if _, err := dynamicClient.Resource(nodeStatusGVR).Namespace(namespace).Get(
-		context.Background(), node1.Name, metav1.GetOptions{}); err != nil {
+		t.Context(), node1.Name, metav1.GetOptions{}); err != nil {
 		t.Fatalf("healthy node status was not written after another node failed: %v", err)
 	}
 }
@@ -786,22 +787,6 @@ func testNodeStatusObjects(namespace string) (
 		Data:     runtime.RawExtension{Raw: []byte(`{"spec":{"template":{"$patch":"replace","metadata":{},"spec":{}}}}`)},
 	}
 	return node, pod, lease, daemonset, revision
-}
-
-func unstructuredString(object map[string]interface{}, fields ...string) (string, bool) {
-	current := interface{}(object)
-	for _, field := range fields {
-		values, ok := current.(map[string]interface{})
-		if !ok {
-			return "", false
-		}
-		current, ok = values[field]
-		if !ok {
-			return "", false
-		}
-	}
-	value, ok := current.(string)
-	return value, ok
 }
 
 func TestReconcileNodeStatusesRejectsIncompleteSnapshots(t *testing.T) {

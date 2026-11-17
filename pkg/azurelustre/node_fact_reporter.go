@@ -167,7 +167,7 @@ func (d *Driver) publishNodeFact(ctx context.Context) error {
 			},
 			Spec: coordinationv1.LeaseSpec{
 				HolderIdentity:       &holderIdentity,
-				LeaseDurationSeconds: ptr(nodeFactLeaseDuration),
+				LeaseDurationSeconds: new(nodeFactLeaseDuration),
 				RenewTime:            &now,
 			},
 		}, metav1.CreateOptions{})
@@ -175,7 +175,7 @@ func (d *Driver) publishNodeFact(ctx context.Context) error {
 		// Owner changes can require Lease-delete permission; keep migration out of heartbeat renewal.
 		lease.Annotations = annotations
 		lease.Spec.HolderIdentity = &holderIdentity
-		lease.Spec.LeaseDurationSeconds = ptr(nodeFactLeaseDuration)
+		lease.Spec.LeaseDurationSeconds = new(nodeFactLeaseDuration)
 		lease.Spec.RenewTime = &now
 		_, err = leases.Update(ctx, lease, metav1.UpdateOptions{})
 	}
@@ -240,8 +240,4 @@ func findContainerStatus(statuses []corev1.ContainerStatus, name string) corev1.
 func nodeFactLeaseName(nodeName, nodeUID string) string {
 	sum := sha256.Sum256([]byte(nodeName + "\x00" + nodeUID))
 	return nodeFactLeasePrefix + hex.EncodeToString(sum[:10])
-}
-
-func ptr[T any](value T) *T {
-	return &value
 }
