@@ -18,6 +18,7 @@ package azurelustre
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -74,7 +75,7 @@ func (d *Driver) checkNodeMountAdmission(ctx context.Context) error {
 	if err != nil {
 		return mountAdmissionError(d.NodeID, "StatusInvalid", "the mount-admission message is malformed")
 	}
-	if admission != "Allowed" {
+	if admission != mountAdmissionAllowed {
 		if reason == "" {
 			reason = "AdmissionDenied"
 		}
@@ -116,9 +117,9 @@ func (d *Driver) checkAdmissionEvidence(ctx context.Context, object *unstructure
 	lease := &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{Annotations: annotations},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       ptr(annotations[nodeFactAnnotationPrefix+"pod-uid"]),
+			HolderIdentity:       new(annotations[nodeFactAnnotationPrefix+"pod-uid"]),
 			RenewTime:            &metav1.MicroTime{Time: renewed},
-			LeaseDurationSeconds: ptr(nodeFactLeaseDuration),
+			LeaseDurationSeconds: new(nodeFactLeaseDuration),
 		},
 	}
 	if !factMatchesPodAndNode(lease, pod, node) || !factIsFresh(lease, time.Now()) {
@@ -128,7 +129,7 @@ func (d *Driver) checkAdmissionEvidence(ctx context.Context, object *unstructure
 	// rather than trusting an Allowed decision as a global digest allowlist.
 	switch classifySecurityCompliance(lease, pod.Labels["flavor"], policy.Images) {
 	case "Approved", "NonCurrentApproved":
-	case "Withdrawn":
+	case nodeSecurityWithdrawn:
 		return mountAdmissionError(d.NodeID, "ImageDigestWithdrawn", "the running images are not approved for the current pod flavor")
 	default:
 		return mountAdmissionError(d.NodeID, "SecurityEvidenceUnknown", "the current pod flavor has no complete image approval")
@@ -150,7 +151,7 @@ func (d *Driver) checkAdmissionEvidence(ctx context.Context, object *unstructure
 
 func (d *Driver) readMountAdmissionPolicy() (*compatibilityPolicy, error) {
 	if d.mountAdmissionReadFile == nil || d.mountAdmissionPolicyPath == "" {
-		return nil, fmt.Errorf("the compatibility policy reader is unavailable")
+		return nil, errors.New("the compatibility policy reader is unavailable")
 	}
 	raw, err := d.mountAdmissionReadFile(d.mountAdmissionPolicyPath)
 	if err != nil {

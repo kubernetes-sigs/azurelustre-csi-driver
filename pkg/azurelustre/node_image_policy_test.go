@@ -321,13 +321,13 @@ func newFlavorImageFixture(t *testing.T, namespace, flavor string, policy *compa
 	pod.OwnerReferences[0].Name, pod.OwnerReferences[0].UID = daemonset.Name, daemonset.UID
 	revision.Name = daemonset.Name + "-desired-hash"
 	revision.OwnerReferences[0] = pod.OwnerReferences[0]
-	rawTemplate, err := json.Marshal(map[string]interface{}{"spec": map[string]interface{}{"template": daemonset.Spec.Template}})
+	rawTemplate, err := json.Marshal(map[string]any{"spec": map[string]any{"template": daemonset.Spec.Template}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	revision.Data.Raw = rawTemplate
 	lease.Name = flavor + "-fact"
-	lease.Spec.HolderIdentity = ptr(string(pod.UID))
+	lease.Spec.HolderIdentity = new(string(pod.UID))
 	for field, value := range map[string]string{
 		"node-name": node.Name, "node-uid": string(node.UID), "pod-name": pod.Name,
 		"pod-uid": string(pod.UID), "flavor": flavor,

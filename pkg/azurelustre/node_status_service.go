@@ -44,13 +44,13 @@ func (d *Driver) startNodeStatusController(ctx context.Context) error {
 		return fmt.Errorf("node status controller cannot run in %s role", d.podRole)
 	}
 	if d.kubeClient == nil || d.dynamicClient == nil {
-		return fmt.Errorf("node status controller requires Kubernetes clients")
+		return errors.New("node status controller requires Kubernetes clients")
 	}
 	if d.podName == "" || d.podNamespace == "" || d.compatibilityPolicyConfigMap == "" {
-		return fmt.Errorf("node status controller requires pod identity and compatibility policy ConfigMap")
+		return errors.New("node status controller requires pod identity and compatibility policy ConfigMap")
 	}
 	if d.statusControllerElectionNamespace == "" || d.statusControllerElectionNamespace == d.podNamespace {
-		return fmt.Errorf("status controller requires an election namespace separate from node fact writers")
+		return errors.New("status controller requires an election namespace separate from node fact writers")
 	}
 	listenConfig := net.ListenConfig{}
 	listener, err := listenConfig.Listen(ctx, "tcp", statusHealthAddress)

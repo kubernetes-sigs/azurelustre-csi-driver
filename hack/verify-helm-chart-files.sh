@@ -419,6 +419,10 @@ check_node_rollout_safety() {
         budget_overrides=(--set "node.updateStrategy.maxUnavailable=1"
           --set "node.updateStrategy.rollingUpdate.maxUnavailable=2")
         ;;
+      *)
+        echo "ERROR: unknown rolling-update budget case: ${budget_case}"
+        return 1
+        ;;
     esac
     if ! rolling_rendered=$(helm template \
       --set "fullnameOverride=csi-azurelustre" \

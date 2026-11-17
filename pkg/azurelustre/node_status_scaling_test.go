@@ -44,7 +44,7 @@ func TestReconcileNodeStatusesUsesOneStatusListAtScale(t *testing.T) {
 	for i := range size {
 		name := fmt.Sprintf("node-%04d", i)
 		nodes = append(nodes, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(name)}})
-		statuses = append(statuses, testStatusSnapshot(name, namespace, name))
+		statuses = append(statuses, testStatusSnapshot(name, name))
 	}
 	nodes = append(nodes, &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "driver", Namespace: namespace, Labels: map[string]string{
@@ -54,7 +54,7 @@ func TestReconcileNodeStatusesUsesOneStatusListAtScale(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
 		map[schema.GroupVersionResource]string{nodeStatusGVR: "AzureLustreNodeStatusList"}, statuses...)
 	driver := &Driver{kubeClient: fake.NewSimpleClientset(nodes...), dynamicClient: client, podNamespace: namespace}
-	if err := driver.reconcileNodeStatuses(context.Background()); err != nil {
+	if err := driver.reconcileNodeStatuses(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	counts := make(map[string]int)
@@ -71,8 +71,8 @@ func TestNodeStatusJobsMakeFairProgressAcrossCancelledSweeps(t *testing.T) {
 	driver := &Driver{}
 	var mu sync.Mutex
 	seen := make(map[string]bool)
-	for sweep := 0; sweep < (size+7)/8; sweep++ {
-		ctx, cancel := context.WithCancel(context.Background())
+	for range (size + 7) / 8 {
+		ctx, cancel := context.WithCancel(t.Context())
 		started := make(chan struct{}, 8)
 		jobs := make([]nodeStatusJob, size)
 		for i := range size {
@@ -102,7 +102,7 @@ func TestNodeStatusJobsMakeFairProgressAcrossCancelledSweeps(t *testing.T) {
 		t.Fatalf("fair sweeps attempted %d of %d jobs", len(seen), size)
 	}
 	cursor := driver.statusControllerCursor
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := driver.runNodeStatusJobs(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("empty cancelled sweep error = %v", err)
@@ -114,8 +114,7 @@ func TestNodeStatusJobsMakeFairProgressAcrossCancelledSweeps(t *testing.T) {
 
 func TestNodeStatusJobsCursorSurvivesMembershipChange(t *testing.T) {
 	driver := &Driver{statusControllerCursor: "node-2"}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	var mu sync.Mutex
 	seen := make(map[string]bool)
 	jobs := []nodeStatusJob{}
@@ -136,7 +135,7 @@ func TestNodeStatusJobsCursorSurvivesMembershipChange(t *testing.T) {
 }
 
 func TestWriteNodeStatusRefreshesOnlyOnConflict(t *testing.T) {
-	snapshot := testStatusSnapshot("node", "driver", "node-uid")
+	snapshot := testStatusSnapshot("node", "node-uid")
 	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), snapshot.DeepCopy())
 	conflicts := 0
 	client.PrependReactor("update", "azurelustrenodestatuses", func(action clienttesting.Action) (bool, runtime.Object, error) {
@@ -166,7 +165,7 @@ func TestWriteNodeStatusRefreshesOnlyOnConflict(t *testing.T) {
 		return false, nil, nil
 	})
 	driver := &Driver{dynamicClient: client, podNamespace: "driver"}
-	if err := driver.writeNodeStatus(context.Background(), computedNodeStatus{nodeName: "node", nodeUID: "node-uid"}, snapshot); err != nil {
+	if err := driver.writeNodeStatus(t.Context(), computedNodeStatus{nodeName: "node", nodeUID: "node-uid"}, snapshot); err != nil {
 		t.Fatal(err)
 	}
 	var gets, updates int
@@ -187,12 +186,12 @@ func TestWriteNodeStatusRefreshesOnlyOnConflict(t *testing.T) {
 }
 
 func TestWriteNodeStatusCreateRace(t *testing.T) {
-	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), testStatusSnapshot("node", "driver", "old-uid"))
+	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), testStatusSnapshot("node", "old-uid"))
 	driver := &Driver{dynamicClient: client, podNamespace: "driver"}
-	if err := driver.writeNodeStatus(context.Background(), computedNodeStatus{nodeName: "node", nodeUID: "new-uid"}, nil); err != nil {
+	if err := driver.writeNodeStatus(t.Context(), computedNodeStatus{nodeName: "node", nodeUID: "new-uid"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	object, err := client.Resource(nodeStatusGVR).Namespace("driver").Get(context.Background(), "node", metav1.GetOptions{})
+	object, err := client.Resource(nodeStatusGVR).Namespace("driver").Get(t.Context(), "node", metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,10 +202,10 @@ func TestWriteNodeStatusCreateRace(t *testing.T) {
 
 func TestStatusGarbageCollectionPreservesPreconditionsAndIndependentErrors(t *testing.T) {
 	namespace := "driver"
-	broken := testStatusSnapshot("orphan-0", namespace, "old-node")
-	orphan := testStatusSnapshot("orphan-1", namespace, "old-node")
-	duplicate := testStatusSnapshot("duplicate", namespace, "live")
-	duplicate.Object["spec"] = map[string]interface{}{"nodeName": "live", "nodeUID": "live"}
+	broken := testStatusSnapshot("orphan-0", "old-node")
+	orphan := testStatusSnapshot("orphan-1", "old-node")
+	duplicate := testStatusSnapshot("duplicate", "live")
+	duplicate.Object["spec"] = map[string]any{"nodeName": "live", "nodeUID": "live"}
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
 		map[schema.GroupVersionResource]string{nodeStatusGVR: "AzureLustreNodeStatusList"}, broken, orphan, duplicate)
 	client.PrependReactor("delete", "azurelustrenodestatuses", func(action clienttesting.Action) (bool, runtime.Object, error) {
@@ -230,11 +229,11 @@ func TestStatusGarbageCollectionPreservesPreconditionsAndIndependentErrors(t *te
 		}}),
 		dynamicClient: client, podNamespace: namespace,
 	}
-	if err := driver.reconcileNodeStatuses(context.Background()); !apierrors.IsConflict(err) {
+	if err := driver.reconcileNodeStatuses(t.Context()); !apierrors.IsConflict(err) {
 		t.Fatalf("expected independent GC conflict, got %v", err)
 	}
 	for _, name := range []string{"orphan-1", "duplicate"} {
-		if _, err := client.Resource(nodeStatusGVR).Namespace(namespace).Get(context.Background(), name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		if _, err := client.Resource(nodeStatusGVR).Namespace(namespace).Get(t.Context(), name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 			t.Fatalf("orphan %q was not deleted independently: %v", name, err)
 		}
 	}
@@ -244,9 +243,9 @@ func TestReconcileNodeStatusRecreationDoesNotGarbageCollectRefreshedSnapshot(t *
 	node, pod, lease, daemonset, revision := testNodeStatusObjects("driver")
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
 		map[schema.GroupVersionResource]string{nodeStatusGVR: "AzureLustreNodeStatusList"},
-		testStatusSnapshot(node.Name, "driver", "previous-uid"))
+		testStatusSnapshot(node.Name, "previous-uid"))
 	driver := &Driver{kubeClient: fake.NewSimpleClientset(node, pod, lease, daemonset, revision), dynamicClient: client, podNamespace: "driver"}
-	if err := driver.reconcileNodeStatuses(context.Background()); err != nil {
+	if err := driver.reconcileNodeStatuses(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	for _, action := range client.Actions() {
@@ -256,14 +255,14 @@ func TestReconcileNodeStatusRecreationDoesNotGarbageCollectRefreshedSnapshot(t *
 	}
 }
 
-func testStatusSnapshot(name, namespace, nodeUID string) *unstructured.Unstructured {
-	object := &unstructured.Unstructured{Object: map[string]interface{}{
+func testStatusSnapshot(name, nodeUID string) *unstructured.Unstructured {
+	object := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "azurelustre.csi.azure.com/v1alpha1",
 		"kind":       "AzureLustreNodeStatus",
-		"metadata": map[string]interface{}{
-			"name": name, "namespace": namespace, "uid": "status-" + name, "resourceVersion": "7",
+		"metadata": map[string]any{
+			"name": name, "namespace": "driver", "uid": "status-" + name, "resourceVersion": "7",
 		},
-		"spec": map[string]interface{}{"nodeName": name, "nodeUID": nodeUID},
+		"spec": map[string]any{"nodeName": name, "nodeUID": nodeUID},
 	}}
 	return object
 }

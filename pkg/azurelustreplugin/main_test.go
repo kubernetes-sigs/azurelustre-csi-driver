@@ -283,6 +283,7 @@ func testRunSignal(t *testing.T, signal os.Signal) {
 	<-finished
 	require.NoError(t, waitErr, "%s", output.String())
 }
+
 func TestNewDriverOptions_StatusControllerOnly(t *testing.T) {
 	originalStatusControllerOnly := *statusControllerOnly
 	originalAllowUnadvertisedZones := *allowUnadvertisedZones

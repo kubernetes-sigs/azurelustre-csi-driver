@@ -110,13 +110,13 @@ func TestNamespaceGuards(t *testing.T) {
 						require.NotContains(t, string(mutations), "namespace: kube-system")
 					}
 					if script == "install" {
-						applies := 9
+						applies := 14
 						if tt.defaultNS {
-							applies = 8
+							applies = 13
 						}
 						require.Equal(t, applies, strings.Count(string(mutations), "apply -f -\n"))
 					} else {
-						require.Equal(t, 8, strings.Count(string(mutations), "delete -f - --ignore-not-found\n"))
+						require.Equal(t, 13, strings.Count(string(mutations), "delete -f - --ignore-not-found"))
 					}
 				})
 			}
@@ -230,8 +230,23 @@ if [[ "$1" == get ]]; then
       fi
       printf '%s\n' "${status}"
       ;;
+    deployment)
+      [[ "$3" == csi-azurelustre-status-controller && "$4" == -n && "$5" == "${NAMESPACE:-kube-system}" ]]
+      ;;
+    namespace)
+      [[ "$3" == azurelustre-control-f78b1d92acb5c8bd47911576df92b345 ]]
+      ;;
+    -f)
+      [[ "$3" == */namespace-csi-azurelustre-status-controller.yaml ]]
+      ;;
     *) echo "unexpected read: $*" >&2; exit 1 ;;
   esac
+  exit 0
+fi
+
+if [[ "$1 $2" == "create --dry-run=client" ]]; then
+  [[ "$3" == -f && "$4" == */namespace-csi-azurelustre-status-controller.yaml ]]
+  echo azurelustre-control-f78b1d92acb5c8bd47911576df92b345
   exit 0
 fi
 

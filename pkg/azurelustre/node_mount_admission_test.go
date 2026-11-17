@@ -17,7 +17,6 @@ limitations under the License.
 package azurelustre
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -80,19 +79,19 @@ func TestCheckNodeMountAdmission(t *testing.T) {
 	newStatus := func(admission, reason string, observedAt time.Time) *unstructured.Unstructured {
 		facts := stringMapToInterfaceMap(lease.Annotations)
 		facts["factRenewTime"] = time.Now().UTC().Format(time.RFC3339Nano)
-		return &unstructured.Unstructured{Object: map[string]interface{}{
+		return &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "azurelustre.csi.azure.com/v1alpha1",
 			"kind":       "AzureLustreNodeStatus",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      nodeName,
 				"namespace": namespace,
 			},
-			"status": map[string]interface{}{
+			"status": map[string]any{
 				"observedAt":     observedAt.UTC().Format(time.RFC3339),
 				"mountAdmission": admission,
 				"reason":         reason,
 				"message":        "test status",
-				"desired":        map[string]interface{}{"policyFingerprint": policy.fingerprint},
+				"desired":        map[string]any{"policyFingerprint": policy.fingerprint},
 				"observed":       facts,
 			},
 		}}
@@ -321,7 +320,7 @@ func TestCheckNodeMountAdmission(t *testing.T) {
 				map[schema.GroupVersionResource]string{nodeStatusGVR: "AzureLustreNodeStatusList"},
 				objects...,
 			)
-			err := driver.checkNodeMountAdmission(context.Background())
+			err := driver.checkNodeMountAdmission(t.Context())
 			if got := status.Code(err); got != test.wantCode {
 				t.Fatalf("checkNodeMountAdmission() code = %s, want %s, error = %v", got, test.wantCode, err)
 			}
@@ -341,16 +340,16 @@ func TestCheckNodeMountAdmissionHonorsDynamicPolicyDisable(t *testing.T) {
 			return []byte(testCompatibilityPolicy), nil
 		},
 	}
-	if err := driver.checkNodeMountAdmission(context.Background()); err != nil {
+	if err := driver.checkNodeMountAdmission(t.Context()); err != nil {
 		t.Fatalf("disabled policy denied mount: %v", err)
 	}
 }
 
 func TestMountAdmissionConditionPreservesTransitionTime(t *testing.T) {
 	previous := "2026-09-17T12:00:00Z"
-	object := &unstructured.Unstructured{Object: map[string]interface{}{
-		"status": map[string]interface{}{
-			"conditions": []interface{}{map[string]interface{}{
+	object := &unstructured.Unstructured{Object: map[string]any{
+		"status": map[string]any{
+			"conditions": []any{map[string]any{
 				"type":               "ReadyForNewMounts",
 				"status":             "False",
 				"reason":             "ReporterStale",

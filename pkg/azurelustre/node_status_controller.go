@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,14 @@ const (
 	statusControllerLeaseName       = "azurelustre-node-status-controller"
 	compatibilityPolicyKey          = "policy.yaml"
 	mountAdmissionAnnotation        = "azurelustre.csi.azure.com/mount-admission"
+	mountAdmissionAllowed           = "Allowed"
+	mountAdmissionDenied            = "Denied"
+	nodeStatusUnknown               = "Unknown"
+	nodeStatusCurrent               = "Current"
+	nodeClientUnknown               = "ClientUnknown"
+	nodeSecurityWithdrawn           = "Withdrawn"
+	nodeReadyForNewMounts           = "ReadyForNewMounts"
+	nodeStatusUIDKey                = "nodeUID"
 )
 
 var nodeStatusGVR = schema.GroupVersionResource{
@@ -114,9 +123,9 @@ type computedNodeStatus struct {
 	mountAdmission      string
 	reason              string
 	message             string
-	desired             map[string]interface{}
-	observed            map[string]interface{}
-	activation          map[string]interface{}
+	desired             map[string]any
+	observed            map[string]any
+	activation          map[string]any
 }
 
 func (d *Driver) reconcileNodeStatuses(ctx context.Context) error {
@@ -173,7 +182,7 @@ func (d *Driver) reconcileNodeStatuses(ctx context.Context) error {
 		if _, seen := observedNodes[pod.Spec.NodeName]; seen {
 			// A node with multiple competing driver pods has no unique reporter.
 			if i, exists := pendingByNode[pod.Spec.NodeName]; exists {
-				pending[i].mountAdmission = "Denied"
+				pending[i].mountAdmission = mountAdmissionDenied
 				pending[i].reason = "AmbiguousNodePods"
 				pending[i].message = "Multiple Azure Lustre node pods are assigned to this node."
 			}
@@ -260,9 +269,7 @@ func (d *Driver) runNodeStatusJobs(ctx context.Context, jobs []nodeStatusJob) er
 	work := make(chan int)
 	var workers sync.WaitGroup
 	for range 8 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
+		workers.Go(func() {
 			for i := range work {
 				if ctx.Err() != nil {
 					continue
@@ -270,7 +277,7 @@ func (d *Driver) runNodeStatusJobs(ctx context.Context, jobs []nodeStatusJob) er
 				attempted[i] = true
 				reconcileErrors[i] = jobs[i].run(ctx)
 			}
-		}()
+		})
 	}
 dispatch:
 	for offset := range jobs {
@@ -333,14 +340,14 @@ func parseCompatibilityPolicy(raw []byte) (*compatibilityPolicy, error) {
 	}
 	policy.fingerprint = fmt.Sprintf("%x", sha256.Sum256(raw))
 	if len(policy.Clients) == 0 {
-		return nil, fmt.Errorf("compatibility policy contains no clients")
+		return nil, errors.New("compatibility policy contains no clients")
 	}
 	if policy.APIVersion != "azurelustre.csi.azure.com/v1alpha1" ||
 		policy.Kind != "AzureLustreCompatibilityPolicy" {
 		return nil, fmt.Errorf("unsupported compatibility policy %s %s", policy.APIVersion, policy.Kind)
 	}
 	if policy.ClientSetRevision <= 0 || policy.CacheTTLSeconds <= 0 {
-		return nil, fmt.Errorf("compatibility policy revision and cache TTL must be positive")
+		return nil, errors.New("compatibility policy revision and cache TTL must be positive")
 	}
 	for flavor, clientPolicy := range policy.Clients {
 		if desiredClientIdentity(clientPolicy.Desired.Version, clientPolicy.Desired.ShaSuffix) == "" {
@@ -382,7 +389,7 @@ func parseCompatibilityPolicy(raw []byte) (*compatibilityPolicy, error) {
 		// Empty pairs deliberately deny their flavor. Never fill an unused OS
 		// with another flavor's digest just to enable admission elsewhere.
 		if configuredFlavors == 0 {
-			return nil, fmt.Errorf("enforced compatibility policy requires at least one configured image flavor")
+			return nil, errors.New("enforced compatibility policy requires at least one configured image flavor")
 		}
 	}
 	if policy.Bootstrap.Enabled {
@@ -391,14 +398,14 @@ func parseCompatibilityPolicy(raw []byte) (*compatibilityPolicy, error) {
 			return nil, fmt.Errorf("compatibility policy bootstrap expiration is invalid: %w", err)
 		}
 		if policy.Bootstrap.CSIImage.Repository == "" || policy.Bootstrap.CSIImage.Tag == "" {
-			return nil, fmt.Errorf("compatibility policy bootstrap image must be fully specified")
+			return nil, errors.New("compatibility policy bootstrap image must be fully specified")
 		}
 		policy.Bootstrap.CSIImage.Digest = imageDigest(policy.Bootstrap.CSIImage.Digest)
 		if policy.Bootstrap.CSIImage.Digest == "" {
-			return nil, fmt.Errorf("compatibility policy bootstrap image digest is invalid")
+			return nil, errors.New("compatibility policy bootstrap image digest is invalid")
 		}
 		if expiresAt.IsZero() {
-			return nil, fmt.Errorf("compatibility policy bootstrap expiration must be finite")
+			return nil, errors.New("compatibility policy bootstrap expiration must be finite")
 		}
 	}
 	return &policy, nil
@@ -471,7 +478,7 @@ func (d *Driver) computeNodeStatus(
 	status := d.computeNodeHealth(node, pod, lease, policy, policyErr, desiredRevisions)
 	if nodeStartupEnabled(pod) {
 		driver := findContainerStatus(pod.Status.ContainerStatuses, "azurelustre")
-		if status.reporterFreshness != "Current" || !startupObservationMatchesPolicy(lease, policy, time.Now()) ||
+		if status.reporterFreshness != nodeStatusCurrent || !startupObservationMatchesPolicy(lease, policy, time.Now()) ||
 			!driver.Ready || driver.State.Running == nil ||
 			(status.clientCompatibility != "Exact" && status.clientCompatibility != "CompatibleNonCurrent") {
 			status.mountAdmission = mountAdmissionDenied
@@ -482,7 +489,7 @@ func (d *Driver) computeNodeStatus(
 	// Quiescence denies new mounts without hiding the evidence needed to decide
 	// whether a drained node can safely return to service.
 	if strings.EqualFold(strings.TrimSpace(node.Annotations[mountAdmissionAnnotation]), "denied") {
-		status.mountAdmission = "Denied"
+		status.mountAdmission = mountAdmissionDenied
 		status.reason = "AdministrativeQuiescence"
 		status.message = fmt.Sprintf("Node annotation %s=denied blocks new mounts.", mountAdmissionAnnotation)
 	}
@@ -515,23 +522,23 @@ func (d *Driver) computeNodeHealth(
 		nodeUID:             string(node.UID),
 		schedulingCoverage:  "Scheduled",
 		reporterFreshness:   "Missing",
-		csiDelivery:         "Unknown",
-		clientCompatibility: "ClientUnknown",
-		kernelCoverage:      "Unknown",
-		securityCompliance:  "Unknown",
-		mountAdmission:      "Denied",
+		csiDelivery:         nodeStatusUnknown,
+		clientCompatibility: nodeClientUnknown,
+		kernelCoverage:      nodeStatusUnknown,
+		securityCompliance:  nodeStatusUnknown,
+		mountAdmission:      mountAdmissionDenied,
 		reason:              "ReporterMissing",
 		message:             "The Azure Lustre node pod has not published current node facts.",
-		desired:             map[string]interface{}{},
-		observed:            map[string]interface{}{},
-		activation:          map[string]interface{}{},
+		desired:             map[string]any{},
+		observed:            map[string]any{},
+		activation:          map[string]any{},
 	}
 	if policy != nil {
 		status.desired["policyFingerprint"] = policy.fingerprint
 		status.desired["clientSetRevision"] = policy.ClientSetRevision
 	}
 	if policy != nil && !policy.MountAdmission.Enforce {
-		status.mountAdmission = "Allowed"
+		status.mountAdmission = mountAdmissionAllowed
 		status.reason = "AdmissionNotEnforced"
 		status.message = "Mount admission enforcement is disabled by policy."
 	}
@@ -547,16 +554,16 @@ func (d *Driver) computeNodeHealth(
 				pod.Labels["controller-revision-hash"],
 				desiredRevisions,
 			)
-			status.mountAdmission = "Allowed"
+			status.mountAdmission = mountAdmissionAllowed
 			status.reason = "LegacyBootstrapAllowed"
 			status.message = fmt.Sprintf(
 				"Legacy node pod image is temporarily allowlisted until %s.",
 				policy.Bootstrap.ExpiresAt,
 			)
-			status.activation = map[string]interface{}{
-				"nodeUID":     string(node.UID),
-				"podUID":      string(pod.UID),
-				"podRevision": pod.Labels["controller-revision-hash"],
+			status.activation = map[string]any{
+				nodeStatusUIDKey: string(node.UID),
+				"podUID":         string(pod.UID),
+				"podRevision":    pod.Labels["controller-revision-hash"],
 			}
 		}
 		return status
@@ -577,12 +584,12 @@ func (d *Driver) computeNodeHealth(
 		status.message = "The node fact heartbeat or its Node/Pod identity is stale."
 		return status
 	}
-	status.reporterFreshness = "Current"
-	status.activation = map[string]interface{}{
-		"nodeUID":     lease.Annotations[nodeFactAnnotationPrefix+"node-uid"],
-		"bootID":      lease.Annotations[nodeFactAnnotationPrefix+"boot-id"],
-		"podUID":      lease.Annotations[nodeFactAnnotationPrefix+"pod-uid"],
-		"podRevision": lease.Annotations[nodeFactAnnotationPrefix+"pod-revision"],
+	status.reporterFreshness = nodeStatusCurrent
+	status.activation = map[string]any{
+		nodeStatusUIDKey: lease.Annotations[nodeFactAnnotationPrefix+"node-uid"],
+		"bootID":         lease.Annotations[nodeFactAnnotationPrefix+"boot-id"],
+		"podUID":         lease.Annotations[nodeFactAnnotationPrefix+"pod-uid"],
+		"podRevision":    lease.Annotations[nodeFactAnnotationPrefix+"pod-revision"],
 	}
 	status.csiDelivery = csiDeliveryState(
 		pod,
@@ -630,28 +637,28 @@ func (d *Driver) computeNodeHealth(
 		status.securityCompliance = nodeStatusUnknown
 	}
 	if !policy.MountAdmission.Enforce {
-		status.mountAdmission = "Allowed"
+		status.mountAdmission = mountAdmissionAllowed
 		status.reason = "AdmissionNotEnforced"
 		status.message = "Mount admission enforcement is disabled by policy."
 		return status
 	}
-	if status.securityCompliance == "Unknown" {
+	if status.securityCompliance == nodeStatusUnknown {
 		status.reason = "SecurityEvidenceUnknown"
 		status.message = "Immutable image-digest approval could not be established."
 		return status
 	}
-	if status.securityCompliance == "Withdrawn" {
+	if status.securityCompliance == nodeSecurityWithdrawn {
 		status.reason = "ImageDigestWithdrawn"
 		status.message = "The running driver or loader image digest is not approved."
 		return status
 	}
-	if status.csiDelivery == "Unknown" {
+	if status.csiDelivery == nodeStatusUnknown {
 		status.reason = "CSIDeliveryUnknown"
 		status.message = "The running node pod revision could not be compared with desired state."
 		return status
 	}
-	status.mountAdmission = "Allowed"
-	status.reason = "ReadyForNewMounts"
+	status.mountAdmission = mountAdmissionAllowed
+	status.reason = nodeReadyForNewMounts
 	status.message = "Node evidence satisfies the current mount-admission policy."
 	return status
 }
@@ -663,21 +670,21 @@ func classifySecurityCompliance(
 ) string {
 	driverPolicy, ok := images.Driver[flavor]
 	if !ok {
-		return "Unknown"
+		return nodeStatusUnknown
 	}
 	loaderPolicy, ok := images.Loader[flavor]
 	if !ok {
-		return "Unknown"
+		return nodeStatusUnknown
 	}
 	driverDigest := imageDigest(lease.Annotations[nodeFactAnnotationPrefix+"driver-image-id"])
 	loaderDigest := imageDigest(lease.Annotations[nodeFactAnnotationPrefix+"loader-image-id"])
 	if driverDigest == "" || loaderDigest == "" ||
 		driverPolicy.DesiredDigest == "" || loaderPolicy.DesiredDigest == "" {
-		return "Unknown"
+		return nodeStatusUnknown
 	}
 	if !stringInSlice(driverDigest, driverPolicy.ApprovedDigests) ||
 		!stringInSlice(loaderDigest, loaderPolicy.ApprovedDigests) {
-		return "Withdrawn"
+		return nodeSecurityWithdrawn
 	}
 	if driverDigest == driverPolicy.DesiredDigest && loaderDigest == loaderPolicy.DesiredDigest {
 		return "Approved"
@@ -710,14 +717,14 @@ func csiDeliveryState(pod *corev1.Pod, podRevision string, desiredRevisions map[
 		}
 		desiredRevision := desiredRevisions[owner.Name]
 		if desiredRevision == "" {
-			return "Unknown"
+			return nodeStatusUnknown
 		}
 		if podRevision == desiredRevision {
-			return "Current"
+			return nodeStatusCurrent
 		}
 		return "NonCurrent"
 	}
-	return "Unknown"
+	return nodeStatusUnknown
 }
 
 func legacyBootstrapAllowed(
@@ -793,15 +800,15 @@ func staleFactStatus(node *corev1.Node, lease *coordinationv1.Lease) computedNod
 		nodeUID:             string(node.UID),
 		schedulingCoverage:  "ReporterStale",
 		reporterFreshness:   "Stale",
-		csiDelivery:         "Unknown",
-		clientCompatibility: "ClientUnknown",
-		kernelCoverage:      "Unknown",
-		securityCompliance:  "Unknown",
-		mountAdmission:      "Denied",
+		csiDelivery:         nodeStatusUnknown,
+		clientCompatibility: nodeClientUnknown,
+		kernelCoverage:      nodeStatusUnknown,
+		securityCompliance:  nodeStatusUnknown,
+		mountAdmission:      mountAdmissionDenied,
 		reason:              "NodePodMissing",
 		message:             "A node fact exists, but its Azure Lustre node pod is missing.",
 		observed:            stringMapToInterfaceMap(lease.Annotations),
-		desired:             map[string]interface{}{},
+		desired:             map[string]any{},
 	}
 }
 
@@ -816,15 +823,15 @@ func missingNodePodStatus(
 		nodeUID:             string(node.UID),
 		schedulingCoverage:  "NoEligibleNodePod",
 		reporterFreshness:   "Missing",
-		csiDelivery:         "Unknown",
-		clientCompatibility: "ClientUnknown",
-		kernelCoverage:      "Unknown",
-		securityCompliance:  "Unknown",
-		mountAdmission:      "Denied",
+		csiDelivery:         nodeStatusUnknown,
+		clientCompatibility: nodeClientUnknown,
+		kernelCoverage:      nodeStatusUnknown,
+		securityCompliance:  nodeStatusUnknown,
+		mountAdmission:      mountAdmissionDenied,
 		reason:              "NodePodMissing",
 		message:             fmt.Sprintf("DaemonSet %q targets this node, but no node pod exists.", daemonset.Name),
-		observed:            map[string]interface{}{},
-		desired:             map[string]interface{}{},
+		observed:            map[string]any{},
+		desired:             map[string]any{},
 	}
 	if policyErr != nil {
 		status.reason = "PolicyUnavailable"
@@ -836,7 +843,7 @@ func missingNodePodStatus(
 	}
 	flavor := daemonset.Labels["flavor"]
 	if clientPolicy, ok := policy.Clients[flavor]; ok {
-		status.desired = map[string]interface{}{
+		status.desired = map[string]any{
 			"clientSetRevision": policy.ClientSetRevision,
 			"client": desiredClientIdentity(
 				clientPolicy.Desired.Version,
@@ -904,6 +911,8 @@ func daemonSetAutomaticallyTolerates(taint corev1.Taint, hostNetwork bool) bool 
 	switch taint.Effect {
 	case corev1.TaintEffectNoExecute:
 		return taint.Key == corev1.TaintNodeNotReady || taint.Key == corev1.TaintNodeUnreachable
+	case corev1.TaintEffectPreferNoSchedule:
+		return false
 	case corev1.TaintEffectNoSchedule:
 		switch taint.Key {
 		case corev1.TaintNodeMemoryPressure, corev1.TaintNodeDiskPressure,
@@ -975,12 +984,7 @@ func tolerationToleratesTaint(toleration corev1.Toleration, taint corev1.Taint) 
 }
 
 func stringInSlice(value string, values []string) bool {
-	for _, candidate := range values {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }
 
 func (d *Driver) writeNodeStatus(ctx context.Context, status computedNodeStatus, snapshot *unstructured.Unstructured) error {
@@ -1010,16 +1014,16 @@ func (d *Driver) writeNodeStatusOnce(ctx context.Context, status computedNodeSta
 	object := snapshot.DeepCopy()
 	var err error
 	if object == nil {
-		object, err = resource.Create(ctx, &unstructured.Unstructured{Object: map[string]interface{}{
+		object, err = resource.Create(ctx, &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "azurelustre.csi.azure.com/v1alpha1",
 			"kind":       "AzureLustreNodeStatus",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      status.nodeName,
 				"namespace": d.podNamespace,
 			},
-			"spec": map[string]interface{}{
-				"nodeName": status.nodeName,
-				"nodeUID":  status.nodeUID,
+			"spec": map[string]any{
+				"nodeName":       status.nodeName,
+				nodeStatusUIDKey: status.nodeUID,
 			},
 		}}, metav1.CreateOptions{})
 		if apierrors.IsAlreadyExists(err) {
@@ -1029,7 +1033,7 @@ func (d *Driver) writeNodeStatusOnce(ctx context.Context, status computedNodeSta
 	if err != nil {
 		return fmt.Errorf("get or create node status %q: %w", status.nodeName, err)
 	}
-	currentNodeUID, _, err := unstructured.NestedString(object.Object, "spec", "nodeUID")
+	currentNodeUID, _, err := unstructured.NestedString(object.Object, "spec", nodeStatusUIDKey)
 	if err != nil {
 		return fmt.Errorf("read node status spec %q: %w", status.nodeName, err)
 	}
@@ -1038,9 +1042,9 @@ func (d *Driver) writeNodeStatusOnce(ctx context.Context, status computedNodeSta
 		return fmt.Errorf("read node status spec %q: %w", status.nodeName, err)
 	}
 	if currentNodeUID != status.nodeUID || currentNodeName != status.nodeName {
-		if err := unstructured.SetNestedMap(object.Object, map[string]interface{}{
-			"nodeName": status.nodeName,
-			"nodeUID":  status.nodeUID,
+		if err := unstructured.SetNestedMap(object.Object, map[string]any{
+			"nodeName":       status.nodeName,
+			nodeStatusUIDKey: status.nodeUID,
 		}, "spec"); err != nil {
 			return fmt.Errorf("build node status spec %q: %w", status.nodeName, err)
 		}
@@ -1050,7 +1054,7 @@ func (d *Driver) writeNodeStatusOnce(ctx context.Context, status computedNodeSta
 		}
 	}
 	condition := mountAdmissionCondition(object, status, time.Now().UTC())
-	if err := unstructured.SetNestedMap(object.Object, map[string]interface{}{
+	if err := unstructured.SetNestedMap(object.Object, map[string]any{
 		"observedAt":          time.Now().UTC().Format(time.RFC3339),
 		"schedulingCoverage":  status.schedulingCoverage,
 		"reporterFreshness":   status.reporterFreshness,
@@ -1064,7 +1068,7 @@ func (d *Driver) writeNodeStatusOnce(ctx context.Context, status computedNodeSta
 		"desired":             status.desired,
 		"observed":            status.observed,
 		"activation":          status.activation,
-		"conditions":          []interface{}{condition},
+		"conditions":          []any{condition},
 	}, "status"); err != nil {
 		return fmt.Errorf("build node status %q: %w", status.nodeName, err)
 	}
@@ -1078,17 +1082,17 @@ func mountAdmissionCondition(
 	object *unstructured.Unstructured,
 	status computedNodeStatus,
 	now time.Time,
-) map[string]interface{} {
+) map[string]any {
 	conditionStatus := "False"
-	if status.mountAdmission == "Allowed" {
+	if status.mountAdmission == mountAdmissionAllowed {
 		conditionStatus = "True"
 	}
 	transitionTime := now.Format(time.RFC3339)
 	conditions, found, err := unstructured.NestedSlice(object.Object, "status", "conditions")
 	if err == nil && found {
 		for _, item := range conditions {
-			condition, ok := item.(map[string]interface{})
-			if !ok || condition["type"] != "ReadyForNewMounts" {
+			condition, ok := item.(map[string]any)
+			if !ok || condition["type"] != nodeReadyForNewMounts {
 				continue
 			}
 			if condition["status"] == conditionStatus && condition["reason"] == status.reason {
@@ -1099,8 +1103,8 @@ func mountAdmissionCondition(
 			break
 		}
 	}
-	return map[string]interface{}{
-		"type":               "ReadyForNewMounts",
+	return map[string]any{
+		"type":               nodeReadyForNewMounts,
 		"status":             conditionStatus,
 		"reason":             status.reason,
 		"message":            status.message,
@@ -1118,7 +1122,7 @@ func (d *Driver) garbageCollectNodeStatus(
 	if err != nil {
 		return fmt.Errorf("read node name from status %q: %w", status.GetName(), err)
 	}
-	nodeUID, _, err := unstructured.NestedString(status.Object, "spec", "nodeUID")
+	nodeUID, _, err := unstructured.NestedString(status.Object, "spec", nodeStatusUIDKey)
 	if err != nil {
 		return fmt.Errorf("read node UID from status %q: %w", status.GetName(), err)
 	}
@@ -1127,7 +1131,7 @@ func (d *Driver) garbageCollectNodeStatus(
 		return nil
 	}
 	deleteOptions := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{
-		UID: ptr(status.GetUID()), ResourceVersion: ptr(status.GetResourceVersion()),
+		UID: new(status.GetUID()), ResourceVersion: new(status.GetResourceVersion()),
 	}}
 	if err := resource.Delete(ctx, status.GetName(), deleteOptions); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete stale node status %q: %w", status.GetName(), err)
@@ -1216,8 +1220,8 @@ func clientIsCompatible(loaded string, compatible []clientIdentity) bool {
 	return false
 }
 
-func stringMapToInterfaceMap(values map[string]string) map[string]interface{} {
-	result := make(map[string]interface{}, len(values))
+func stringMapToInterfaceMap(values map[string]string) map[string]any {
+	result := make(map[string]any, len(values))
 	for key, value := range values {
 		result[key] = value
 	}

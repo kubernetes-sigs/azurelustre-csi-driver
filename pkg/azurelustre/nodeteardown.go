@@ -374,7 +374,7 @@ func verifyLustreModulesGone(moduleDir, procModules string) error {
 	if err != nil {
 		return err
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if fields := strings.Fields(line); len(fields) > 0 {
 			loaded[fields[0]] = true
 		}
