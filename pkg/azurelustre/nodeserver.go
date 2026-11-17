@@ -124,6 +124,9 @@ func (d *Driver) NodePublishVolume(
 		isOperationSucceeded = true
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
+	if err := d.checkNodeStartup(); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
 	if err := d.checkNodeMountAdmission(ctx); err != nil {
 		return nil, err
 	}

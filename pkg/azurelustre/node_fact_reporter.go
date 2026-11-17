@@ -131,6 +131,15 @@ func (d *Driver) publishNodeFact(ctx context.Context) error {
 			delete(annotations, key)
 		}
 	}
+	if d.nodeStartup != nil {
+		observation := d.nodeStartup.currentObservation()
+		annotations[nodeFactAnnotationPrefix+"startup-ready"] = strconv.FormatBool(observation != nil)
+		if observation != nil {
+			annotations[nodeFactAnnotationPrefix+"startup-observed-at"] = observation.observedAt.UTC().Format(time.RFC3339Nano)
+			annotations[nodeFactAnnotationPrefix+"startup-loaded-client"] = observation.runtime.loadedClient
+			annotations[nodeFactAnnotationPrefix+"startup-policy-fingerprint"] = observation.runtime.policyFingerprint
+		}
+	}
 
 	now := metav1.NewMicroTime(time.Now().UTC())
 	holderIdentity := string(pod.UID)

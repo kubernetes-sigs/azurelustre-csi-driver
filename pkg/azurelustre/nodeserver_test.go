@@ -191,6 +191,7 @@ func TestNodeUnpublishRetriesTemporaryCleanup(t *testing.T) {
 	temporaryMount := mounter.MountPoints[0]
 	assert.NotEqual(t, target, temporaryMount.Path, "failed preparation must not leave a published target")
 	unpublish := &csi.NodeUnpublishVolumeRequest{VolumeId: request.GetVolumeId(), TargetPath: target}
+	driver.nodeStartup = testNodeStartup(t)
 
 	_, err = driver.NodeUnpublishVolume(t.Context(), unpublish)
 

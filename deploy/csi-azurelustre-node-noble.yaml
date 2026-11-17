@@ -72,25 +72,14 @@ spec:
         # Native sidecar (restartPolicy: Always): installs the Lustre client
         # kernel module for the running kernel, loads it into the shared host
         # kernel, configures LNet, then runs an LNet reconcile loop for the life
-        # of the pod. Its startupProbe gates the driver and registrar containers
-        # so they do not start until LNet is up, leaving the registrar's 30s
-        # connect deadline racing only the driver's utils install; on
-        # termination its SIGTERM handler unloads the modules so nothing is left
-        # behind when the driver is uninstalled.
+        # of the pod. Setup does not block the CSI cleanup endpoint. Routine
+        # termination preserves resident modules; activation is separate.
         - name: lustre-loader
           image: mcr.microsoft.com/oss/v2/kubernetes-csi/azurelustre-csi:latest-noble
           imagePullPolicy: Always
           restartPolicy: Always
           securityContext:
             privileged: true
-          startupProbe:
-            failureThreshold: 120
-            exec:
-              command:
-                - /app/readinessProbe.sh
-            initialDelaySeconds: 10
-            timeoutSeconds: 5
-            periodSeconds: 5
           readinessProbe:
             failureThreshold: 5
             exec:
@@ -103,17 +92,18 @@ spec:
             failureThreshold: 5
             exec:
               command:
-                # Restart the sidecar only when the Lustre kernel module has
-                # vanished (unrecoverable in-process). Transient LNet config
-                # drift is repaired by the reconcile loop and surfaced via the
-                # readinessProbe, so it must not trigger a restart here.
-                - /bin/sh
-                - -c
-                - "test -d /sys/module/lnet"
+                - /app/startupState.sh
+                - live
             initialDelaySeconds: 60
             timeoutSeconds: 10
             periodSeconds: 30
           env:
+            - name: AZURELUSTRE_NODE_STARTUP_DIR
+              value: /run/azurelustre/startup
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
             - name: AZURELUSTRE_CSI_ROLE
               value: loader
             - name: LUSTRE_VERSION
@@ -121,6 +111,8 @@ spec:
             - name: CLIENT_SHA_SUFFIX
               value: "24-gf517bc4"
           volumeMounts:
+            - name: node-startup
+              mountPath: /run/azurelustre/startup
             - mountPath: /dev
               name: host-dev
             - mountPath: /etc/host-os-release
@@ -229,9 +221,8 @@ spec:
           #   protocol: TCP
           startupProbe:
             # Hold off the livenessProbe until the driver is serving: the
-            # liveness-probe sidecar does not bind :29763 until it has connected
-            # to csi.sock, so /healthz is connection-refused for the whole utils
-            # install.
+            # liveness-probe sidecar binds :29763 after connecting to csi.sock.
+            # Package recovery does not block the CSI endpoint.
             failureThreshold: 60
             httpGet:
               path: /healthz
@@ -248,21 +239,27 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 30
           readinessProbe:
-            # Gate Ready on the CSI socket existing: the driver installs its
-            # userspace utils and only then execs and opens the socket (~18s on
-            # Azure Linux), so without this the pod reports Ready before it can
-            # serve mounts, letting a rolling upgrade advance past a node whose
-            # driver is not serving yet.
+            # New mounts require fresh, compatible host runtime and utilities.
             exec:
               command:
                 - /bin/sh
                 - -c
-                - "test -S /csi/csi.sock"
+                - "test -S /csi/csi.sock && /app/readinessProbe.sh"
             initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 3
           env:
+            - name: AZURELUSTRE_NODE_STARTUP_DIR
+              value: /run/azurelustre/startup
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: NODE_FLAVOR
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['flavor']
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
             - name: AZURELUSTRE_CSI_ROLE
@@ -291,6 +288,8 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
+            - name: node-startup
+              mountPath: /run/azurelustre/startup
             - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               name: kube-api-access
               readOnly: true
@@ -321,6 +320,8 @@ spec:
               cpu: 10m
               memory: 20Mi
       volumes:
+        - name: node-startup
+          emptyDir: {}
         - name: kube-api-access
           projected:
             defaultMode: 0644

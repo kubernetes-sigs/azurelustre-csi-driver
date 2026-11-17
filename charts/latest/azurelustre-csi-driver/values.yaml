@@ -82,6 +82,10 @@ statusController:
   extraArgs: ["-v=5"]
 
 node:
+  # Keep CSI cleanup available while client packages recover. Fresh mounts
+  # require healthy host runtime and a policy-supported resident client.
+  # Does not change the update strategy or activate newer resident modules.
+  cleanupCapableStartup: true
   # The node plugin is deliberately kept off AKS-managed *reserved* system node
   # pools by NOT tolerating the CriticalAddonsOnly taint (the AKS-recommended way
   # to keep a DaemonSet off system pools; see aka.ms/aks/use-system-pools). This

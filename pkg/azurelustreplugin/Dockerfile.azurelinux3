@@ -19,8 +19,9 @@ COPY "./_output/azurelustreplugin" "/app/azurelustreplugin"
 COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
 COPY "./pkg/azurelustreplugin/start.sh" "/app/start.sh"
 COPY "./pkg/azurelustreplugin/readinessProbe.sh" "/app/readinessProbe.sh"
+COPY "./pkg/azurelustreplugin/startupState.sh" "/app/startupState.sh"
 
-RUN chmod +x "/app/azurelustreplugin" && chmod +x "/app/entrypoint.sh" && chmod +x "/app/start.sh" && chmod +x "/app/readinessProbe.sh"
+RUN chmod +x "/app/azurelustreplugin" "/app/entrypoint.sh" "/app/start.sh" "/app/readinessProbe.sh" "/app/startupState.sh"
 
 RUN tdnf -y update && \
   tdnf install -y \
@@ -29,9 +30,13 @@ RUN tdnf -y update && \
     gawk \
     iproute \
     kmod \
+    util-linux \
+    coreutils \
     sed \
     grep \
     which && \
+  command -v mount && command -v umount && command -v timeout && \
+  mount --version && umount --version && \
   tdnf clean all && \
   rm -rf /var/cache/tdnf/*
 
