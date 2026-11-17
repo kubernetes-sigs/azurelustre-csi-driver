@@ -113,8 +113,9 @@ node:
   updateStrategy:
     type: RollingUpdate
     # Only used when type is RollingUpdate; OnDelete has no rollout budget.
-    rollingUpdate:
-      maxUnavailable: 10%
+    # Keep legacy budgets unless rollingUpdate.maxUnavailable is set.
+    maxUnavailable: 10%
+    rollingUpdate: {}
   priorityClassName: system-node-critical
   extraArgs: ["-v=5"]
   jammy:

@@ -25,10 +25,15 @@ helm install azurelustre --wait \
 To upgrade:
 
 > [!IMPORTANT]
-> **Stop every workload using Lustre on the affected nodes before upgrading.** An
-> upgrade restarts the node pods. If the release changes the Lustre client
-> version, the new kernel modules can only load once the old ones are unloaded,
-> and the kernel refuses to unload them while any Lustre filesystem is mounted.
+> The development chart defaults to rolling node-pod updates. Compatible driver
+> updates can retain supported resident modules without draining workloads.
+> Confirm the running loader preserves modules on termination and the target
+> release supports those clients. Older module-unloading loaders, unqualified
+> custom entrypoints, and incompatible transitions require planned maintenance.
+> Check the chosen release's defaults and the [upgrade
+> precautions](../charts/README.md#upgrade), especially when switching a staged
+> `OnDelete` installation to `RollingUpdate`. Pod replacement alone does not
+> guarantee client-module activation.
 
 ```shell
 CHART_VERSION=0.7.0
@@ -136,11 +141,17 @@ For the full list of configurable values, version history, and advanced Helm usa
 
 - Upgrade in place:
 
-    **Stop every workload using Lustre on the affected nodes before upgrading.**
-    The upgrade restarts the node pods. If the release changes the Lustre client
-    version, the new kernel modules can only load once the old ones are
-    unloaded, and the kernel refuses to unload them while any Lustre filesystem
-    is mounted.
+    Current source manifests use `RollingUpdate`. The installer waits for
+    updated, Ready, available node pods, including completion of each flavor's
+    rollout. Compatible updates can preserve supported resident modules and
+    application mounts; follow the [upgrade precautions](../charts/README.md#upgrade)
+    before changing a staged strategy or using an unqualified client combination.
+    Pod replacement alone does not activate newer modules.
+
+    **For migration from the old monolithic DaemonSet or a module-unloading
+    loader, stop affected workloads and wait for Lustre unmounts first.** Keep
+    existing PVCs and PVs. Custom-entrypoint changes also require the precautions
+    in [Custom Entrypoint](#custom-entrypoint-advanced).
 
     Re-run `install-driver.sh` against the same cluster. The script deletes and
     recreates the controller Deployment (its `spec.selector` is immutable and
@@ -255,34 +266,34 @@ Before mounting Azure Lustre filesystems, it is important to verify that the CSI
 
 ### Node pod container architecture
 
-Each `csi-azurelustre-node` pod runs four containers. Kernel-module loading and
-LNet setup are split into a dedicated startup sidecar so the CSI driver socket
-opens quickly: the `node-driver-registrar` no longer waits behind the full
-client install, only behind the driver's much smaller userspace utils install,
-with an HTTP startup probe holding off liveness checks for up to about a minute.
+Each `csi-azurelustre-node` pod runs four containers. Current source manifests
+start CSI independently of loader and driver package installation so ordinary
+unmounts remain available during package recovery. The driver installs its
+userspace tools in a retrying worker and gates new mounts on fresh, compatible
+host-runtime evidence. An HTTP startup probe protects registrar initialization.
 The registrar still exits if its initial CSI connection times out after 30 seconds;
 Kubernetes then restarts it with backoff.
 
 | Container | Kind | Responsibility | Health checks |
 | --------- | ---- | -------------- | ------------- |
-| `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) | Installs the full Lustre client metapackage, loads the kernel modules into the shared host kernel, configures LNet, then runs an LNet-config reconcile loop for the life of the pod. | `startupProbe` + `readinessProbe`: `/app/readinessProbe.sh` (full LNet health — NIDs, self-ping, interfaces). `livenessProbe`: `test -d /sys/module/lnet` (restart only if the kernel module disappears). |
-| `azurelustre` | driver | Installs the userspace Lustre tools, then serves the CSI gRPC API. | `startupProbe`: `/healthz` HTTP on port 29763 (holds off the liveness check while the utils install runs). `readinessProbe`: `test -S /csi/csi.sock` (driver socket is serving). `livenessProbe`: `/healthz` HTTP on port 29763. |
+| `lustre-loader` | native sidecar (init container with `restartPolicy: Always`) | Installs the full client, loads resident modules if absent, configures LNet, and reconciles it for the life of the pod. Routine termination preserves modules. | No blocking startup probe. `readinessProbe`: `/app/readinessProbe.sh`. `livenessProbe`: `/app/startupState.sh live`, allowing ten minutes of setup, then checking that LNet remains loaded. |
+| `azurelustre` | driver | Starts CSI immediately; installs userspace tools in a retrying worker. New mounts require fresh supported host runtime. | `startupProbe` and `livenessProbe`: `/healthz` on port 29763. `readinessProbe`: CSI socket plus `/app/readinessProbe.sh`, including current runtime observation and LNet health. |
 | `liveness-probe` | sidecar | Exposes the driver's `/healthz` endpoint to the kubelet. | — |
 | `node-driver-registrar` | sidecar | Registers the driver socket with the kubelet. | `startupProbe` + `livenessProbe`: `/healthz` HTTP on port 29764 (registration socket responds; not confirmation of completed kubelet registration). |
 
 The pod's overall `Ready` condition is the AND of every container's readiness,
 including the `lustre-loader` sidecar (a native sidecar's `readinessProbe`
-contributes to pod readiness). So **a node pod reports `Ready` only when LNet is
-healthy *and* the driver socket is serving** — this is the signal to wait on
-before mounting Lustre volumes.
+contributes to pod readiness). Wait for Pod readiness during installation and
+rollouts. A later loader restart can leave the Pod NotReady while the driver
+still accepts new mounts against fresh, healthy, supported resident modules.
+CSI cleanup and already-published retries do not depend on runtime readiness.
 
 > [!NOTE]
-> The `lustre-loader` sidecar runs first and its `startupProbe` gates the
-> `azurelustre` and `node-driver-registrar` containers from starting until LNet
-> is up. On Azure Linux 3 the Lustre client install is larger than on Ubuntu, so
-> a fresh node pod takes longer to reach `Ready` — this is expected, not a
-> failure. Wait on the pod `Ready` condition (e.g. `kubectl wait
-> --for=condition=ready`) rather than a fixed timeout or the raw container count.
+> `node.cleanupCapableStartup=false` explicitly restores legacy Helm startup:
+> loader readiness gates the main containers, and driver utilities install
+> before CSI opens. Package failures in that mode can block cleanup. The current
+> source defaults require a matching driver image and a valid flavor policy;
+> they do not activate newer modules merely by replacing the CSI pod.
 
 ### Readiness validation
 
@@ -305,11 +316,10 @@ detection (see the table above for which container owns each probe):
    kubectl describe -n kube-system pod -l app=csi-azurelustre-node
    ```
 
-   Look for the `lustre-loader` sidecar's exec-based readiness/startup probes and
-   the `azurelustre` driver's socket readiness probe. A freshly created pod may
-   show startup probe failures while LNet comes up and while the driver installs
-   its utils; on a pod that has settled, no recent probe failures should appear
-   in the Events section.
+   Look for loader readiness and startup-state liveness checks, and driver
+   socket-plus-runtime readiness. Package installation can leave readiness
+   failing while CSI liveness succeeds. Check runtime evidence rather than
+   treating socket existence as permission to mount.
 
 3. **Monitor LNet validation logs (loader sidecar):**
 
@@ -377,8 +387,8 @@ Because the node plugin is split into a `lustre-loader` startup sidecar and an `
 
 | `AZURELUSTRE_CSI_ROLE` | Container | The custom script must |
 | --- | --- | --- |
-| `loader` | `lustre-loader` sidecar | Install the full Lustre client (kmod + kernel + utils), load the kernel modules into the shared host kernel, configure LNet, then keep running for the life of the pod (e.g. an LNet reconcile loop). It must **not** exec the CSI driver binary. |
-| `driver` | `azurelustre` | Install only the userspace Lustre utils, then `exec "$@"` to launch the CSI driver binary passed by `start.sh`. |
+| `loader` | `lustre-loader` sidecar | Preserve the built-in startup-state handoff; install the full client, load missing modules, configure and reconcile LNet. Do not exec CSI or unload resident modules on routine termination. |
+| `driver` | `azurelustre` | With cleanup-capable startup, launch CSI promptly with `exec "$@"`; its worker invokes the bundled userspace installer. Legacy mode installs utilities before exec. |
 | `controller` | controller deployment | Just `exec "$@"` — no kernel-module work. (The controller does not mount the ConfigMap, so an override never reaches it; the built-in entrypoint handles this role.) |
 
 ### Installing with a Custom Entrypoint
@@ -391,11 +401,17 @@ Pass `--custom-entrypoint <file>` to the install script:
 ./deploy/install-driver.sh --custom-entrypoint ./my-entrypoint.sh local
 ```
 
-This creates a ConfigMap from the provided file and restarts the node DaemonSet pods to use it.
+This creates or updates the ConfigMap. ConfigMap-only changes do not restart
+node pods, even with `RollingUpdate`; new or restarted containers read the
+current configuration. The installer also applies the DaemonSet templates, so
+template changes can roll pods immediately. Cordon and drain affected nodes
+before applying an arbitrary custom entrypoint, and verify no Lustre mounts remain.
 
 #### Helm
 
-The Helm chart always mounts the custom entrypoint ConfigMap as optional, so no chart upgrade is needed. Create the ConfigMap and restart the node pods:
+The Helm chart always mounts the custom entrypoint ConfigMap as optional, so no
+chart upgrade is needed. Create the ConfigMap, then replace node pods only after
+cordoning and draining their nodes and verifying that no Lustre mounts remain:
 
 ```shell
 # Create the ConfigMap from your custom entrypoint script
@@ -403,8 +419,11 @@ kubectl create configmap csi-azurelustre-entrypoint \
   --from-file=entrypoint.sh=./my-entrypoint.sh \
   -n kube-system
 
-# Restart node DaemonSet pods to pick up the custom entrypoint
-kubectl rollout restart daemonset -l app=csi-azurelustre-node -n kube-system
+# After safely draining one node, delete only that node's CSI pod.
+kubectl delete pod -n kube-system <drained-node-csi-pod>
+kubectl wait -n kube-system --for=condition=Ready \
+  pod/<replacement-node-csi-pod> --timeout=10m
+kubectl uncordon <node-name>
 ```
 
 ### Reverting to the Built-in Entrypoint
@@ -417,23 +436,33 @@ Run the install script without the `--custom-entrypoint` flag:
 ./deploy/install-driver.sh local
 ```
 
-This deletes the ConfigMap and restarts the node pods to use the built-in entrypoint. **The custom entrypoint is not sticky** — each install must explicitly request it.
+This deletes the ConfigMap but does not restart pods solely for that deletion.
+New or restarted containers use the built-in entrypoint. DaemonSet template
+changes can still roll pods, so drain affected nodes and verify no Lustre mounts
+remain before reverting an arbitrary custom entrypoint. **The custom entrypoint
+is not sticky** -- each install must explicitly request it.
 
 #### Revert with Helm
 
-Delete the ConfigMap and restart the node pods:
+Delete the ConfigMap, then replace each node pod only after safely draining its
+node and verifying that no Lustre mounts remain:
 
 ```shell
 kubectl delete configmap csi-azurelustre-entrypoint -n kube-system --ignore-not-found
-kubectl rollout restart daemonset -l app=csi-azurelustre-node -n kube-system
+kubectl delete pod -n kube-system <drained-node-csi-pod>
+kubectl wait -n kube-system --for=condition=Ready \
+  pod/<replacement-node-csi-pod> --timeout=10m
+kubectl uncordon <node-name>
 ```
 
 ### Important Notes
 
 - The custom entrypoint replaces the **entire** built-in entrypoint, including Lustre client installation logic, and is used by **both** the `lustre-loader` sidecar and the `azurelustre` driver container. Your custom script is responsible for all per-role setup (see the role table under [How It Works](#how-it-works)) — including loading the kernel modules and bringing up LNet in the `loader` role — and, in the `driver` role, for launching the CSI driver binary.
 - A good starting point for a custom entrypoint is the built-in script at `pkg/azurelustreplugin/entrypoint.sh`, which already dispatches on `AZURELUSTRE_CSI_ROLE`. Copy and adapt it rather than writing a single-flow script, so that both the `loader` and `driver` roles are handled.
-- The `lustre-loader` sidecar's readiness is gated by `/app/readinessProbe.sh` (an LNet health check) that the kubelet runs **directly** — it is **not** overridable by the custom entrypoint. A `loader` custom script that does not bring LNet up the way the probe expects will fail the sidecar's `startupProbe`, which keeps the `azurelustre` and `node-driver-registrar` containers from starting and the node pod from ever reaching `Ready`.
+- Kubelet runs `/app/readinessProbe.sh` directly; a custom entrypoint does not override it. Custom loaders must preserve startup-state records and LNet health or the Pod stays NotReady. In legacy startup mode, a failing loader startup probe also blocks the driver and registrar from starting.
 - **Migration note:** earlier driver versions selected behavior with `AZURELUSTRE_CSI_INSTALL_LUSTRE_CLIENT` (`yes`/`no`); this has been replaced by `AZURELUSTRE_CSI_ROLE` (`loader`/`driver`/`controller`). A custom entrypoint carried over from before the sidecar split must be updated to read `AZURELUSTRE_CSI_ROLE` and implement the `loader` and `driver` roles separately.
 - **Security note:** the custom entrypoint is stored in the `csi-azurelustre-entrypoint` ConfigMap in `kube-system` and is executed by a privileged container. Treat this as a code-injection path: tightly restrict RBAC for creating or updating this ConfigMap, and only use custom entrypoints in trusted/admin scenarios.
-- If you edit the ConfigMap directly (e.g., `kubectl edit configmap csi-azurelustre-entrypoint -n kube-system`), you must manually restart the node DaemonSets for changes to take effect: `kubectl rollout restart daemonset csi-azurelustre-node-jammy csi-azurelustre-node-noble csi-azurelustre-node-azurelinux3 -n kube-system`
+- Editing the ConfigMap does not restart running entrypoints. New or restarted
+  containers read the current configuration. Replace each pod only after safely
+  draining its node and verifying that no Lustre mounts remain.
 - The uninstall script automatically cleans up the ConfigMap if it exists.

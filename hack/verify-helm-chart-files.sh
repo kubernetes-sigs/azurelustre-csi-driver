@@ -379,7 +379,7 @@ check_node_rollout_safety() {
       | select(.spec.updateStrategy.type != "RollingUpdate" or .spec.updateStrategy.rollingUpdate.maxUnavailable != "10%")
       | .metadata.name' - | sed '/^---$/d')
   if [[ -n "${unsafe_strategy}" ]]; then
-    echo "ERROR: node DaemonSets must retain RollingUpdate and the 10% budget:"
+    echo "ERROR: node DaemonSets must default to RollingUpdate with maxUnavailable=10%:"
     echo "${unsafe_strategy}"
     rollout_issues=true
   fi
@@ -398,32 +398,53 @@ check_node_rollout_safety() {
     rollout_issues=true
   fi
 
-  local rolling_rendered rolling_issues
-  if ! rolling_rendered=$(helm template \
-    --set "fullnameOverride=csi-azurelustre" \
-    --set "node.updateStrategy.type=RollingUpdate" \
-    --set "node.updateStrategy.rollingUpdate.maxUnavailable=1" \
-    --namespace kube-system \
-    chart-test \
-    "${chart_dir}" 2>&1); then
-    echo "ERROR: helm template failed for the standalone RollingUpdate override:"
-    echo "${rolling_rendered}"
-    echo
-    return 1
-  fi
+  local rolling_rendered rolling_issues budget_case expected_budget
+  local -a budget_overrides
+  for budget_case in structured legacy-count legacy-percentage structured-precedence; do
+    case "${budget_case}" in
+      structured)
+        expected_budget=1
+        budget_overrides=(--set "node.updateStrategy.rollingUpdate.maxUnavailable=1")
+        ;;
+      legacy-count)
+        expected_budget=1
+        budget_overrides=(--set "node.updateStrategy.maxUnavailable=1")
+        ;;
+      legacy-percentage)
+        expected_budget="25%"
+        budget_overrides=(--set "node.updateStrategy.maxUnavailable=25%")
+        ;;
+      structured-precedence)
+        expected_budget=2
+        budget_overrides=(--set "node.updateStrategy.maxUnavailable=1"
+          --set "node.updateStrategy.rollingUpdate.maxUnavailable=2")
+        ;;
+    esac
+    if ! rolling_rendered=$(helm template \
+      --set "fullnameOverride=csi-azurelustre" \
+      "${budget_overrides[@]}" \
+      --namespace kube-system \
+      chart-test \
+      "${chart_dir}" 2>&1); then
+      echo "ERROR: helm template failed for the rolling-update budget override (${budget_case}):"
+      echo "${rolling_rendered}"
+      echo
+      return 1
+    fi
 
-  rolling_issues=$(printf '%s\n' "${rolling_rendered}" | yq eval \
-    'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
-      | select(
-          .spec.updateStrategy.type != "RollingUpdate" or
-          .spec.updateStrategy.rollingUpdate.maxUnavailable != 1
-        )
-      | .metadata.name' - | sed '/^---$/d')
-  if [[ -n "${rolling_issues}" ]]; then
-    echo "ERROR: standalone RollingUpdate override did not render as requested:"
-    echo "${rolling_issues}"
-    rollout_issues=true
-  fi
+    rolling_issues=$(printf '%s\n' "${rolling_rendered}" | EXPECTED_BUDGET="${expected_budget}" yq eval \
+      'select(.kind == "DaemonSet" and .metadata.labels.app == "csi-azurelustre-node")
+        | select(
+            .spec.updateStrategy.type != "RollingUpdate" or
+            .spec.updateStrategy.rollingUpdate.maxUnavailable != env(EXPECTED_BUDGET)
+          )
+        | .metadata.name' - | sed '/^---$/d')
+    if [[ -n "${rolling_issues}" ]]; then
+      echo "ERROR: rolling-update budget override (${budget_case}) did not render as requested:"
+      echo "${rolling_issues}"
+      rollout_issues=true
+    fi
+  done
 
   local ondelete_rendered ondelete_issues
   if ! ondelete_rendered=$(helm template \
@@ -512,7 +533,7 @@ check_node_rollout_safety() {
     return 1
   fi
 
-  echo "Node DaemonSets retain RollingUpdate with stable pod-template labels"
+  echo "Node DaemonSets default to RollingUpdate, retain explicit OnDelete, and have stable pod-template labels"
   echo
   return 0
 }

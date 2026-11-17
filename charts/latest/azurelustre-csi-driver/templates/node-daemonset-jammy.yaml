@@ -12,7 +12,7 @@ spec:
   updateStrategy:
     {{- if eq .Values.node.updateStrategy.type "RollingUpdate" }}
     rollingUpdate:
-      maxUnavailable: {{ .Values.node.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxUnavailable: {{ include "azurelustre.nodeMaxUnavailable" . }}
     {{- end }}
     type: {{ .Values.node.updateStrategy.type }}
   selector:

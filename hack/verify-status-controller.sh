@@ -147,7 +147,7 @@ kubectl() {
       [[ "${create_failure}" == false ]] ;;
     "get deployment csi-azurelustre-status-controller"*) printf '%s' "${existing_layout}" ;;
     "get configmap "*) return 1 ;;
-    "get daemonset "*) echo '1 1 0 0' ;;
+    "get daemonset "*) echo '1 1 0 0 0 0 RollingUpdate' ;;
     "get daemonsets.apps "*) return 0 ;;
     "apply -f -" | "delete -f -"*)
       local manifest
@@ -182,7 +182,7 @@ for scenario in kube-system/fresh kube-system/existing kube-system/migration azu
     fail "static installer did not wait for status-controller readiness"
   for daemonset in jammy noble azurelinux3; do
     grep -q "^get daemonset csi-azurelustre-node-${daemonset} -n ${NAMESPACE} " "${FIXTURES}/kubectl.log" ||
-      fail "OnDelete readiness checked the wrong namespace for ${daemonset}"
+      fail "node rollout readiness checked the wrong namespace for ${daemonset}"
   done
   grep -q "^manifest apply Deployment csi-azurelustre-status-controller ${NAMESPACE}$" "${FIXTURES}/kubectl.log" ||
     fail "status controller was applied in the wrong namespace"
