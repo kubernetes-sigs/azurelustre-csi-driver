@@ -28,7 +28,6 @@ spec:
         app.kubernetes.io/component: node
         app.kubernetes.io/name: azurelustre-csi-driver
         app.kubernetes.io/part-of: azurelustre-csi-driver
-        app.kubernetes.io/version: latest
         flavor: azurelinux3
     spec:
       hostNetwork: true
