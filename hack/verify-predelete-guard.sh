@@ -50,6 +50,9 @@ if [[ "${1:-} ${2:-}" == "get persistentvolumes" ]]; then
     exit "${KUBECTL_GET_EXIT}"
   fi
   printf '%s' "${KUBECTL_PV_OUTPUT:-}"
+elif [[ "${1:-} ${2:-} ${3:-}" == "delete -f -" ]]; then
+  # Match kubectl's stdin consumption instead of giving the producer SIGPIPE.
+  cat >/dev/null
 fi
 EOF
 chmod +x "${STUB_DIR}/kubectl"

@@ -43,6 +43,10 @@ var (
 	workingMountDir              = flag.String("working-mount-dir", "/tmp", "working directory for provisioner to mount lustre filesystems temporarily")
 	removeNotReadyTaint          = flag.Bool("remove-not-ready-taint", true, "remove NotReady taint from node when node is ready")
 	preDeleteCheckFunc           = azurelustre.CheckPersistentVolumesBeforeUninstall
+	statusControllerOnly         = flag.Bool("status-controller-only", false, "run only the Azure Lustre node status controller")
+	nodeTeardownDir              = flag.String("experimental-node-teardown-dir", "", "private driver/loader directory for experimental completion-based teardown")
+	nodeTeardownWorker           = flag.Bool("experimental-node-teardown-worker", false, "run experimental teardown in the loader without starting CSI")
+	nodeTeardownHealth           = flag.Bool("experimental-node-teardown-health", false, "recognize an experimental loader drain request without loading modules")
 
 	errDriverInitFailed       = errors.New("failed to initialize Azure Lustre CSI driver")
 	errDriverRunReturnedEarly = errors.New("driver.Run returned unexpectedly")
@@ -61,6 +65,12 @@ func run() error {
 	flag.Parse()
 	if *preDeleteCheck {
 		return runPreDeleteCheck(*preDeleteCheckTimeout, *driverName, preDeleteCheckFunc)
+	}
+	if *nodeTeardownWorker {
+		return azurelustre.RunExperimentalNodeTeardown(*nodeTeardownDir)
+	}
+	if *nodeTeardownHealth {
+		return azurelustre.ExperimentalNodeTeardownHealth(*nodeTeardownDir)
 	}
 	if *version {
 		info, err := azurelustre.GetVersionYAML(*driverName)
@@ -125,6 +135,9 @@ func newDriverOptions() azurelustre.DriverOptions {
 		AllowUnadvertisedZones:       *allowUnadvertisedZones,
 		WorkingMountDir:              *workingMountDir,
 		RemoveNotReadyTaint:          *removeNotReadyTaint,
+		StatusControllerOnly:         *statusControllerOnly,
+		ExperimentalNodeTeardownDir:  *nodeTeardownDir,
+		NodeStartupDir:               os.Getenv("AZURELUSTRE_NODE_STARTUP_DIR"),
 	}
 }
 

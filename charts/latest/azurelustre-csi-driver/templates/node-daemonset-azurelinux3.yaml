@@ -10,9 +10,11 @@ metadata:
     {{- include "azurelustre.labels" . | nindent 4 }}
 spec:
   updateStrategy:
+    type: {{ .Values.node.updateStrategy.type }}
+    {{- if eq .Values.node.updateStrategy.type "RollingUpdate" }}
     rollingUpdate:
-      maxUnavailable: {{ .Values.node.updateStrategy.maxUnavailable }}
-    type: RollingUpdate
+      maxUnavailable: {{ include "azurelustre.nodeMaxUnavailable" . }}
+    {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/component: node
@@ -28,7 +30,7 @@ spec:
         app.kubernetes.io/component: node
         app: csi-azurelustre-node
         flavor: azurelinux3
-        {{- include "azurelustre.labels" . | nindent 8 }}
+        {{- include "azurelustre.nodePodLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -65,6 +67,7 @@ spec:
           restartPolicy: Always
           securityContext:
             privileged: true
+          {{- if not .Values.node.cleanupCapableStartup }}
           startupProbe:
             failureThreshold: 120
             exec:
@@ -73,6 +76,7 @@ spec:
             initialDelaySeconds: 10
             timeoutSeconds: 5
             periodSeconds: 5
+          {{- end }}
           readinessProbe:
             failureThreshold: 5
             exec:
@@ -85,13 +89,26 @@ spec:
             failureThreshold: 5
             exec:
               command:
+                {{- if .Values.node.cleanupCapableStartup }}
+                - /app/startupState.sh
+                - live
+                {{- else }}
                 - /bin/sh
                 - -c
                 - "test -d /sys/module/lnet"
+                {{- end }}
             initialDelaySeconds: 60
             timeoutSeconds: 10
             periodSeconds: 30
           env:
+            {{- if .Values.node.cleanupCapableStartup }}
+            - name: AZURELUSTRE_NODE_STARTUP_DIR
+              value: /run/azurelustre/startup
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            {{- end }}
             - name: AZURELUSTRE_CSI_ROLE
               value: loader
             - name: LUSTRE_VERSION
@@ -99,6 +116,10 @@ spec:
             - name: CLIENT_SHA_SUFFIX
               value: {{ .Values.node.azurelinux3.lustreClient.shaSuffix | quote }}
           volumeMounts:
+            {{- if .Values.node.cleanupCapableStartup }}
+            - name: node-startup
+              mountPath: /run/azurelustre/startup
+            {{- end }}
             - mountPath: {{ .Values.paths.dev }}
               name: host-dev
             - mountPath: /etc/host-os-release
@@ -106,6 +127,9 @@ spec:
               readOnly: true
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
+              readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
               readOnly: true
           resources:
             {{- toYaml .Values.node.azurelinux3.resources | nindent 12 }}
@@ -203,12 +227,28 @@ spec:
               command:
                 - /bin/sh
                 - -c
+                {{- if .Values.node.cleanupCapableStartup }}
+                - "test -S /csi/csi.sock && /app/readinessProbe.sh"
+                {{- else }}
                 - "test -S /csi/csi.sock"
+                {{- end }}
             initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 3
           env:
+            {{- if .Values.node.cleanupCapableStartup }}
+            - name: AZURELUSTRE_NODE_STARTUP_DIR
+              value: /run/azurelustre/startup
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: NODE_FLAVOR
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['flavor']
+            {{- end }}
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
             - name: AZURELUSTRE_CSI_ROLE
@@ -222,9 +262,25 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: MOUNT_ADMISSION_POLICY_ENABLED
+              value: {{ .Values.compatibilityPolicy.mountAdmission.capabilityEnabled | quote }}
           securityContext:
             privileged: true
           volumeMounts:
+            {{- if .Values.node.cleanupCapableStartup }}
+            - name: node-startup
+              mountPath: /run/azurelustre/startup
+            {{- end }}
             - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               name: kube-api-access
               readOnly: true
@@ -244,9 +300,16 @@ spec:
             - mountPath: /app/custom-entrypoint
               name: custom-entrypoint
               readOnly: true
+            - mountPath: /etc/azurelustre/compatibility
+              name: compatibility-policy
+              readOnly: true
           resources:
             {{- toYaml .Values.node.azurelinux3.resources | nindent 12 }}
       volumes:
+        {{- if .Values.node.cleanupCapableStartup }}
+        - name: node-startup
+          emptyDir: {}
+        {{- end }}
         - name: kube-api-access
           projected:
             defaultMode: 0644
@@ -293,4 +356,8 @@ spec:
           configMap:
             name: csi-azurelustre-entrypoint
             defaultMode: 0755
+            optional: true
+        - name: compatibility-policy
+          configMap:
+            name: {{ include "azurelustre.fullname" . }}-compatibility-policy
             optional: true

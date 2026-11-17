@@ -16,6 +16,47 @@
 set -euo pipefail
 
 CONFIGMAP_NAME="csi-azurelustre-entrypoint"
+NODE_DAEMONSETS=(
+  csi-azurelustre-node-jammy
+  csi-azurelustre-node-noble
+  csi-azurelustre-node-azurelinux3
+)
+
+wait_for_node_daemonsets_ready() {
+  local timeout_seconds=${1}
+  local deadline=$((SECONDS + timeout_seconds))
+
+  for daemonset in "${NODE_DAEMONSETS[@]}"; do
+    while (( SECONDS < deadline )); do
+      local status
+      status=$(kubectl get daemonset "${daemonset}" -n "${NAMESPACE}" \
+        -o go-template='{{or .status.observedGeneration 0}} {{or .metadata.generation 1}} {{or .status.desiredNumberScheduled 0}} {{or .status.numberReady 0}} {{or .status.updatedNumberScheduled 0}} {{or .status.numberAvailable 0}} {{or .spec.updateStrategy.type "RollingUpdate"}}' 2>/dev/null || true)
+
+      local observed generation desired ready updated available strategy
+      read -r observed generation desired ready updated available strategy <<<"${status}"
+      observed=${observed:-0}
+      generation=${generation:-1}
+      desired=${desired:-0}
+      ready=${ready:-0}
+      updated=${updated:-0}
+      available=${available:-0}
+      strategy=${strategy:-RollingUpdate}
+
+      # OnDelete intentionally retains old revisions; RollingUpdate must converge.
+      if (( observed >= generation && ready == desired && available == desired )) &&
+        { [[ "${strategy}" == OnDelete ]] ||
+          [[ "${strategy}" == RollingUpdate && "${updated}" -eq "${desired}" ]]; }; then
+        break
+      fi
+      sleep 5
+    done
+
+    if (( SECONDS >= deadline )); then
+      echo "Timed out waiting for ${daemonset} readiness and update-strategy convergence." >&2
+      return 1
+    fi
+  done
+}
 
 # Namespace the driver is installed into. Defaults to kube-system to preserve
 # historical behavior. Override (e.g. NAMESPACE=azurelustre-system) to install
@@ -145,6 +186,28 @@ if [[ "${NAMESPACE}" != "kube-system" ]]; then
   kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 fi
 
+# Never adopt a namespace (including a Helm-owned namespace) on static install.
+# The create is atomic: a concurrent namespace creation is a hard failure.
+namespace_manifest="${repo}/namespace-csi-azurelustre-status-controller.yaml"
+election_namespace=$(kubectl create --dry-run=client -f "${namespace_manifest}" -o jsonpath='{.metadata.name}')
+namespace_owner=$(kubectl get namespace "${election_namespace}" --ignore-not-found \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}{"|"}{.metadata.labels.app\.kubernetes\.io/component}{"|"}{.metadata.annotations.meta\.helm\.sh/release-name}')
+if [[ -z "${namespace_owner}" ]]; then
+  kubectl create -f "${namespace_manifest}"
+elif [[ "${namespace_owner}" != "azurelustre-static|status-controller-election|" ]]; then
+  echo "Refusing adoption of non-exclusive or Helm-owned election namespace ${election_namespace}." >&2
+  exit 1
+fi
+
+# Changing lock namespaces must not overlap old and new writers. Foreground
+# deletion waits for the old status-controller pods, without touching nodes.
+existing_controller=$(kubectl get deployment csi-azurelustre-status-controller -n "${NAMESPACE}" --ignore-not-found \
+  -o jsonpath='{.metadata.name}{"|"}{.spec.template.spec.containers[?(@.name=="status-controller")].env[?(@.name=="STATUS_CONTROLLER_ELECTION_NAMESPACE")].value}')
+if [[ -n "${existing_controller}" && "${existing_controller}" != "csi-azurelustre-status-controller|${election_namespace}" ]]; then
+  kubectl delete deployment csi-azurelustre-status-controller -n "${NAMESPACE}" \
+    --cascade=foreground --wait=true --timeout=90s
+fi
+
 # Handle custom entrypoint ConfigMap
 configmap_changed="false"
 if [[ -n "${custom_entrypoint}" ]]; then
@@ -181,27 +244,26 @@ kubectl delete clusterrolebinding csi-azurelustre-controller-secret-binding --ig
 kubectl delete clusterrole csi-azurelustre-node-secret-role --ignore-not-found
 kubectl delete clusterrolebinding csi-azurelustre-node-secret-binding --ignore-not-found
 
+apply_manifest "${repo}/azurelustrenodestatus-crd.yaml"
+apply_manifest "${repo}/azurelustre-compatibility-policy.yaml"
 apply_manifest "${repo}/rbac-csi-azurelustre-controller.yaml"
 apply_manifest "${repo}/rbac-csi-azurelustre-node.yaml"
+apply_manifest "${repo}/rbac-csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/csi-azurelustre-driver.yaml"
 apply_manifest "${repo}/csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/pdb-csi-azurelustre-controller.yaml"
+apply_manifest "${repo}/pdb-csi-azurelustre-status-controller.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-jammy.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-noble.yaml"
 apply_manifest "${repo}/csi-azurelustre-node-azurelinux3.yaml"
 
-# Restart node DaemonSet pods only if the ConfigMap state changed.
-# The custom entrypoint ConfigMap is only mounted into node DaemonSets,
-# not the controller, so only node pods need restarting.
 if [[ "${configmap_changed}" == "true" ]]; then
-  echo "Custom entrypoint configuration changed, restarting node pods..."
-  kubectl rollout restart daemonset csi-azurelustre-node-jammy -n "${NAMESPACE}"
-  kubectl rollout restart daemonset csi-azurelustre-node-noble -n "${NAMESPACE}"
-  kubectl rollout restart daemonset csi-azurelustre-node-azurelinux3 -n "${NAMESPACE}"
+  echo "Custom entrypoint configuration updated. ConfigMap-only changes do not"
+  echo "restart node pods; changed DaemonSet templates can trigger a rolling update."
 fi
 
 kubectl rollout status deployment csi-azurelustre-controller -n "${NAMESPACE}" --timeout=300s
-kubectl rollout status daemonset csi-azurelustre-node-jammy -n "${NAMESPACE}" --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-noble -n "${NAMESPACE}" --timeout=1800s
-kubectl rollout status daemonset csi-azurelustre-node-azurelinux3 -n "${NAMESPACE}" --timeout=1800s
-echo 'Azure Lustre CSI driver installed successfully.'
+kubectl rollout status deployment csi-azurelustre-status-controller -n "${NAMESPACE}" --timeout=300s
+wait_for_node_daemonsets_ready 1800
+echo 'Azure Lustre CSI driver desired state applied successfully.'

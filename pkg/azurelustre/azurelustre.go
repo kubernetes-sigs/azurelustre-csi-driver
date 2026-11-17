@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -80,8 +81,9 @@ const (
 	pvcNamespaceMetadata       = "${pvc.metadata.namespace}"
 	pvNameMetadata             = "${pv.metadata.name}"
 
-	controllerPod podRole = "controller"
-	nodePod       podRole = "node"
+	controllerPod       podRole = "controller"
+	nodePod             podRole = "node"
+	statusControllerPod podRole = "status-controller"
 )
 
 var (
@@ -124,6 +126,9 @@ type DriverOptions struct {
 	EnableAzureLustreMockDynProv bool
 	WorkingMountDir              string
 	RemoveNotReadyTaint          bool
+	StatusControllerOnly         bool
+	ExperimentalNodeTeardownDir  string
+	NodeStartupDir               string
 	// AllowUnadvertisedZones allows an explicitly supplied zone when the SKU API advertises none.
 	AllowUnadvertisedZones bool
 }
@@ -170,6 +175,8 @@ type Driver struct {
 	// for that same volume (as defined by VolumeID) return an Aborted error
 	volumeLocks      *volumeLocks
 	kernelModuleLock sync.Mutex
+	teardown         *nodeTeardown
+	nodeStartup      *nodeStartup
 
 	cloud              *azure.Cloud
 	resourceGroup      string
@@ -177,8 +184,25 @@ type Driver struct {
 	dynamicProvisioner DynamicProvisionerInterface
 	pingChecker        clusterPingChecker
 
-	removeNotReadyTaint bool
-	kubeClient          kubernetes.Interface
+	removeNotReadyTaint               bool
+	kubeClient                        kubernetes.Interface
+	dynamicClient                     dynamic.Interface
+	podName                           string
+	podNamespace                      string
+	nodeFactInterval                  time.Duration
+	nodeFactReadFile                  func(string) ([]byte, error)
+	nodeFactDesiredClient             string
+	nodeFlavor                        string
+	statusControllerInterval          time.Duration
+	statusControllerElectionNamespace string
+	statusControllerCursor            string
+	compatibilityPolicyConfigMap      string
+	mountAdmissionPolicyEnabled       bool
+	mountAdmissionPolicyPath          string
+	mountAdmissionReadFile            func(string) ([]byte, error)
+	compatibilityPolicyMu             sync.RWMutex
+	cachedCompatibilityPolicy         *compatibilityPolicy
+	cachedCompatibilityPolicyAt       time.Time
 	// taintRemovalInitialDelay is the initial delay for node taint removal
 	taintRemovalInitialDelay time.Duration
 	// taintRemovalBackoff is the exponential backoff configuration for node taint removal
@@ -193,12 +217,24 @@ func NewDriver(ctx context.Context, options *DriverOptions) (*Driver, error) {
 
 func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(util.CommandRunnerInterface) (*clusterPingCache, error)) (*Driver, error) {
 	d := Driver{
-		volumeLocks:                  newVolumeLocks(),
-		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
-		enableAzureLustreMockDynProv: options.EnableAzureLustreMockDynProv,
-		allowUnadvertisedZones:       options.AllowUnadvertisedZones,
-		workingMountDir:              options.WorkingMountDir,
-		removeNotReadyTaint:          options.RemoveNotReadyTaint,
+		volumeLocks:                       newVolumeLocks(),
+		enableAzureLustreMockMount:        options.EnableAzureLustreMockMount,
+		enableAzureLustreMockDynProv:      options.EnableAzureLustreMockDynProv,
+		allowUnadvertisedZones:            options.AllowUnadvertisedZones,
+		workingMountDir:                   options.WorkingMountDir,
+		removeNotReadyTaint:               options.RemoveNotReadyTaint,
+		podName:                           os.Getenv("POD_NAME"),
+		podNamespace:                      os.Getenv("POD_NAMESPACE"),
+		nodeFactInterval:                  defaultNodeFactInterval,
+		nodeFactReadFile:                  os.ReadFile,
+		nodeFactDesiredClient:             desiredClientIdentity(os.Getenv("LUSTRE_VERSION"), os.Getenv("CLIENT_SHA_SUFFIX")),
+		nodeFlavor:                        os.Getenv("NODE_FLAVOR"),
+		statusControllerInterval:          defaultStatusControllerInterval,
+		statusControllerElectionNamespace: os.Getenv("STATUS_CONTROLLER_ELECTION_NAMESPACE"),
+		compatibilityPolicyConfigMap:      os.Getenv("COMPATIBILITY_POLICY_CONFIGMAP"),
+		mountAdmissionPolicyEnabled:       strings.EqualFold(os.Getenv("MOUNT_ADMISSION_POLICY_ENABLED"), "true"),
+		mountAdmissionPolicyPath:          "/etc/azurelustre/compatibility/policy.yaml",
+		mountAdmissionReadFile:            os.ReadFile,
 	}
 	d.Name = options.DriverName
 	d.Version = driverVersion
@@ -207,6 +243,35 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 	d.podRole = controllerPod
 	if d.NodeID != "" {
 		d.podRole = nodePod
+	}
+	if options.ExperimentalNodeTeardownDir != "" && (d.podRole != nodePod || options.StatusControllerOnly) {
+		return nil, errors.New("experimental node teardown is only supported by the node driver")
+	}
+	if options.NodeStartupDir != "" && (d.podRole != nodePod || options.StatusControllerOnly) {
+		return nil, errors.New("cleanup-capable startup is only supported by the node driver")
+	}
+	if options.StatusControllerOnly {
+		d.podRole = statusControllerPod
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("get status-controller in-cluster config: %w", err)
+		}
+		// A fleet sweep writes one status per node. The default 5 QPS budget
+		// cannot sustain the heartbeat even for a modest multi-pool cluster.
+		config.QPS = 100
+		config.Burst = 200
+		config.Timeout = 15 * time.Second
+		kubeClient, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("create status-controller Kubernetes client: %w", err)
+		}
+		d.kubeClient = kubeClient
+		dynamicClient, err := dynamic.NewForConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("create status-controller resource client: %w", err)
+		}
+		d.dynamicClient = dynamicClient
+		return &d, nil
 	}
 
 	az := &azure.Cloud{}
@@ -244,8 +309,15 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 		kubeClient, err := getKubeClient()
 		if err != nil {
 			klog.Warningf("failed to get kubernetes client: %v", err)
+		} else {
+			d.kubeClient = kubeClient
 		}
-		d.kubeClient = kubeClient
+		dynamicClient, dynamicErr := getDynamicClient()
+		if dynamicErr != nil {
+			klog.Warningf("failed to get dynamic kubernetes client: %v", dynamicErr)
+		} else {
+			d.dynamicClient = dynamicClient
+		}
 		d.taintRemovalInitialDelay = 1 * time.Second
 		d.taintRemovalBackoff = wait.Backoff{
 			Duration: 500 * time.Millisecond,
@@ -261,6 +333,18 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 
 	if d.pingChecker, err = newPingCache(&util.DefaultCommandRunner{}); err != nil {
 		return nil, fmt.Errorf("failed to initialize ping cache: %w", err)
+	}
+
+	if options.ExperimentalNodeTeardownDir != "" {
+		if d.teardown, err = newNodeTeardown(options.ExperimentalNodeTeardownDir); err != nil {
+			return nil, err
+		}
+	}
+	if options.NodeStartupDir != "" {
+		if d.nodeStartup, err = newNodeStartup(options.NodeStartupDir, d.nodeFactDesiredClient); err != nil {
+			return nil, err
+		}
+		d.nodeStartup.observe = d.observeNodeStartupRuntime
 	}
 
 	return &d, nil
@@ -410,6 +494,10 @@ func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	}
 	klog.Infof("\nDRIVER INFORMATION:\n-------------------\n%s\n\nStreaming logs below:", versionMeta)
 
+	if d.podRole == statusControllerPod {
+		return d.startNodeStatusController(ctx)
+	}
+
 	// Only node pods mount filesystems. Constructing the host mounter runs a
 	// one-time umount capability probe that requires mount privileges.
 	if d.podRole == nodePod {
@@ -429,7 +517,14 @@ func (d *Driver) Run(ctx context.Context, endpoint string) error {
 	d.AddVolumeCapabilityAccessModes(volumeCapabilities)
 	d.AddNodeServiceCapabilities(nodeServiceCapabilities)
 
-	d.removeNotReadyTaintIfNeeded()
+	stopStartup := d.startNodeStartup(ctx)
+	defer stopStartup()
+	if d.nodeStartup == nil {
+		d.removeNotReadyTaintIfNeeded()
+	}
+	reporterCtx, stopReporter := context.WithCancel(ctx)
+	defer stopReporter()
+	d.startNodeFactReporter(reporterCtx)
 
 	return RunGRPCServer(ctx, endpoint, d, d, d)
 }
@@ -515,7 +610,23 @@ func getKubeClient() (kubernetes.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
 	}
-	return kubernetes.NewForConfig(config)
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func getDynamicClient() (dynamic.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+	}
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 // JSONPatch represents a JSON patch operation
@@ -558,7 +669,10 @@ func removeTaintInBackground(k8sClient kubernetes.Interface, nodeName, driverNam
 // This taint can be optionally applied by users to prevent startup race conditions such as
 // https://github.com/kubernetes/kubernetes/issues/95911
 func removeNotReadyTaint(clientset kubernetes.Interface, nodeName, driverName string) error {
-	ctx := context.Background()
+	return removeNotReadyTaintContext(context.Background(), clientset, nodeName, driverName)
+}
+
+func removeNotReadyTaintContext(ctx context.Context, clientset kubernetes.Interface, nodeName, driverName string) error {
 	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return err

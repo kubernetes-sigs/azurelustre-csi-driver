@@ -20,12 +20,13 @@ COPY "./pkg/azurelustreplugin/useAzureAptMirror.sh" "/app/useAzureAptMirror.sh"
 COPY "./pkg/azurelustreplugin/entrypoint.sh" "/app/entrypoint.sh"
 COPY "./pkg/azurelustreplugin/start.sh" "/app/start.sh"
 COPY "./pkg/azurelustreplugin/readinessProbe.sh" "/app/readinessProbe.sh"
+COPY "./pkg/azurelustreplugin/startupState.sh" "/app/startupState.sh"
 
 RUN chmod +x "/app/azurelustreplugin" \
   && chmod +x "/app/useAzureAptMirror.sh" \
   && chmod +x "/app/entrypoint.sh" \
   && chmod +x "/app/start.sh" \
-  && chmod +x "/app/readinessProbe.sh"
+  && chmod +x "/app/readinessProbe.sh" "/app/startupState.sh"
 
 # Prefer the Ubuntu CDN; keep the Azure mirror as a lower-priority apt fallback.
 RUN /app/useAzureAptMirror.sh
@@ -33,7 +34,9 @@ RUN /app/useAzureAptMirror.sh
 RUN apt-get update && \
   apt-get upgrade -y && \
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    gpg curl ca-certificates iproute2 kmod && \
+    gpg curl ca-certificates iproute2 kmod mount coreutils && \
+  command -v mount && command -v umount && command -v timeout && \
+  mount --version && umount --version && \
   apt-get autoremove -y && \
   apt-get clean -y && \
   rm -rf \

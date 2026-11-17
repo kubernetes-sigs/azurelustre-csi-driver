@@ -17,11 +17,13 @@ limitations under the License.
 package deploy
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -108,15 +110,62 @@ func TestNamespaceGuards(t *testing.T) {
 						require.NotContains(t, string(mutations), "namespace: kube-system")
 					}
 					if script == "install" {
-						applies := 9
+						applies := 14
 						if tt.defaultNS {
-							applies = 8
+							applies = 13
 						}
 						require.Equal(t, applies, strings.Count(string(mutations), "apply -f -\n"))
 					} else {
-						require.Equal(t, 8, strings.Count(string(mutations), "delete -f - --ignore-not-found\n"))
+						require.Equal(t, 13, strings.Count(string(mutations), "delete -f - --ignore-not-found"))
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestInstallerWaitsForNodeRollout(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+		polls  int
+	}{
+		{name: "ready old pods", status: "2 2 2 2 0 2 RollingUpdate", polls: 2},
+		{name: "updated pods not yet available", status: "2 2 2 2 2 1 RollingUpdate", polls: 2},
+		{name: "unobserved generation", status: "1 2 2 2 2 2 RollingUpdate", polls: 2},
+		{name: "converged rolling update", status: "2 2 2 2 2 2 RollingUpdate", polls: 1},
+		{name: "explicit OnDelete staging", status: "2 2 2 2 0 2 OnDelete", polls: 1},
+		{name: "empty flavor", status: "2 2 0 0 0 0 RollingUpdate", polls: 1},
+	}
+
+	root, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			polls := filepath.Join(dir, "polls")
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "kubectl"), []byte(fakeKubectl), 0o700))                   // #nosec G306 -- executable test stub in t.TempDir
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "sleep"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o700)) // #nosec G306 -- avoids real polling delays
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("NAMESPACE", "azurelustre-system")
+			for _, name := range []string{"TEST_DRIVER", "TEST_NAME_NS", "TEST_PART_OF_NS", "TEST_LEGACY_NS", "TEST_DISCOVERY_ERROR"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv("TEST_MUTATIONS", filepath.Join(dir, "mutations"))
+			t.Setenv("TEST_NODE_POLLS", polls)
+			t.Setenv("TEST_NODE_STATUS", tt.status)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "bash", filepath.Join(root, "deploy", "install-driver.sh"), "local") // #nosec G204 -- only runs the repository's deployment script
+			cmd.Dir = root
+			output, runErr := cmd.CombinedOutput()
+			require.NoError(t, runErr, "%s", output)
+			reads, readErr := os.ReadFile(polls) // #nosec G304 -- log path is inside t.TempDir
+			require.NoError(t, readErr)
+			require.Equal(t, tt.polls, strings.Count(string(reads), "csi-azurelustre-node-jammy\n"))
+			for _, flavor := range []string{"noble", "azurelinux3"} {
+				require.Equal(t, 1, strings.Count(string(reads), "csi-azurelustre-node-"+flavor+"\n"))
 			}
 		})
 	}
@@ -164,8 +213,40 @@ if [[ "$1" == get ]]; then
       ;;
     configmap) exit 1 ;;
     daemonsets.apps|persistentvolumes) ;;
+    daemonset)
+      [[ "$4" == -n && "$5" == "${NAMESPACE:-kube-system}" ]]
+      status='1 1 0 0 0 0 RollingUpdate'
+      if [[ -n "${TEST_NODE_POLLS:-}" ]]; then
+        status='2 2 2 2 2 2 RollingUpdate'
+        if [[ "$3" == csi-azurelustre-node-jammy ]] && ! grep -qx "$3" "${TEST_NODE_POLLS}" 2>/dev/null; then
+          status="${TEST_NODE_STATUS}"
+        fi
+        printf '%s\n' "$3" >> "${TEST_NODE_POLLS}"
+      fi
+      # Match the requested fields so the regression also exercises the old waiter.
+      if [[ "$*" != *'.status.updatedNumberScheduled'* ]]; then
+        read -r observed generation desired ready _rest <<<"${status}"
+        status="${observed} ${generation} ${desired} ${ready}"
+      fi
+      printf '%s\n' "${status}"
+      ;;
+    deployment)
+      [[ "$3" == csi-azurelustre-status-controller && "$4" == -n && "$5" == "${NAMESPACE:-kube-system}" ]]
+      ;;
+    namespace)
+      [[ "$3" == azurelustre-control-f78b1d92acb5c8bd47911576df92b345 ]]
+      ;;
+    -f)
+      [[ "$3" == */namespace-csi-azurelustre-status-controller.yaml ]]
+      ;;
     *) echo "unexpected read: $*" >&2; exit 1 ;;
   esac
+  exit 0
+fi
+
+if [[ "$1 $2" == "create --dry-run=client" ]]; then
+  [[ "$3" == -f && "$4" == */namespace-csi-azurelustre-status-controller.yaml ]]
+  echo azurelustre-control-f78b1d92acb5c8bd47911576df92b345
   exit 0
 fi
 
