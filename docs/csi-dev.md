@@ -107,6 +107,25 @@ synthetic constructor tests; they do not authenticate or contact Azure.
 
 &nbsp;
 
+### Automated dependency updates
+
+[Dependabot](../.github/dependabot.yml) reads its configuration from the default
+branch, `main`, and opens routine version-update PRs against `development`.
+Update the policy on `main` separately from runtime changes on `development`.
+
+Routine Go updates have a limit of ten open PRs. Azure SDK and CSI minor/patch
+updates remain grouped by family; other dependencies receive individual PRs.
+The Azure cloud provider and its submodules have a separate patch-only group.
+Their minor and major updates are ignored because shared Azure SDK types can
+change, including in minor updates of the `v0` client modules. Kubernetes and
+larger provider-family updates require deliberate version selection and
+compatibility verification.
+
+Patch-only updates are not guaranteed compatible and are not a Go-version
+ceiling. CI still checks every candidate. The policy does not change Actions
+settings or security-update behavior: security updates use the default branch
+rather than the non-default version-update target.
+
 ### Verify Helm chart source changes
 
 The repository stores one unpackaged chart source at
