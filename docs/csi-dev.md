@@ -104,6 +104,14 @@ completed cancellation-driven shutdown returns `nil`.
 Driver and test-client constructors return errors to their callers rather than
 terminating the process. Canonical unit tests include the Azure client helper's
 synthetic constructor tests; they do not authenticate or contact Azure.
+The Azure test helper uses Track 2 cloud configuration for both credentials and
+ARM requests. Public, China and US Government cloud names and aliases are
+case-insensitive; unknown names fail instead of silently selecting the public
+cloud. The retired `AzureGermanCloud` is rejected; current German regions use
+`AzurePublicCloud`.
+Test resource-group cleanup returns lookup, deletion and polling errors to the
+caller instead of hiding teardown failures. A confirmed missing group is a
+successful no-op; a polling timeout does not establish that deletion completed.
 
 &nbsp;
 
