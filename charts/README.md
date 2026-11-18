@@ -281,9 +281,9 @@ driver image family when it packages a chart:
 | `node.jammy.lustreClient.version` | Lustre client version for jammy flavor | `2.15.8` |
 | `node.jammy.lustreClient.shaSuffix` | Lustre client SHA suffix for jammy flavor | `39-g2d32b59` |
 | `node.noble.lustreClient.version` | Lustre client version for noble flavor | `2.17.0` |
-| `node.noble.lustreClient.shaSuffix` | Lustre client SHA suffix for noble flavor | `24-gf517bc4` |
+| `node.noble.lustreClient.shaSuffix` | Lustre client SHA suffix for noble flavor | `28-gc7c975e` |
 | `node.azurelinux3.lustreClient.version` | Lustre client version for azurelinux3 flavor | `2.17.0` |
-| `node.azurelinux3.lustreClient.shaSuffix` | Lustre client SHA suffix for azurelinux3 flavor | `24-gf517bc4` |
+| `node.azurelinux3.lustreClient.shaSuffix` | Lustre client SHA suffix for azurelinux3 flavor | `28-gc7c975e` |
 | `node.extraArgs` | Extra args passed to node driver | `["-v=5"]` |
 | `rbac.create` | Create RBAC resources | `true` |
 | `csidriver.name` | CSIDriver name | `azurelustre.csi.azure.com` |
