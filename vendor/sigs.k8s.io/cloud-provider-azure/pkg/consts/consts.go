@@ -22,6 +22,11 @@ import (
 )
 
 const (
+	// IfMatchHeader is the HTTP conditional-update header.
+	IfMatchHeader = "If-Match"
+	// ETagAny requires an existing resource without matching a specific version.
+	ETagAny = "*"
+
 	// VMTypeVMSS is the vmss vm type
 	VMTypeVMSS = "vmss"
 	// VMTypeStandard is the vmas vm type
@@ -395,6 +400,14 @@ const (
 	LoadBalancerBackendPoolConfigurationTypeNodeIP = "nodeIP"
 	// LoadBalancerBackendPoolConfigurationTypePodIP is the lb backend pool config type pod ip
 	LoadBalancerBackendPoolConfigurationTypePodIP = "podIP"
+)
+
+// Node event reasons and messages.
+const (
+	// LoadBalancerBackendNodeSkipped is the event reason for VMSS node validation failures.
+	LoadBalancerBackendNodeSkipped = "LoadBalancerBackendNodeSkipped"
+	// LoadBalancerBackendNodeSkippedMessagePrefix describes the skipped backend update.
+	LoadBalancerBackendNodeSkippedMessagePrefix = "Skipping load-balancer backend-pool updates for this node because "
 )
 
 // error messages
