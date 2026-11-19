@@ -431,12 +431,6 @@ func TestDynamicProvisioner_SubnetSizingOnlySkipsPermissionDenial(t *testing.T) 
 	}
 }
 
-type subnetCapacityTransportFunc func(*http.Request) (*http.Response, error)
-
-func (f subnetCapacityTransportFunc) Do(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
 func TestDynamicProvisioner_SubnetSizingHonorsCancellationDuringRequest(t *testing.T) {
 	recorder := newMockAmlfsRecorder(nil)
 	provisioner := newTestDynamicProvisioner(t, recorder)
@@ -445,7 +439,7 @@ func TestDynamicProvisioner_SubnetSizingHonorsCancellationDuringRequest(t *testi
 	requests := 0
 	clientFactory, err := armstoragecache.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
-			Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+			Transport: azureTestTransportFunc(func(request *http.Request) (*http.Response, error) {
 				requests++
 				assert.Contains(t, request.URL.Path, "/getRequiredAmlFSSubnetsSize")
 				cancel()
@@ -474,7 +468,7 @@ func TestDynamicProvisioner_SubnetUsageHonorsCancellationDuringRequest(t *testin
 	requests := 0
 	clientFactory, err := armnetwork.NewClientFactory("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
-			Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+			Transport: azureTestTransportFunc(func(request *http.Request) (*http.Response, error) {
 				requests++
 				assert.Contains(t, request.URL.Path, "/usages")
 				cancel()

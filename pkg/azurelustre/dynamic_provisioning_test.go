@@ -414,7 +414,7 @@ func newFakeVnetClient(t *testing.T, recorder *mockAmlfsRecorder) *armnetwork.Vi
 		"fake-subscription-id", &azfake.TokenCredential{},
 		&arm.ClientOptions{
 			ClientOptions: azcore.ClientOptions{
-				Transport: subnetCapacityTransportFunc(func(request *http.Request) (*http.Response, error) {
+				Transport: azureTestTransportFunc(func(request *http.Request) (*http.Response, error) {
 					if recorder.subnetUsageError != nil {
 						// Pager errors are consumed; repeat the configured failure on each new request.
 						return networkfake.NewVirtualNetworksServerTransport(newFakeVnetServer(t, recorder)).Do(request)
