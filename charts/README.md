@@ -15,6 +15,12 @@ supported for general install — list them directly:
 
 ## Install a released chart
 
+These commands are for a new installation. If the driver is already installed,
+see [Upgrade](#upgrade) before changing versions.
+
+The examples use the existing `kube-system` namespace. Add `--create-namespace`
+only when installing in a new namespace.
+
 Released charts are OCI artifacts in MCR. Set `CHART_VERSION` to the exact Helm
 chart version (for example: `0.7.0`) listed under [Released chart versions](#released-chart-versions).
 The chart version is also its immutable OCI tag. The table maps it to the
@@ -24,14 +30,14 @@ that driver release as informational metadata.
     CHART_VERSION=0.7.0
     helm install azurelustre --wait \
       oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
-      --namespace kube-system --create-namespace \
+      --namespace kube-system \
       --version "${CHART_VERSION}"
 
 ## Install snapshot (latest development)
 
 Use the in-repo `latest` chart (unreleased development branch content):
 
-    helm install azurelustre ./charts/latest/azurelustre-csi-driver --namespace kube-system --create-namespace
+    helm install azurelustre ./charts/latest/azurelustre-csi-driver --namespace kube-system
 
 The chart uses the unreleased `latest` image by default.
 
@@ -41,45 +47,104 @@ The chart uses the unreleased `latest` image by default.
 
 ## Upgrade
 
-An in-place upgrade preserves existing PVCs and PVs and does not run the
-pre-delete hook. Do not remove volume objects merely to upgrade the driver.
-For manifest installations, follow the [upgrade-in-place
-instructions](../docs/install-csi-driver.md#install-with-kubectl) instead of
-uninstall/reinstall.
-
-Keep `csidriver.name` equal to the existing driver/PV identity during an upgrade.
-The chart now supplies it to the controller and nodes as well as Kubernetes
-objects and the uninstall guard. If an older installation used explicit
-`--drivername` arguments, align the chart setting with that existing identity;
-matching arguments remain valid, but conflicting arguments fail rendering.
-See [Driver Identity](../docs/driver-parameters.md#driver-identity). Changing
-the name is not a volume-preserving migration.
+Use the procedure that matches your installation method. A direct Helm release
+can be updated with `helm upgrade`; a legacy script installation uses
+[driver replacement](../docs/install-csi-driver.md#install-with-kubectl).
+To move an eligible legacy script installation to Helm, follow the separate
+[script-to-Helm migration](https://learn.microsoft.com/azure/aks/azure-managed-lustre-uninstall#migrate-a-legacy-script-installation-to-helm).
+The preview AKS CLI extension doesn't yet have a supported upgrade path.
+Extension upgrade support is planned for general availability (GA); see
+[extension upgrade availability](https://learn.microsoft.com/azure/aks/azure-managed-lustre-upgrade-uninstall-cli-preview#upgrade-an-aks-cli-installation-preview).
+Don't use Helm or script upgrade procedures for an extension-managed driver.
 
 > [!IMPORTANT]
-> **Stop every workload using Lustre on the affected nodes before upgrading.** An
-> upgrade restarts the node pods. If the release changes the Lustre client
-> version, the new kernel modules can only load once the old ones are unloaded,
-> and the kernel refuses to unload them while any Lustre filesystem is mounted.
-> Drain or scale down every pod holding a Lustre volume first, and **wait until
-> the volumes are actually unmounted before upgrading** -- deleting a pod returns
-> before the kubelet has finished unmounting its volumes, and an upgrade started
-> in that window hits a mount that is still going away.
+> **Stop every workload using Lustre on the affected nodes before updating the
+> driver.** Updating the driver restarts node pods. If the Lustre client version
+> changes, the new kernel modules can load only after the old modules unload;
+> active Lustre mounts prevent that unloading.
+> **Wait until the volumes are actually unmounted**: deleting a workload pod can
+> return before the kubelet finishes unmounting its volumes.
+>
+> Updating or replacing the driver is not storage cleanup. Keep the existing PVs,
+> PVCs, backing filesystems, and AKS cluster.
 
-    CHART_VERSION=0.7.0
-    helm upgrade azurelustre --wait \
-      oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
-      --namespace kube-system \
-      --version "${CHART_VERSION}"
+### Update a direct Helm release
 
-Or from local chart:
+The steps below update an existing chart 0.6.0 Helm release to chart 0.7.0.
+The published charts retain the same resource names, selectors, CSI identity,
+and Lustre client defaults for the same release name, namespace, and default
+values. That comparison alone does not validate customized installations or
+other version transitions.
 
-    helm upgrade azurelustre ./charts/latest/azurelustre-csi-driver --namespace kube-system
+The Helm upgrade preserves existing PVs, PVCs, and backing filesystems with
+either `Delete` or `Retain`. No PV reclaim-policy change is required. Don't
+delete PVs or PVCs during the update.
 
-If Lustre volumes are still mounted when the new node pods start and the release
-changes the client version, the upgrade does not take effect on those nodes: the
-old client stays resident, mounts keep using the old version, and the
-`lustre-loader` container logs a `WARNING` naming both versions. Stop the
-workloads and restart the node pods to complete the upgrade.
+1. Complete the [preparation and unmount
+   checks](https://learn.microsoft.com/azure/aks/azure-managed-lustre-uninstall#prepare-for-the-upgrade).
+   Stop Lustre workloads and wait for their volumes to unmount while the old
+   driver is still running. Pause new provisioning and wait for in-flight
+   volume operations to finish.
+
+2. Export the existing release's custom values. Use its release name and
+   namespace throughout:
+
+       helm get values azurelustre --namespace kube-system --output yaml > azurelustre-values.yaml
+
+   Review the values for chart 0.7.0, including image/client overrides, Workload
+   Identity, and custom entrypoints. Keep the existing CSI driver identity and
+   naming overrides. Don't blindly reuse old values or change `csidriver.name`.
+
+3. Update the existing release without uninstalling it first:
+
+       helm upgrade azurelustre --wait --timeout 30m \
+         oci://mcr.microsoft.com/microsoft.azuremanagedlustre/azurelustre-csi-driver \
+         --namespace kube-system \
+         --version 0.7.0 \
+         --reset-values \
+         --values azurelustre-values.yaml
+
+   Helm updates release resources, and Kubernetes rolls the pods. Don't use
+   `--force` to bypass an incompatible resource or take over another
+   installation's objects.
+
+4. Verify controller and node readiness and the loaded Lustre client version on
+   every affected node. Then restart workloads with their original claims and
+   confirm normal I/O. See [Verify the
+   upgrade](https://learn.microsoft.com/azure/aks/azure-managed-lustre-uninstall#verify-the-upgrade).
+   A successful `helm --wait` alone does not verify the loaded client or I/O.
+
+If old modules remain loaded when the client version changes, mounts can keep
+using the old client. The `lustre-loader` logs a `WARNING` naming the loaded and
+requested versions. Protect claims, stop consumers, and verify actual unmounts
+before restarting the affected node pods so their loaders can retry module
+cleanup. Verify the loaded version before resuming workloads; see
+[module cleanup and recovery](../docs/csi-debug.md#teardown-behavior-sigterm-and-termination).
+
+Microsoft Support is available if you need help with customized installations,
+a version transition outside this procedure, or an installation-method migration
+outside the linked script-to-Helm procedure.
+
+If you need to replace a guarded v0.7.0 installation while preserving volumes,
+stop and contact Microsoft Support. Don't use permanent-removal cleanup as an
+upgrade shortcut or delete volumes to clear the uninstall guard.
+
+### Update from a working copy (development)
+
+For development or testing of an existing direct Helm release, Helm can use a
+local chart instead of the OCI chart. Complete the same preparation, values
+export/review, and verification checks above, using the existing release name
+and namespace:
+
+    helm upgrade azurelustre ./charts/latest/azurelustre-csi-driver \
+      --namespace kube-system --wait --timeout 30m \
+      --reset-values --values azurelustre-values.yaml
+
+The working-copy chart is unreleased and defaults to the `latest` image. Review
+its templates, image/client values, and compatibility before use; it is not the
+published 0.7.0 chart merely because this checkout describes that release.
+This example does not establish a supported production transition or apply to
+script-managed or extension-managed installations.
 
 ## Uninstall
 
@@ -101,7 +166,18 @@ the installed release's namespace and driver name:
 
 ### Safe teardown procedure
 
-For an in-place upgrade that preserves PVCs/PVs, use [Upgrade](#upgrade) instead.
+For version changes that must preserve volumes, start with [Upgrade](#upgrade).
+The cleanup below is for permanent removal.
+
+The stock chart contains driver resources, not application PVs or PVCs. Helm
+uninstall removes those driver resources, not the backing AMLFS filesystems.
+The volume-cleanup actions below are separate and can delete data according to
+the provisioning method and reclaim policy.
+
+For **static provisioning**, deleting a Kubernetes volume does not delete the
+existing AMLFS filesystem or its data, but removes the Kubernetes configuration
+needed to use it. For **dynamic provisioning**, deleting a PVC whose PV has
+reclaim policy `Delete` can delete the provisioned AMLFS filesystem and its data.
 
 1. **Stop provisioning and workloads.** Pause automation that recreates PVCs or
    pods. Wait for unmounts and in-flight provisioning to finish. Keep the driver
@@ -199,8 +275,6 @@ owner's approval and complete all teardown checks manually first.
 
 - **Direct Helm:** `helm uninstall "${RELEASE}" -n "${NAMESPACE}" --no-hooks`
   skips **all** hooks; inspect `helm get hooks "${RELEASE}" -n "${NAMESPACE}"` first.
-  Alternatively, apply `preDeleteGuard.enabled=false` to the installed release
-  before uninstalling, following the [upgrade precautions](#upgrade).
 - **Manifest installation:** `./deploy/uninstall-driver.sh --force` bypasses
   the script's PV query.
 

@@ -255,9 +255,9 @@ kubectl exec -n kube-system <pod-name> -c lustre-loader -- lnetctl ping <nid>
 ### Teardown behavior (SIGTERM and termination)
 
 On pod deletion the `lustre-loader` sidecar's main loop traps `SIGTERM` and
-unloads the Lustre kernel modules so no stale modules are left on the host
-(important before a node driver upgrade), then exits within a few seconds rather
-than waiting out the full termination grace period. If the modules cannot be
+attempts to unload the Lustre kernel modules with a 15-second timeout.
+This is module cleanup during pod replacement, not a Helm uninstall/install.
+If the modules cannot be
 unloaded -- most often because a filesystem is still mounted -- the loader logs
 a line beginning with `WARNING:` stating that they remain loaded. (The warning is
 visible via cluster log aggregation; a terminating pod's logs are not retained by
@@ -266,9 +266,10 @@ visible via cluster log aggregation; a terminating pod's logs are not retained b
 The modules stay resident until something unloads them. There are two ways to
 clear them:
 
-1. Reinstall the driver, remove your workloads from the node so the driver can
-   unload the modules cleanly, then upgrade or uninstall again. Wait until the
-   volumes are actually unmounted before restarting the node pod — deleting a
+1. With a compatible driver still installed, protect claims, stop consumers, and
+   wait until volumes are actually unmounted before restarting the node pod so
+   its loader can attempt cleanup. If the driver is already removed, contact
+   Support before restoring it. Deleting a
    workload pod returns before the kubelet has finished unmounting, and the
    container that performs the unmount is the one you are about to restart.
    Confirm with `kubectl exec -n kube-system <node-pod> -c azurelustre -- sh -c 'mount | grep -c lustre'`
@@ -278,7 +279,9 @@ clear them:
 If the modules were left loaded and the driver is later upgraded to a different
 Lustre client version, the new loader cannot replace them. It logs a `WARNING:`
 on start saying the upgrade did not take effect and naming both versions; mounts
-on that node keep using the old client. The same two options above apply.
+on that node keep using the old client. Readiness does not check the loaded module
+version, so ready pods alone do not prove a client upgrade succeeded. The same
+two options above apply.
 
 A pod deleted *during* the loader's initial package install (before the modules
 are loaded) exits with nothing to unload, but termination may take up to the
@@ -393,16 +396,11 @@ kubectl get events -n kube-system --field-selector involvedObject.kind=DaemonSet
 
 2. **If upgrading from driver version < v0.4.0:**
 
-   For a manifest installation, use the [in-place upgrade
-   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
-   Stop workloads and wait for unmounts as described in the [upgrade
-   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
-   For a Helm installation, use `helm upgrade` instead of the script below.
-
-   ```sh
-   # From a checkout of the intended driver version; preserves PVCs and PVs
-   ./deploy/install-driver.sh local
-   ```
+   For Helm installations, read the [update guidance](../charts/README.md#upgrade).
+   For older script installations, follow the separate
+   [legacy script replacement procedure](./install-csi-driver.md#install-with-kubectl).
+   Preserve PVCs, PVs, and filesystems. Before replacing script-installed
+   resources, stop workloads and verify unmounts.
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which conflicts with the new distribution-specific architecture.
 
@@ -485,16 +483,11 @@ kubectl describe pod -n kube-system <duplicate-pod-name> | grep -A10 "Node-Selec
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   For a manifest installation, use the [in-place upgrade
-   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
-   Stop workloads and wait for unmounts as described in the [upgrade
-   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
-   For a Helm installation, use `helm upgrade` instead of the script below.
-
-   ```sh
-   # From a checkout of the intended driver version; preserves PVCs and PVs
-   ./deploy/install-driver.sh local
-   ```
+   For Helm installations, read the [update guidance](../charts/README.md#upgrade).
+   For older script installations, follow the separate
+   [legacy script replacement procedure](./install-csi-driver.md#install-with-kubectl).
+   Preserve PVCs, PVs, and filesystems. Before replacing script-installed
+   resources, stop workloads and verify unmounts.
 
    Versions prior to v0.4.0 used a single DaemonSet without OS-specific targeting, which can result in multiple pods on the same node when upgrading.
 
@@ -654,16 +647,11 @@ kubectl get pods -n kube-system -l app=csi-azurelustre-node -o custom-columns='N
 
 4. **If upgrading from driver version < v0.4.0:**
 
-   For a manifest installation, use the [in-place upgrade
-   procedure](./install-csi-driver.md#install-with-kubectl), not uninstall/reinstall.
-   Stop workloads and wait for unmounts as described in the [upgrade
-   precautions](../charts/README.md#upgrade), but keep existing PVCs and PVs.
-   For a Helm installation, use `helm upgrade` instead of the script below.
-
-   ```sh
-   # From a checkout of the intended driver version; preserves PVCs and PVs
-   ./deploy/install-driver.sh local
-   ```
+   For Helm installations, read the [update guidance](../charts/README.md#upgrade).
+   For older script installations, follow the separate
+   [legacy script replacement procedure](./install-csi-driver.md#install-with-kubectl).
+   Preserve PVCs, PVs, and filesystems. Before replacing script-installed
+   resources, stop workloads and verify unmounts.
 
    Versions prior to v0.4.0 used a single DaemonSet which can cause version inconsistencies when mixing with the new OS-specific DaemonSets.
 
@@ -1000,7 +988,7 @@ Only the controller authenticates to Azure. Node pods never call ARM, so they bu
 
 **Common causes:**
 
-- `IsWorkloadIdentityEnabled` was not set to `Enabled`, so no annotation or label is rendered. Reinstall or upgrade with `--set IsWorkloadIdentityEnabled=Enabled --set IdentityClientId=<client-id>` (see [Workload Identity](workload-identity.md)).
+- `IsWorkloadIdentityEnabled` was not set to `Enabled`, so no annotation or label is rendered. A new installation needs `--set IsWorkloadIdentityEnabled=Enabled --set IdentityClientId=<client-id>`, as shown in [Workload Identity](workload-identity.md). For an existing installation, contact Microsoft Support before changing identity settings. Don't reinstall the driver just to correct this configuration.
 - The federated credential subject does not match the controller ServiceAccount. It must be `system:serviceaccount:<namespace>:csi-azurelustre-controller-sa`.
 - The identity referenced by `IdentityClientId` lacks the required AMLFS permissions. It needs the same permissions listed under [Permissions For Kubelet Identity](driver-parameters.md#permissions-for-kubelet-identity).
 
@@ -1310,16 +1298,12 @@ az amlfs check-amlfs-subnet  --sku AMLFS-Durable-Premium-40 --storage-capacity 4
 
 5. **Repair the Driver Installation**
 
-   Do not uninstall merely to restart the driver; use an appropriate rollout
-   restart or in-place upgrade to preserve existing PVCs and PVs. Follow the
-   [upgrade precautions](../charts/README.md#upgrade), including stopping consumers
-   and waiting for unmounts before replacing node plugins. For Helm, use
-   `helm upgrade`. For a manifest installation, use the installer from a checkout
-   of the intended driver version:
-
-   ```bash
-   ./deploy/install-driver.sh local
-   ```
+   Do not uninstall merely to restart the same driver version; use an appropriate
+   rollout restart after stopping consumers and verifying unmounts. Before
+   changing the driver version, read the [update guidance](../charts/README.md#upgrade)
+   or the separate
+   [legacy script procedure](install-csi-driver.md#install-with-kubectl).
+   Preserve existing PVCs, PVs, and filesystems.
 
    If the goal really is driver removal rather than repair, follow the
    [safe teardown procedure](../charts/README.md#safe-teardown-procedure) instead.
