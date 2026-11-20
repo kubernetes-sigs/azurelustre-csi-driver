@@ -15,7 +15,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.50.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	k8s.io/api v0.36.6
 	k8s.io/apimachinery v0.36.6
