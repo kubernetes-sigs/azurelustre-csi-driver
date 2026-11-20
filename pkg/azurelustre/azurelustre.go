@@ -28,6 +28,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4"
@@ -187,10 +188,10 @@ type Driver struct {
 // NewDriver creates a new Driver. Assumes vendor version is equal to driver version &
 // does not support optional driver plugin info manifest field. Refer to CSI spec for more details.
 func NewDriver(ctx context.Context, options *DriverOptions) (*Driver, error) {
-	return newDriver(ctx, options, newClusterPingCache)
+	return newDriver(ctx, options, newClusterPingCache, nil)
 }
 
-func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(util.CommandRunnerInterface) (*clusterPingCache, error)) (*Driver, error) {
+func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(util.CommandRunnerInterface) (*clusterPingCache, error), azureTransport policy.Transporter) (*Driver, error) {
 	d := Driver{
 		volumeLocks:                  newVolumeLocks(),
 		enableAzureLustreMockMount:   options.EnableAzureLustreMockMount,
@@ -247,7 +248,7 @@ func newDriver(ctx context.Context, options *DriverOptions, newPingCache func(ut
 			Steps:    10, // Max delay = 0.5 * 2^9 = ~4 minutes
 		}
 		if d.podRole == controllerPod {
-			if err = d.initDynamicProvisioner(config); err != nil {
+			if err = d.initDynamicProvisioner(config, azureTransport); err != nil {
 				return nil, err
 			}
 		}
@@ -299,13 +300,17 @@ func (d *Driver) networkSubscriptionID() string {
 
 // initDynamicProvisioner builds the Azure credential and ARM clients. Node pods
 // never call ARM, so they leave the provisioner unset.
-func (d *Driver) initDynamicProvisioner(config *azureconfig.Config) error {
+func (d *Driver) initDynamicProvisioner(config *azureconfig.Config, transport policy.Transporter) error {
 	klog.Infof("%s", azureIdentityConfigurationMessage())
 	// Keep credential and ARM client options separate: both need the selected
 	// Azure cloud, but ARM-only settings must not change credential behavior.
 	credentialClientOptions, resourceClientOptions, err := getAzureClientOptions(config)
 	if err != nil {
 		return fmt.Errorf("failed to get Azure client options: %w", err)
+	}
+	if transport != nil {
+		credentialClientOptions.Transport = transport
+		resourceClientOptions.Transport = transport
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
 		ClientOptions: credentialClientOptions,

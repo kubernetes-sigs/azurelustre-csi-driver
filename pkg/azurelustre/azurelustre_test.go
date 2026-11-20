@@ -18,8 +18,10 @@ package azurelustre
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +36,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storagecache/armstoragecache/v4/fake"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -337,41 +340,137 @@ func TestNewDriver(t *testing.T) {
 	assert.True(t, d.allowUnadvertisedZones, "allowUnadvertisedZones should be true")
 }
 
+type azureTestTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f azureTestTransportFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestNewDriverIdentityModes(t *testing.T) {
-	tests := []struct {
-		name               string
-		clientID           string
-		tenantID           string
-		federatedTokenFile string
+	const (
+		tenantID  = "00000000-0000-0000-0000-000000000002"
+		authority = "https://login.microsoftonline.com"
+		issuer    = authority + "/" + tenantID
+		audience  = "https://management.core.windows.net/"
+		assertion = "synthetic-service-account-token"
+		token     = "synthetic-arm-access-token"
+	)
+	for _, test := range []struct {
+		name       string
+		credential string
+		tokenError string
 	}{
-		{name: "managed identity"},
-		{
-			name:               "workload identity",
-			clientID:           "test-client-id",
-			tenantID:           "test-tenant-id",
-			federatedTokenFile: "fake-token-file",
-		},
-	}
-
-	for _, test := range tests {
+		{name: "managed identity", credential: "ManagedIdentityCredential"},
+		{name: "workload identity", credential: "WorkloadIdentityCredential"},
+		{name: "rejected workload token exchange", credential: "WorkloadIdentityCredential", tokenError: "synthetic assertion rejected"},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
-			t.Setenv("AZURE_CLIENT_ID", test.clientID)
-			t.Setenv("AZURE_TENANT_ID", test.tenantID)
-			t.Setenv("AZURE_FEDERATED_TOKEN_FILE", test.federatedTokenFile)
-			t.Setenv("AZURE_CLIENT_SECRET", "")
-
-			driverOptions := DriverOptions{
-				DriverName:                   fakeDriverName,
-				EnableAzureLustreMockDynProv: true,
-			}
-			driver, err := NewDriver(t.Context(), &driverOptions)
-
+			// A fresh client ID prevents MSAL's process-wide managed identity cache from skipping token acquisition.
+			var nonce [6]byte
+			_, err := rand.Read(nonce[:])
 			require.NoError(t, err)
-			require.NotNil(t, driver)
-			assert.Equal(t, controllerPod, driver.podRole)
-			assert.NotNil(t, driver.dynamicProvisioner, "controller pods must build Azure clients")
+			clientID := fmt.Sprintf("00000000-0000-4000-8000-%012x", nonce)
+
+			t.Setenv(DefaultAzureConfigFileEnv, writeFakeCloudConfig(t))
+			t.Setenv("AZURE_TOKEN_CREDENTIALS", test.credential)
+			t.Setenv("AZURE_CLIENT_ID", clientID)
+			for _, name := range []string{"IDENTITY_ENDPOINT", "IMDS_ENDPOINT", "MSI_ENDPOINT", "AZURE_POD_IDENTITY_AUTHORITY_HOST", "AZURE_REGIONAL_AUTHORITY_NAME", "KUBERNETES_SERVICE_HOST"} {
+				t.Setenv(name, "")
+			}
+			if test.credential == "WorkloadIdentityCredential" {
+				tokenFile := filepath.Join(t.TempDir(), "federated-token")
+				require.NoError(t, os.WriteFile(tokenFile, []byte(assertion), 0o600))
+				t.Setenv("AZURE_FEDERATED_TOKEN_FILE", tokenFile)
+				t.Setenv("AZURE_TENANT_ID", tenantID)
+				t.Setenv("AZURE_AUTHORITY_HOST", authority+"/")
+			}
+
+			recorder := newMockAmlfsRecorder(nil)
+			ready := readyTestAmlFilesystem(expectedAmlFilesystemName)
+			ready.Properties.FilesystemSubnet = new("/subscriptions/fake-subscription-id/resourceGroups/fake-resource-group/providers/Microsoft.Network/virtualNetworks/fake-vnet/subnets/fake-subnet-name")
+			recorder.recordedAmlfsConfigurations[expectedAmlFilesystemName] = ready
+			arm := fake.NewAmlFilesystemsServerTransport(newFakeAmlFilesystemsServer(t, recorder))
+
+			tokenRequested, armRequested := false, false
+			transport := azureTestTransportFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Host == "management.azure.com" {
+					armRequested = true
+				}
+				switch req.Method + " " + req.URL.Scheme + "://" + req.URL.Host + req.URL.Path {
+				case "GET http://169.254.169.254/metadata/identity/oauth2/token":
+					assert.Equal(t, "ManagedIdentityCredential", test.credential)
+					assert.Equal(t, "true", req.Header.Get("Metadata"))
+					assert.Equal(t, clientID, req.URL.Query().Get("client_id"))
+					assert.Equal(t, audience, req.URL.Query().Get("resource"))
+					tokenRequested = true
+					return identityTestResponse(req, http.StatusOK, `{"access_token":"`+token+`","token_type":"Bearer","expires_in":"3600"}`), nil
+				case "GET " + authority + "/common/discovery/instance":
+					return identityTestResponse(req, http.StatusOK, `{"tenant_discovery_endpoint":"`+issuer+`/v2.0/.well-known/openid-configuration"}`), nil
+				case "GET " + issuer + "/v2.0/.well-known/openid-configuration":
+					return identityTestResponse(req, http.StatusOK, `{
+						"authorization_endpoint":"`+issuer+`/oauth2/v2.0/authorize",
+						"token_endpoint":"`+issuer+`/oauth2/v2.0/token",
+						"issuer":"`+issuer+`/v2.0"
+					}`), nil
+				case "POST " + issuer + "/oauth2/v2.0/token":
+					assert.Equal(t, "WorkloadIdentityCredential", test.credential)
+					if err := req.ParseForm(); err != nil {
+						return nil, fmt.Errorf("decode workload identity token request: %w", err)
+					}
+					assert.Equal(t, clientID, req.PostForm.Get("client_id"))
+					assert.Equal(t, assertion, req.PostForm.Get("client_assertion"))
+					assert.Contains(t, strings.Fields(req.PostForm.Get("scope")), audience+"/.default")
+					tokenRequested = true
+					if test.tokenError != "" {
+						return identityTestResponse(req, http.StatusBadRequest, `{"error":"invalid_client","error_description":"`+test.tokenError+`"}`), nil
+					}
+					return identityTestResponse(req, http.StatusOK, `{"access_token":"`+token+`","token_type":"Bearer","expires_in":3600}`), nil
+				case "GET https://management.azure.com" + *ready.ID:
+					assert.Equal(t, "Bearer "+token, req.Header.Get("Authorization"))
+					return arm.Do(req)
+				default:
+					return nil, fmt.Errorf("unexpected Azure request: %s %s", req.Method, req.URL)
+				}
+			})
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			driver, err := newDriver(ctx, &DriverOptions{DriverName: fakeDriverName}, newClusterPingCache, transport)
+			require.NoError(t, err)
+
+			request := buildDynamicProvCreateVolumeRequest()
+			request.Name = expectedAmlFilesystemName
+			request.Parameters = map[string]string{
+				VolumeContextSkuName:                 expectedSku,
+				VolumeContextVnetName:                expectedVnetName,
+				VolumeContextSubnetName:              expectedAmlFilesystemSubnetName,
+				VolumeContextMaintenanceDayOfWeek:    "Monday",
+				VolumeContextMaintenanceTimeOfDayUtc: "12:00",
+			}
+			response, err := driver.CreateVolume(ctx, request)
+
+			assert.True(t, tokenRequested, "the first dynamic CreateVolume request must acquire an ARM token")
+			if test.tokenError != "" {
+				require.ErrorContains(t, err, test.tokenError)
+				assert.Equal(t, codes.Unavailable, status.Code(err))
+				assert.Nil(t, response)
+				assert.False(t, armRequested, "a rejected credential must not reach ARM")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, expectedMgsAddress, response.GetVolume().GetVolumeContext()[VolumeContextMGSIPAddress])
+			assert.Equal(t, []string{"AmlFilesystemsServerTransport.Get"}, recorder.fakeCallCount)
 		})
+	}
+}
+
+func identityTestResponse(req *http.Request, code int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: code,
+		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
 	}
 }
 
@@ -543,7 +642,7 @@ func TestNewDriverPingCacheError(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	driver, err := newDriver(t.Context(), &options, newPingCache)
+	driver, err := newDriver(t.Context(), &options, newPingCache, nil)
 
 	require.ErrorIs(t, err, expectedErr)
 	require.ErrorContains(t, err, "failed to initialize ping cache")
