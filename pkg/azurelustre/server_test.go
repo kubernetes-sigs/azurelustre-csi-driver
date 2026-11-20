@@ -46,7 +46,9 @@ func TestRunGRPCServerStartupErrors(t *testing.T) {
 		message  string
 	}{
 		{name: "invalid endpoint", endpoint: "invalid", message: "invalid endpoint"},
-		{name: "TCP address without a port cannot be listened on", endpoint: "tcp://127.0.0.1", message: "failed to listen"},
+		{name: "TCP address without a port is unsupported", endpoint: "tcp://127.0.0.1", message: "only Unix domain sockets"},
+		{name: "loopback TCP is unsupported", endpoint: "tcp://127.0.0.1:0", message: "only Unix domain sockets"},
+		{name: "non-loopback TCP is unsupported", endpoint: "tcp://192.0.2.1:0", message: "only Unix domain sockets"},
 		{name: "a directory must not be removed as a stale socket", endpoint: "unix://" + blockedPath, message: "not a socket"},
 		{name: "a regular-file parent prevents endpoint inspection", endpoint: "unix://" + filepath.Join(blockedPath, "keep", "csi.sock"), message: "failed to inspect endpoint"},
 	}
@@ -135,23 +137,51 @@ func TestRemoveSocketEndpointPreservesObjects(t *testing.T) {
 	}
 }
 
-func TestListenGRPCEndpointAcceptsUppercaseTransportScheme(t *testing.T) {
-	for _, testCase := range []struct{ name, endpoint string }{
-		{name: "UNIX scheme", endpoint: "UNIX://" + filepath.Join(t.TempDir(), "csi.sock")},
-		{name: "TCP scheme", endpoint: "TCP://127.0.0.1:0"},
+func TestListenGRPCEndpointRejectsTCPBeforeListening(t *testing.T) {
+	for _, endpoint := range []string{
+		"tcp://127.0.0.1:0",
+		"tcp://127.0.0.2:0",
+		"tcp://[::1]:0",
+		"tcp://[::ffff:127.0.0.1]:0",
+		"tcp://0.0.0.0:0",
+		"tcp://[::]:0",
+		"tcp://[::ffff:0.0.0.0]:0",
+		"tcp://:0",
+		"tcp://192.0.2.1:0",
+		"tcp://10.0.0.1:0",
+		"tcp://[fe80::1%eth0]:0",
+		"tcp://localhost:0",
+		"tcp://example.invalid:0",
+		"tcp://0.0.0.0:invalid-port",
+		"tcp://[::]:invalid-port",
+		"tcp://:invalid-port",
+		"TCP://127.0.0.1:invalid-port",
+		"TCP://localhost:invalid-port",
+		"tcp://127.0.0.1",
+		"tcp://[::1",
+		"tcp://",
 	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			listener, err := listenGRPCEndpoint(t.Context(), testCase.endpoint)
-
-			require.NoError(t, err)
-			require.NoError(t, listener.Close())
+		t.Run(endpoint, func(t *testing.T) {
+			listener, err := listenGRPCEndpoint(t.Context(), endpoint)
+			if listener != nil {
+				require.NoError(t, listener.Close())
+			}
+			require.Nil(t, listener)
+			require.ErrorContains(t, err, "only Unix domain sockets")
 		})
 	}
 }
 
+func TestListenGRPCEndpointAcceptsUppercaseTransportScheme(t *testing.T) {
+	listener, err := listenGRPCEndpoint(t.Context(), "UNIX://"+filepath.Join(t.TempDir(), "csi.sock"))
+
+	require.NoError(t, err)
+	require.NoError(t, listener.Close())
+}
+
 func TestRunGRPCServerServeError(t *testing.T) {
 	listenerConfig := &net.ListenConfig{}
-	listener, err := listenerConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	listener, err := listenerConfig.Listen(t.Context(), "unix", filepath.Join(t.TempDir(), "csi.sock"))
 	require.NoError(t, err)
 	err = listener.Close()
 	require.NoError(t, err)
@@ -232,7 +262,7 @@ func TestDriverRunServerShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err := driver.Run(ctx, "tcp://127.0.0.1:0")
+	err := driver.Run(ctx, "unix://"+filepath.Join(t.TempDir(), "csi.sock"))
 	require.NoError(t, err)
 }
 
@@ -265,7 +295,8 @@ func TestRunGRPCServerCancelsActiveRPC(t *testing.T) {
 		return nil, convertHTTPResponseErrorToGrpcCodeError(ctx.Err())
 	}}
 
-	listener, err := listenGRPCEndpoint(t.Context(), "tcp://127.0.0.1:0")
+	endpoint := "unix://" + filepath.Join(t.TempDir(), "csi.sock")
+	listener, err := listenGRPCEndpoint(t.Context(), endpoint)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	finished := make(chan error, 1)
@@ -278,7 +309,7 @@ func TestRunGRPCServerCancelsActiveRPC(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	connection := newLifecycleClient(t, listener.Addr().String())
+	connection := newLifecycleClient(t, endpoint)
 	rpcCtx, rpcCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer rpcCancel()
 	result := make(chan error, 1)
