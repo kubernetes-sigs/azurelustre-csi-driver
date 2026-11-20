@@ -19,6 +19,9 @@ set -euo pipefail
 PKG_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${PKG_ROOT}"
 
+PYTHON_BIN=$("${PKG_ROOT}/hack/ensure-python.sh")
+"${PYTHON_BIN}" -m unittest discover -s "${PKG_ROOT}/test/scale" -p 'test_*.py'
+
 "${PKG_ROOT}"/hack/verify-gofmt.sh
 "${PKG_ROOT}"/hack/verify-govet.sh
 "${PKG_ROOT}"/hack/verify-golangci-lint.sh
